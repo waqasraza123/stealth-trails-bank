@@ -5,8 +5,7 @@ import "./PoolManagement.sol";
 import "./StakingOperations.sol";
 
 contract StakingPool is PoolManagement, StakingOperations {
-    constructor() {
-        owner = msg.sender;
+    constructor() Ownable(msg.sender) {
     }
 
     function getStakedBalance(address _user, uint256 poolId) external view returns (uint256) {

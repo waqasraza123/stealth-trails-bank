@@ -1,10 +1,18 @@
-import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
-import { useUserStore } from '@/stores/userStore';
+import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
+import { useUserStore } from "@/stores/userStore";
 
-const fetchUser = async (userId: string, token: string, setUser: (user: any) => void) => {
+type UserStoreState = ReturnType<typeof useUserStore.getState>;
+type SetUser = UserStoreState["setUser"];
+type StoredUser = Parameters<SetUser>[0];
+
+const fetchUser = async (
+  userId: string,
+  token: string,
+  setUser: SetUser
+): Promise<StoredUser> => {
   if (!token) {
-    throw new Error('User is not authenticated.');
+    throw new Error("User is not authenticated.");
   }
 
   const serverUrl = import.meta.env.VITE_SERVER_URL;
@@ -14,7 +22,7 @@ const fetchUser = async (userId: string, token: string, setUser: (user: any) => 
     },
   });
 
-  const userData = response.data.data;
+  const userData = response.data.data as StoredUser;
   setUser(userData);
   return userData;
 };
@@ -22,6 +30,7 @@ const fetchUser = async (userId: string, token: string, setUser: (user: any) => 
 export const useGetUser = (userId: string) => {
   const token = useUserStore((state) => state.token);
   const setUser = useUserStore((state) => state.setUser);
+  const authToken = token ?? "";
 
   const {
     data: user,
@@ -29,9 +38,9 @@ export const useGetUser = (userId: string) => {
     isError,
     error,
   } = useQuery({
-    queryKey: ['user', userId],
-    queryFn: () => fetchUser(userId, token!, setUser),
-    enabled: !!userId && !!token,
+    queryKey: ["user", userId],
+    queryFn: () => fetchUser(userId, authToken, setUser),
+    enabled: Boolean(userId && authToken),
   });
 
   return {

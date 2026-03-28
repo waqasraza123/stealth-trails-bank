@@ -1,6 +1,7 @@
-
 import React, { useState } from "react";
-import { Calendar as CalendarIcon, Check, Filter, Search, X } from "lucide-react";
+import type { DateRange } from "react-day-picker";
+import { Calendar as CalendarIcon, Filter, Search, X } from "lucide-react";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,9 +17,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
 import { Calendar } from "@/components/ui/calendar";
-import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 
 interface TransactionFilterProps {
@@ -35,77 +34,81 @@ interface FilterState {
   };
 }
 
+const emptyDateRange: FilterState["dateRange"] = {
+  from: undefined,
+  to: undefined,
+};
+
 export const TransactionFilter = ({ onFilterChange }: TransactionFilterProps) => {
   const [search, setSearch] = useState("");
   const [types, setTypes] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
-  const [dateRange, setDateRange] = useState<{
-    from: Date | undefined;
-    to: Date | undefined;
-  }>({
-    from: undefined,
-    to: undefined,
-  });
-  
+  const [dateRange, setDateRange] = useState<FilterState["dateRange"]>(emptyDateRange);
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+
   const typeOptions = ["Deposit", "Withdrawal", "Transfer"];
   const statusOptions = ["completed", "pending"];
-  const [activeFilters, setActiveFilters] = useState<string[]>([]);
-  
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
+
+  const updateActiveFilters = () => {
+    const active: string[] = [];
+
+    if (types.length > 0) {
+      active.push("Type");
+    }
+
+    if (statuses.length > 0) {
+      active.push("Status");
+    }
+
+    if (dateRange.from || dateRange.to) {
+      active.push("Date");
+    }
+
+    setActiveFilters(active);
+  };
+
+  const updateFilters = (filters: FilterState) => {
+    onFilterChange(filters);
+    updateActiveFilters();
+  };
+
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value;
     setSearch(value);
     updateFilters({ search: value, types, statuses, dateRange });
   };
 
   const handleTypeToggle = (type: string) => {
-    const newTypes = types.includes(type)
-      ? types.filter((t) => t !== type)
+    const nextTypes = types.includes(type)
+      ? types.filter((value) => value !== type)
       : [...types, type];
-    
-    setTypes(newTypes);
-    updateFilters({ search, types: newTypes, statuses, dateRange });
+
+    setTypes(nextTypes);
+    updateFilters({ search, types: nextTypes, statuses, dateRange });
     updateActiveFilters();
   };
 
   const handleStatusToggle = (status: string) => {
-    const newStatuses = statuses.includes(status)
-      ? statuses.filter((s) => s !== status)
+    const nextStatuses = statuses.includes(status)
+      ? statuses.filter((value) => value !== status)
       : [...statuses, status];
-    
-    setStatuses(newStatuses);
-    updateFilters({ search, types, statuses: newStatuses, dateRange });
+
+    setStatuses(nextStatuses);
+    updateFilters({ search, types, statuses: nextStatuses, dateRange });
     updateActiveFilters();
   };
 
-  const handleDateRangeChange = (range: { from: Date; to: Date }) => {
-    setDateRange(range);
-    updateFilters({ search, types, statuses, dateRange: range });
+  const handleDateRangeChange = (range: DateRange | undefined) => {
+    const nextDateRange: FilterState["dateRange"] = {
+      from: range?.from,
+      to: range?.to,
+    };
+
+    setDateRange(nextDateRange);
+    updateFilters({ search, types, statuses, dateRange: nextDateRange });
     updateActiveFilters();
   };
-  
-  const updateFilters = (filters: FilterState) => {
-    onFilterChange(filters);
-    updateActiveFilters();
-  };
-  
-  const updateActiveFilters = () => {
-    const active = [];
-    
-    if (types.length > 0) {
-      active.push("Type");
-    }
-    
-    if (statuses.length > 0) {
-      active.push("Status");
-    }
-    
-    if (dateRange.from || dateRange.to) {
-      active.push("Date");
-    }
-    
-    setActiveFilters(active);
-  };
-  
+
   const clearFilter = (filter: string) => {
     if (filter === "Type") {
       setTypes([]);
@@ -114,21 +117,21 @@ export const TransactionFilter = ({ onFilterChange }: TransactionFilterProps) =>
       setStatuses([]);
       updateFilters({ search, types, statuses: [], dateRange });
     } else if (filter === "Date") {
-      setDateRange({ from: undefined, to: undefined });
-      updateFilters({ search, types, statuses, dateRange: { from: undefined, to: undefined } });
+      setDateRange(emptyDateRange);
+      updateFilters({ search, types, statuses, dateRange: emptyDateRange });
     }
   };
-  
+
   const clearAllFilters = () => {
     setSearch("");
     setTypes([]);
     setStatuses([]);
-    setDateRange({ from: undefined, to: undefined });
+    setDateRange(emptyDateRange);
     updateFilters({
       search: "",
       types: [],
       statuses: [],
-      dateRange: { from: undefined, to: undefined },
+      dateRange: emptyDateRange,
     });
   };
 
@@ -144,7 +147,7 @@ export const TransactionFilter = ({ onFilterChange }: TransactionFilterProps) =>
             className="pl-10"
           />
         </div>
-        
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="flex items-center gap-1">
@@ -166,7 +169,7 @@ export const TransactionFilter = ({ onFilterChange }: TransactionFilterProps) =>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="flex items-center gap-1">
@@ -188,7 +191,7 @@ export const TransactionFilter = ({ onFilterChange }: TransactionFilterProps) =>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        
+
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="flex items-center gap-1">
@@ -208,36 +211,36 @@ export const TransactionFilter = ({ onFilterChange }: TransactionFilterProps) =>
               mode="range"
               defaultMonth={dateRange.from}
               selected={dateRange}
-              onSelect={handleDateRangeChange as any}
+              onSelect={handleDateRangeChange}
               numberOfMonths={1}
             />
           </PopoverContent>
         </Popover>
-        
+
         {activeFilters.length > 0 && (
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={clearAllFilters}
-            className="text-red-500 hover:text-red-700 hover:bg-red-100"
+            className="text-red-500 hover:bg-red-100 hover:text-red-700"
           >
             Clear all
           </Button>
         )}
       </div>
-      
+
       {activeFilters.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           {activeFilters.map((filter) => (
-            <Badge 
-              key={filter} 
-              variant="outline" 
+            <Badge
+              key={filter}
+              variant="outline"
               className="flex items-center gap-1 px-3 py-1"
             >
               {filter}
-              <X 
-                className="h-3 w-3 cursor-pointer" 
-                onClick={() => clearFilter(filter)} 
+              <X
+                className="h-3 w-3 cursor-pointer"
+                onClick={() => clearFilter(filter)}
               />
             </Badge>
           ))}

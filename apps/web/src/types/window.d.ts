@@ -1,8 +1,17 @@
+type EthereumRequestArguments = {
+  method: string;
+  params?: readonly unknown[] | object;
+};
+
+type EthereumEventCallback = (...args: readonly unknown[]) => void;
+
+interface EthereumProvider {
+  isMetaMask?: boolean;
+  request: (request: EthereumRequestArguments) => Promise<unknown>;
+  on: (event: string, callback: EthereumEventCallback) => void;
+  removeListener: (event: string, callback: EthereumEventCallback) => void;
+}
+
 interface Window {
-  ethereum?: {
-    isMetaMask?: boolean;
-    request: (request: { method: string; params?: any[] }) => Promise<any>;
-    on: (event: string, callback: (params: any) => void) => void;
-    removeListener: (event: string, callback: (params: any) => void) => void;
-  };
+  ethereum?: EthereumProvider;
 }
