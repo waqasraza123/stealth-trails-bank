@@ -12,6 +12,19 @@ importers:
         specifier: ^2.4.4
         version: 2.8.21
 
+  apps/admin:
+    dependencies:
+      '@stealth-trails-bank/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@stealth-trails-bank/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
   apps/api:
     dependencies:
       '@nestjs/common':
@@ -314,6 +327,29 @@ importers:
         specifier: ^5.4.1
         version: 5.4.21(@types/node@22.19.15)(terser@5.46.1)
 
+  apps/worker:
+    dependencies:
+      '@stealth-trails-bank/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@stealth-trails-bank/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/config:
+    dependencies:
+      '@stealth-trails-bank/types':
+        specifier: workspace:*
+        version: link:../types
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
   packages/contracts:
     dependencies:
       '@openzeppelin/contracts':
@@ -356,6 +392,22 @@ importers:
       typechain:
         specifier: ^8.3.2
         version: 8.3.2(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/db:
+    dependencies:
+      '@stealth-trails-bank/types':
+        specifier: workspace:*
+        version: link:../types
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/types:
+    devDependencies:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3

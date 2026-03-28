@@ -1,0 +1,22 @@
+{
+  "name": "@stealth-trails-bank/worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Async worker boundary for Stealth Trails Bank",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@stealth-trails-bank/config": "workspace:*",
+    "@stealth-trails-bank/types": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

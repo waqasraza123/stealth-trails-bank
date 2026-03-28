@@ -1,0 +1,22 @@
+{
+  "name": "@stealth-trails-bank/admin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Internal operator console boundary for Stealth Trails Bank",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@stealth-trails-bank/config": "workspace:*",
+    "@stealth-trails-bank/types": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
