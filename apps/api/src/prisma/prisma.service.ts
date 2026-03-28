@@ -1,9 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { Injectable } from "@nestjs/common";
+import { StealthTrailsPrismaClient } from "@stealth-trails-bank/db";
 
 @Injectable()
-export class PrismaService extends PrismaClient {
-  constructor() {
-    super();
-  }
-}
+export class PrismaService extends StealthTrailsPrismaClient {}

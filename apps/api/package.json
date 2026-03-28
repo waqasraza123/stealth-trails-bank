@@ -19,6 +19,7 @@
     "@nestjs/platform-express": "^10.4.15",
     "@prisma/client": "^6.2.1",
     "@stealth-trails-bank/config": "workspace:*",
+    "@stealth-trails-bank/db": "workspace:*",
     "@supabase/supabase-js": "^2.47.13",
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",

@@ -1,2 +1,11 @@
-export * from "./runtime-env";
-export * from "./workspaces";
+export {
+  readOptionalRuntimeEnv,
+  readRequiredRuntimeEnv
+} from "./runtime-env";
+
+export { findWorkspaceBoundary, productionWorkspaceBoundaries } from "./workspaces";
+
+export type {
+  RuntimeEnvShape,
+  RuntimeEnvValue
+} from "./runtime-env";

@@ -42,6 +42,9 @@ importers:
       '@stealth-trails-bank/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@stealth-trails-bank/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@supabase/supabase-js':
         specifier: ^2.47.13
         version: 2.100.1
@@ -410,6 +413,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@prisma/client':
+        specifier: ^6.2.1
+        version: 6.19.2(prisma@6.19.2(typescript@5.9.3))(typescript@5.9.3)
       '@stealth-trails-bank/types':
         specifier: workspace:*
         version: link:../types
