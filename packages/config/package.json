@@ -8,14 +8,30 @@
   "files": [
     "dist"
   ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./api": {
+      "types": "./dist/api.d.ts",
+      "default": "./dist/api.js"
+    },
+    "./web": {
+      "types": "./dist/web.d.ts",
+      "default": "./dist/web.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@stealth-trails-bank/types": "workspace:*"
+    "@stealth-trails-bank/types": "workspace:*",
+    "dotenv": "^16.4.7"
   },
   "devDependencies": {
+    "@types/node": "^22.5.5",
     "typescript": "^5.7.3"
   }
 }

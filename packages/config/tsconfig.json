@@ -8,10 +8,16 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "rootDir": "src",
-    "outDir": "dist"
+    "rootDir": ".",
+    "outDir": "dist",
+    "types": [
+      "node"
+    ]
   },
   "include": [
+    "index.ts",
+    "api.ts",
+    "web.ts",
     "src/**/*.ts"
   ]
 }

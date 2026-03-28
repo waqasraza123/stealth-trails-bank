@@ -1,19 +1,18 @@
-import { Injectable } from '@nestjs/common';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Injectable } from "@nestjs/common";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { loadSupabaseRuntimeConfig } from "@stealth-trails-bank/config/api";
 
 @Injectable()
 export class SupabaseService {
   private readonly client: SupabaseClient;
 
   constructor() {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_ANON_KEY;
+    const runtimeConfig = loadSupabaseRuntimeConfig();
 
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Supabase credentials are missing in environment variables');
-    }
-
-    this.client = createClient(supabaseUrl, supabaseKey);
+    this.client = createClient(
+      runtimeConfig.supabaseUrl,
+      runtimeConfig.supabaseAnonKey
+    );
   }
 
   getClient(): SupabaseClient {
