@@ -5,7 +5,14 @@ import {
   NotFoundException,
   UnauthorizedException
 } from "@nestjs/common";
-import { AccountLifecycleStatus } from "@prisma/client";
+import {
+  AccountLifecycleStatus,
+  Prisma,
+  WalletCustodyType,
+  WalletKind,
+  WalletStatus
+} from "@prisma/client";
+import { loadProductChainRuntimeConfig } from "@stealth-trails-bank/config/api";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { PrismaService } from "../prisma/prisma.service";
 import { SupabaseService } from "../supabase/supabase.service";
@@ -52,12 +59,14 @@ export type CustomerAccountProjection = {
 @Injectable()
 export class AuthService {
   private readonly supabase: SupabaseClient;
+  private readonly productChainId: number;
 
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly prismaService: PrismaService
   ) {
     this.supabase = this.supabaseService.getClient();
+    this.productChainId = loadProductChainRuntimeConfig().productChainId;
   }
 
   private async checkEmailAvailability(email: string): Promise<void> {
@@ -122,11 +131,64 @@ export class AuthService {
     }
   }
 
+  private async syncCustomerWalletProjection(
+    transaction: Prisma.TransactionClient,
+    customerAccountId: string,
+    ethereumAddress: string
+  ): Promise<void> {
+    const walletLookup = {
+      chainId_address: {
+        chainId: this.productChainId,
+        address: ethereumAddress
+      }
+    } as const;
+
+    const existingWallet = await transaction.wallet.findUnique({
+      where: walletLookup
+    });
+
+    if (
+      existingWallet &&
+      existingWallet.customerAccountId &&
+      existingWallet.customerAccountId !== customerAccountId
+    ) {
+      throw new Error(
+        "Wallet address is already linked to another customer account."
+      );
+    }
+
+    if (existingWallet) {
+      await transaction.wallet.update({
+        where: walletLookup,
+        data: {
+          customerAccountId,
+          kind: WalletKind.embedded,
+          custodyType: WalletCustodyType.platform_managed,
+          status: WalletStatus.active
+        }
+      });
+
+      return;
+    }
+
+    await transaction.wallet.create({
+      data: {
+        customerAccountId,
+        chainId: this.productChainId,
+        address: ethereumAddress,
+        kind: WalletKind.embedded,
+        custodyType: WalletCustodyType.platform_managed,
+        status: WalletStatus.active
+      }
+    });
+  }
+
   private async syncCustomerAccountProjection(
     firstName: string,
     lastName: string,
     email: string,
-    supabaseUserId: string
+    supabaseUserId: string,
+    ethereumAddress: string
   ): Promise<void> {
     try {
       await this.prismaService.$transaction(async (transaction) => {
@@ -148,7 +210,7 @@ export class AuthService {
           }
         });
 
-        await transaction.customerAccount.upsert({
+        const customerAccount = await transaction.customerAccount.upsert({
           where: {
             customerId: customer.id
           },
@@ -158,8 +220,18 @@ export class AuthService {
             status: AccountLifecycleStatus.registered
           }
         });
+
+        await this.syncCustomerWalletProjection(
+          transaction,
+          customerAccount.id,
+          ethereumAddress
+        );
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new InternalServerErrorException(error.message);
+      }
+
       throw new InternalServerErrorException(
         "Failed to initialize customer account."
       );
@@ -263,7 +335,8 @@ export class AuthService {
       firstName,
       lastName,
       email,
-      registeredAuthUser.id
+      registeredAuthUser.id,
+      generatedEthereumAddress.address
     );
 
     return {

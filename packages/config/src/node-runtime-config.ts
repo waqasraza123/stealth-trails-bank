@@ -1,8 +1,11 @@
 import dotenv from "dotenv";
 import {
+  readOptionalRuntimeEnv,
   readRequiredRuntimeEnv,
   type RuntimeEnvShape
 } from "./runtime-env";
+
+const DEFAULT_PRODUCT_CHAIN_ID = 8453;
 
 let nodeRuntimeEnvInitialized = false;
 
@@ -18,6 +21,16 @@ function initializeNodeRuntimeEnv(): void {
 function getNodeRuntimeEnv(): RuntimeEnvShape {
   initializeNodeRuntimeEnv();
   return process.env as RuntimeEnvShape;
+}
+
+function parsePositiveInteger(value: string, name: string): number {
+  const parsedValue = Number(value);
+
+  if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+
+  return parsedValue;
 }
 
 export type DatabaseRuntimeConfig = {
@@ -44,6 +57,10 @@ export type BlockchainContractWriteRuntimeConfig = {
   readonly rpcUrl: string;
   readonly stakingContractAddress: string;
   readonly ethereumPrivateKey: string;
+};
+
+export type ProductChainRuntimeConfig = {
+  readonly productChainId: number;
 };
 
 export function loadDatabaseRuntimeConfig(
@@ -95,5 +112,27 @@ export function loadBlockchainContractWriteRuntimeConfig(
       "STAKING_CONTRACT_ADDRESS"
     ),
     ethereumPrivateKey: readRequiredRuntimeEnv(env, "ETHEREUM_PRIVATE_KEY")
+  };
+}
+
+export function loadProductChainRuntimeConfig(
+  env: RuntimeEnvShape = getNodeRuntimeEnv()
+): ProductChainRuntimeConfig {
+  const configuredProductChainId = readOptionalRuntimeEnv(
+    env,
+    "PRODUCT_CHAIN_ID"
+  );
+
+  if (!configuredProductChainId) {
+    return {
+      productChainId: DEFAULT_PRODUCT_CHAIN_ID
+    };
+  }
+
+  return {
+    productChainId: parsePositiveInteger(
+      configuredProductChainId,
+      "PRODUCT_CHAIN_ID"
+    )
   };
 }
