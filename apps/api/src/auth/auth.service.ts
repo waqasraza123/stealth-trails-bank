@@ -12,8 +12,8 @@ import {
   WalletKind,
   WalletStatus
 } from "@prisma/client";
-import { loadProductChainRuntimeConfig } from "@stealth-trails-bank/config/api";
 import { SupabaseClient } from "@supabase/supabase-js";
+import { loadProductChainRuntimeConfig } from "@stealth-trails-bank/config/api";
 import { PrismaService } from "../prisma/prisma.service";
 import { SupabaseService } from "../supabase/supabase.service";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";

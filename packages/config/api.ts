@@ -3,6 +3,7 @@ export {
   loadBlockchainContractWriteRuntimeConfig,
   loadBlockchainWalletRuntimeConfig,
   loadDatabaseRuntimeConfig,
+  loadProductChainRuntimeConfig,
   loadSupabaseRuntimeConfig
 } from "./src/node-runtime-config";
 
@@ -11,5 +12,6 @@ export type {
   BlockchainContractWriteRuntimeConfig,
   BlockchainWalletRuntimeConfig,
   DatabaseRuntimeConfig,
+  ProductChainRuntimeConfig,
   SupabaseRuntimeConfig
 } from "./src/node-runtime-config";
