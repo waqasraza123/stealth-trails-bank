@@ -16,7 +16,8 @@
     "backfill:customer-wallets": "ts-node src/scripts/backfill-customer-wallets.ts",
     "test": "jest --config ./jest.config.ts --runInBand",
     "test:watch": "jest --config ./jest.config.ts --watch",
-    "audit:wallet-projection-coverage": "ts-node src/scripts/audit-wallet-projection-coverage.ts"
+    "audit:wallet-projection-coverage": "ts-node src/scripts/audit-wallet-projection-coverage.ts",
+    "repair:customer-wallet-projections": "ts-node src/scripts/repair-customer-wallet-projections.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",
