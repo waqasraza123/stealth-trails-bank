@@ -11,9 +11,12 @@ import {
 } from "@nestjs/common";
 import { InternalWorkerApiKeyGuard } from "../auth/guards/internal-worker-api-key.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
+import { ConfirmDepositIntentDto } from "./dto/confirm-deposit-intent.dto";
 import { FailDepositIntentExecutionDto } from "./dto/fail-deposit-intent-execution.dto";
+import { ListBroadcastDepositIntentsDto } from "./dto/list-broadcast-deposit-intents.dto";
 import { ListQueuedDepositIntentsDto } from "./dto/list-queued-deposit-intents.dto";
 import { RecordDepositBroadcastDto } from "./dto/record-deposit-broadcast.dto";
+import { SettleConfirmedDepositIntentDto } from "./dto/settle-confirmed-deposit-intent.dto";
 import { TransactionIntentsService } from "./transaction-intents.service";
 
 type InternalWorkerRequest = {
@@ -31,13 +34,7 @@ export class TransactionIntentsWorkerController {
 
   @Get("deposit-requests/queued")
   async listQueuedDepositIntents(
-    @Query(
-      new ValidationPipe({
-        transform: true,
-        whitelist: true,
-        forbidNonWhitelisted: true
-      })
-    )
+    @Query(new ValidationPipe({ transform: true }))
     query: ListQueuedDepositIntentsDto
   ): Promise<CustomJsonResponse> {
     const result =
@@ -50,16 +47,25 @@ export class TransactionIntentsWorkerController {
     };
   }
 
+  @Get("deposit-requests/broadcast")
+  async listBroadcastDepositIntents(
+    @Query(new ValidationPipe({ transform: true }))
+    query: ListBroadcastDepositIntentsDto
+  ): Promise<CustomJsonResponse> {
+    const result =
+      await this.transactionIntentsService.listBroadcastDepositIntents(query);
+
+    return {
+      status: "success",
+      message: "Broadcast deposit requests retrieved successfully.",
+      data: result
+    };
+  }
+
   @Post("deposit-requests/:intentId/broadcast")
   async recordDepositBroadcast(
     @Param("intentId") intentId: string,
-    @Body(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true
-      })
-    )
-    dto: RecordDepositBroadcastDto,
+    @Body(new ValidationPipe()) dto: RecordDepositBroadcastDto,
     @Request() request: InternalWorkerRequest
   ): Promise<CustomJsonResponse> {
     const result = await this.transactionIntentsService.recordDepositBroadcast(
@@ -77,16 +83,31 @@ export class TransactionIntentsWorkerController {
     };
   }
 
+  @Post("deposit-requests/:intentId/confirm")
+  async confirmDepositIntent(
+    @Param("intentId") intentId: string,
+    @Body(new ValidationPipe()) dto: ConfirmDepositIntentDto,
+    @Request() request: InternalWorkerRequest
+  ): Promise<CustomJsonResponse> {
+    const result = await this.transactionIntentsService.confirmDepositIntent(
+      intentId,
+      request.internalWorker.workerId,
+      dto
+    );
+
+    return {
+      status: "success",
+      message: result.confirmReused
+        ? "Deposit confirm state reused successfully."
+        : "Deposit confirmed successfully.",
+      data: result
+    };
+  }
+
   @Post("deposit-requests/:intentId/fail")
   async failDepositIntentExecution(
     @Param("intentId") intentId: string,
-    @Body(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true
-      })
-    )
-    dto: FailDepositIntentExecutionDto,
+    @Body(new ValidationPipe()) dto: FailDepositIntentExecutionDto,
     @Request() request: InternalWorkerRequest
   ): Promise<CustomJsonResponse> {
     const result =
@@ -101,6 +122,28 @@ export class TransactionIntentsWorkerController {
       message: result.failureReused
         ? "Deposit execution failure state reused successfully."
         : "Deposit execution failure recorded successfully.",
+      data: result
+    };
+  }
+
+  @Post("deposit-requests/:intentId/settle")
+  async settleConfirmedDepositIntent(
+    @Param("intentId") intentId: string,
+    @Body(new ValidationPipe()) dto: SettleConfirmedDepositIntentDto,
+    @Request() request: InternalWorkerRequest
+  ): Promise<CustomJsonResponse> {
+    const result =
+      await this.transactionIntentsService.settleConfirmedDepositIntent(
+        intentId,
+        request.internalWorker.workerId,
+        dto
+      );
+
+    return {
+      status: "success",
+      message: result.settlementReused
+        ? "Deposit settlement state reused successfully."
+        : "Deposit settled successfully.",
       data: result
     };
   }

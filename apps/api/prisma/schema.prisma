@@ -50,6 +50,8 @@ model CustomerAccount {
   reviewCases        ReviewCase[]
 
   @@index([status])
+  ledgerAccounts     LedgerAccount[]
+  assetBalances      CustomerAssetBalance[]
 }
 
 model Wallet {
@@ -88,6 +90,9 @@ model Asset {
   @@unique([chainId, symbol])
   @@unique([chainId, contractAddress])
   @@index([assetType, status])
+  ledgerAccounts     LedgerAccount[]
+  ledgerJournals     LedgerJournal[]
+  customerBalances   CustomerAssetBalance[]
 }
 
 model TransactionIntent {
@@ -120,6 +125,7 @@ model TransactionIntent {
   @@index([destinationWalletId])
   @@index([chainId, intentType])
   @@index([status, policyDecision])
+  ledgerJournal          LedgerJournal?
 }
 
 model BlockchainTransaction {
@@ -328,4 +334,80 @@ enum WithdrawalStatus {
   pending
   completed
   failed
+}
+
+model LedgerAccount {
+  id                String            @id @default(cuid())
+  ledgerKey         String            @unique
+  accountType       LedgerAccountType
+  chainId           Int
+  assetId           String
+  asset             Asset             @relation(fields: [assetId], references: [id])
+  customerAccountId String?
+  customerAccount   CustomerAccount?  @relation(fields: [customerAccountId], references: [id])
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  ledgerPostings    LedgerPosting[]
+
+  @@index([accountType, chainId, assetId])
+  @@index([customerAccountId, assetId])
+}
+
+model LedgerJournal {
+  id                  String            @id @default(cuid())
+  transactionIntentId String            @unique
+  transactionIntent   TransactionIntent @relation(fields: [transactionIntentId], references: [id])
+  journalType         LedgerJournalType
+  chainId             Int
+  assetId             String
+  asset               Asset             @relation(fields: [assetId], references: [id])
+  postedAt            DateTime          @default(now())
+  createdAt           DateTime          @default(now())
+  ledgerPostings      LedgerPosting[]
+
+  @@index([journalType, chainId])
+  @@index([assetId])
+}
+
+model LedgerPosting {
+  id              String                 @id @default(cuid())
+  ledgerJournalId String
+  ledgerJournal   LedgerJournal          @relation(fields: [ledgerJournalId], references: [id])
+  ledgerAccountId String
+  ledgerAccount   LedgerAccount          @relation(fields: [ledgerAccountId], references: [id])
+  direction       LedgerPostingDirection
+  amount          Decimal                @db.Decimal(36, 18)
+  createdAt       DateTime               @default(now())
+
+  @@index([ledgerJournalId])
+  @@index([ledgerAccountId, direction])
+}
+
+model CustomerAssetBalance {
+  id                String          @id @default(cuid())
+  customerAccountId String
+  customerAccount   CustomerAccount @relation(fields: [customerAccountId], references: [id])
+  assetId           String
+  asset             Asset           @relation(fields: [assetId], references: [id])
+  availableBalance  Decimal         @default(0) @db.Decimal(36, 18)
+  pendingBalance    Decimal         @default(0) @db.Decimal(36, 18)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([customerAccountId, assetId])
+  @@index([assetId])
+}
+
+enum LedgerAccountType {
+  asset_inbound_clearing
+  customer_asset_liability
+}
+
+enum LedgerJournalType {
+  deposit_settlement
+}
+
+enum LedgerPostingDirection {
+  debit
+  credit
 }
