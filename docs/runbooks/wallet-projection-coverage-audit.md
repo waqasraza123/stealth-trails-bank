@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This runbook measures how many legacy user profiles still depend on legacy `User.ethereumAddress` instead of the new `Wallet` projection for the configured product chain.
+This runbook measures the exact wallet migration repair surface for legacy user profiles.
 
 The audit is read-only.
 
@@ -11,7 +11,7 @@ The audit is read-only.
 - `Customer`, `CustomerAccount`, and `Wallet` exist in the live Prisma schema
 - database runtime variables are configured
 - `PRODUCT_CHAIN_ID` is set when a non-default product chain should be audited
-- the API package already includes the wallet backfill and wallet-first read migration work
+- the API package already includes the wallet repair and manual-review tooling
 
 ## Script
 
@@ -23,71 +23,109 @@ From `apps/api`:
 
 ### Summary only
 
-    pnpm run audit:wallet-projection-coverage --summary-only
+    pnpm run audit:wallet-projection-coverage -- --summary-only
 
 ### Actionable rows only
 
-    pnpm run audit:wallet-projection-coverage --only-actionable
+    pnpm run audit:wallet-projection-coverage -- --only-actionable
 
 ### One user by email
 
-    pnpm run audit:wallet-projection-coverage --email=user@example.com
+    pnpm run audit:wallet-projection-coverage -- --email=user@example.com
 
 ### Limited batch
 
-    pnpm run audit:wallet-projection-coverage --limit=100
+    pnpm run audit:wallet-projection-coverage -- --limit=100
 
 ### Limited actionable batch summary
 
-    pnpm run audit:wallet-projection-coverage --limit=100 --only-actionable --summary-only
+    pnpm run audit:wallet-projection-coverage -- --limit=100 --only-actionable --summary-only
 
 ## Output shape
 
 The script prints JSON with:
+
 - `summary`
 - `details`
 
+Each detail row now includes:
+
+- `status`
+- `addressSource`
+- `repairCommand`
+- `manualReviewCase`
+- `legacyEthereumAddress`
+- `walletAddresses`
+- `customerId`
+- `customerAccountId`
+- `linkedCustomerAccountId`
+- `reason`
+
 ## Status meanings
 
+### Healthy
+
 - `wallet_projected`
-  - profile is ready to resolve from the new `Wallet` projection
+  - wallet projection already exists for the configured product chain
 
-- `wallet_legacy_mismatch`
-  - both values exist but `Wallet.address` differs from legacy `User.ethereumAddress`
+### Auto-repairable
 
-- `create_wallet_only`
-  - customer and customer account exist, but the wallet projection is missing
+- `repair_missing_customer_projection`
+  - safe for `repair:missing-customer-projections`
 
-- `create_account_and_wallet`
-  - customer exists, but customer account and wallet projection are missing
+- `repair_missing_customer_account`
+  - safe for `repair:customer-account-wallet-projections`
 
-- `create_customer_account_and_wallet`
-  - no customer projection exists yet, but legacy address exists
+- `repair_wallet_only`
+  - safe for `repair:customer-wallet-projections`
 
-- `missing_address`
-  - there is no usable wallet projection and no usable legacy address
+### Manual review only
 
-- `conflict`
-  - data inconsistency requires manual review
+- `manual_review_missing_wallet_address`
+  - there is no usable legacy wallet address for the current repair path
 
-## Suggested action meanings
+- `manual_review_invalid_wallet_address`
+  - the legacy wallet value exists but is not a valid EVM address
+
+- `manual_review_conflicting_customer_records`
+  - identity conflict exists between email and `supabaseUserId`
+
+- `manual_review_wallet_linked_to_other_account`
+  - the wallet address is already linked to another customer account
+
+- `manual_review_wallet_legacy_mismatch`
+  - wallet projection exists but differs from the legacy wallet address
+
+- `manual_review_multiple_product_chain_wallets`
+  - more than one product-chain wallet exists for the same customer account
+
+## Address source meanings
+
+- `wallet`
+  - current public profile resolution should come from wallet projection
+
+- `legacy`
+  - current public profile resolution still depends on legacy wallet data
 
 - `none`
-- `backfill_wallet`
-- `backfill_account_and_wallet`
-- `backfill_customer_account_and_wallet`
-- `manual_review`
-- `repair_legacy_data`
+  - no usable address is currently available
+
+- `conflict`
+  - the data shape is inconsistent and should not be treated as trustworthy
 
 ## Recommended rollout
 
 1. Run the audit in summary-only mode
-2. Review actionable counts
-3. Run the audit with `--only-actionable`
-4. Run wallet backfill or manual repairs based on the returned statuses
-5. Re-run the audit after backfill
-6. Only reduce legacy fallback after actionable legacy-dependent profiles are understood
+2. Review auto-repairable and manual-review counts separately
+3. Run the bounded repair commands for safe rows
+4. Export the manual-review queue for hard cases
+5. Re-run the audit
+6. Only tighten legacy fallback after the actionable population is shrinking and understood
 
 ## Success condition
 
-The legacy-dependent population should trend toward zero, and only intentional manual-review cases should remain before removing or tightening legacy fallback.
+The audit should converge toward:
+
+- `wallet_projected` rising
+- auto-repairable counts shrinking
+- manual-review counts representing only true exceptions
