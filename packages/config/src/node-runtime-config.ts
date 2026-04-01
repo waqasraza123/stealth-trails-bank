@@ -63,6 +63,10 @@ export type ProductChainRuntimeConfig = {
   readonly productChainId: number;
 };
 
+export type InternalOperatorRuntimeConfig = {
+  readonly internalOperatorApiKey: string;
+};
+
 export function loadDatabaseRuntimeConfig(
   env: RuntimeEnvShape = getNodeRuntimeEnv()
 ): DatabaseRuntimeConfig {
@@ -76,6 +80,7 @@ export function loadJwtRuntimeConfig(
   env: RuntimeEnvShape = getNodeRuntimeEnv()
 ): JwtRuntimeConfig {
   const rawExpiry = readOptionalRuntimeEnv(env, "JWT_EXPIRY_SECONDS") ?? "86400";
+
   return {
     jwtSecret: readRequiredRuntimeEnv(env, "JWT_SECRET"),
     jwtExpirySeconds: parsePositiveInteger(rawExpiry, "JWT_EXPIRY_SECONDS")
@@ -134,6 +139,17 @@ export function loadProductChainRuntimeConfig(
     productChainId: parsePositiveInteger(
       configuredProductChainId,
       "PRODUCT_CHAIN_ID"
+    )
+  };
+}
+
+export function loadInternalOperatorRuntimeConfig(
+  env: RuntimeEnvShape = getNodeRuntimeEnv()
+): InternalOperatorRuntimeConfig {
+  return {
+    internalOperatorApiKey: readRequiredRuntimeEnv(
+      env,
+      "INTERNAL_OPERATOR_API_KEY"
     )
   };
 }

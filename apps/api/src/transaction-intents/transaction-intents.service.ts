@@ -15,7 +15,9 @@ import {
 } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateDepositIntentDto } from "./dto/create-deposit-intent.dto";
+import { DecideDepositIntentDto } from "./dto/decide-deposit-intent.dto";
 import { ListMyTransactionIntentsDto } from "./dto/list-my-transaction-intents.dto";
+import { ListPendingDepositIntentsDto } from "./dto/list-pending-deposit-intents.dto";
 
 type DepositIntentContext = {
   customerId: string;
@@ -28,7 +30,7 @@ type DepositIntentContext = {
   assetDecimals: number;
 };
 
-type PersistedTransactionIntent = Prisma.TransactionIntentGetPayload<{
+type CustomerIntentRecord = Prisma.TransactionIntentGetPayload<{
   include: {
     asset: {
       select: {
@@ -43,6 +45,41 @@ type PersistedTransactionIntent = Prisma.TransactionIntentGetPayload<{
       select: {
         id: true;
         address: true;
+      };
+    };
+  };
+}>;
+
+type InternalReviewIntentRecord = Prisma.TransactionIntentGetPayload<{
+  include: {
+    asset: {
+      select: {
+        id: true;
+        symbol: true;
+        displayName: true;
+        decimals: true;
+        chainId: true;
+      };
+    };
+    destinationWallet: {
+      select: {
+        id: true;
+        address: true;
+      };
+    };
+    customerAccount: {
+      select: {
+        id: true;
+        customerId: true;
+        customer: {
+          select: {
+            id: true;
+            supabaseUserId: true;
+            email: true;
+            firstName: true;
+            lastName: true;
+          };
+        };
       };
     };
   };
@@ -74,6 +111,17 @@ type TransactionIntentProjection = {
   updatedAt: string;
 };
 
+type DepositIntentReviewProjection = TransactionIntentProjection & {
+  customer: {
+    customerId: string;
+    customerAccountId: string;
+    supabaseUserId: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+  };
+};
+
 type CreateDepositIntentResult = {
   intent: TransactionIntentProjection;
   idempotencyReused: boolean;
@@ -82,6 +130,16 @@ type CreateDepositIntentResult = {
 type ListMyTransactionIntentsResult = {
   intents: TransactionIntentProjection[];
   limit: number;
+};
+
+type ListPendingDepositIntentsResult = {
+  intents: DepositIntentReviewProjection[];
+  limit: number;
+};
+
+type DecideDepositIntentResult = {
+  intent: DepositIntentReviewProjection;
+  decision: "approved" | "denied";
 };
 
 @Injectable()
@@ -96,14 +154,22 @@ export class TransactionIntentsService {
     const normalizedAssetSymbol = assetSymbol.trim().toUpperCase();
 
     if (!normalizedAssetSymbol) {
-      throw new NotFoundException("Asset symbol is required.");
+      throw new BadRequestException("Asset symbol is required.");
     }
 
     return normalizedAssetSymbol;
   }
 
   private parseRequestedAmount(amount: string): Prisma.Decimal {
-    const requestedAmount = new Prisma.Decimal(amount);
+    let requestedAmount: Prisma.Decimal;
+
+    try {
+      requestedAmount = new Prisma.Decimal(amount);
+    } catch {
+      throw new BadRequestException(
+        "Requested amount must be a valid decimal string."
+      );
+    }
 
     if (requestedAmount.lte(0)) {
       throw new BadRequestException(
@@ -115,7 +181,7 @@ export class TransactionIntentsService {
   }
 
   private mapIntentProjection(
-    intent: PersistedTransactionIntent
+    intent: CustomerIntentRecord
   ): TransactionIntentProjection {
     return {
       id: intent.id,
@@ -141,6 +207,22 @@ export class TransactionIntentsService {
       failureReason: intent.failureReason,
       createdAt: intent.createdAt.toISOString(),
       updatedAt: intent.updatedAt.toISOString()
+    };
+  }
+
+  private mapIntentReviewProjection(
+    intent: InternalReviewIntentRecord
+  ): DepositIntentReviewProjection {
+    return {
+      ...this.mapIntentProjection(intent),
+      customer: {
+        customerId: intent.customerAccount.customer.id,
+        customerAccountId: intent.customerAccount.id,
+        supabaseUserId: intent.customerAccount.customer.supabaseUserId,
+        email: intent.customerAccount.customer.email,
+        firstName: intent.customerAccount.customer.firstName ?? "",
+        lastName: intent.customerAccount.customer.lastName ?? ""
+      }
     };
   }
 
@@ -252,7 +334,7 @@ export class TransactionIntentsService {
 
   private async findIntentByIdempotencyKey(
     idempotencyKey: string
-  ): Promise<PersistedTransactionIntent | null> {
+  ): Promise<CustomerIntentRecord | null> {
     return this.prismaService.transactionIntent.findFirst({
       where: {
         idempotencyKey
@@ -277,8 +359,52 @@ export class TransactionIntentsService {
     });
   }
 
+  private async findDepositIntentForReview(
+    intentId: string
+  ): Promise<InternalReviewIntentRecord | null> {
+    return this.prismaService.transactionIntent.findFirst({
+      where: {
+        id: intentId,
+        intentType: TransactionIntentType.deposit,
+        chainId: this.productChainId
+      },
+      include: {
+        asset: {
+          select: {
+            id: true,
+            symbol: true,
+            displayName: true,
+            decimals: true,
+            chainId: true
+          }
+        },
+        destinationWallet: {
+          select: {
+            id: true,
+            address: true
+          }
+        },
+        customerAccount: {
+          select: {
+            id: true,
+            customerId: true,
+            customer: {
+              select: {
+                id: true,
+                supabaseUserId: true,
+                email: true,
+                firstName: true,
+                lastName: true
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
   private assertReusableDepositIntent(
-    existingIntent: PersistedTransactionIntent,
+    existingIntent: CustomerIntentRecord,
     context: DepositIntentContext,
     requestedAmount: Prisma.Decimal
   ): void {
@@ -459,6 +585,209 @@ export class TransactionIntentsService {
     return {
       intents: intents.map((intent) => this.mapIntentProjection(intent)),
       limit
+    };
+  }
+
+  async listPendingDepositIntents(
+    query: ListPendingDepositIntentsDto
+  ): Promise<ListPendingDepositIntentsResult> {
+    const limit = query.limit ?? 20;
+
+    const intents = await this.prismaService.transactionIntent.findMany({
+      where: {
+        intentType: TransactionIntentType.deposit,
+        chainId: this.productChainId,
+        status: TransactionIntentStatus.requested,
+        policyDecision: PolicyDecision.pending
+      },
+      orderBy: {
+        createdAt: "asc"
+      },
+      take: limit,
+      include: {
+        asset: {
+          select: {
+            id: true,
+            symbol: true,
+            displayName: true,
+            decimals: true,
+            chainId: true
+          }
+        },
+        destinationWallet: {
+          select: {
+            id: true,
+            address: true
+          }
+        },
+        customerAccount: {
+          select: {
+            id: true,
+            customerId: true,
+            customer: {
+              select: {
+                id: true,
+                supabaseUserId: true,
+                email: true,
+                firstName: true,
+                lastName: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    return {
+      intents: intents.map((intent) => this.mapIntentReviewProjection(intent)),
+      limit
+    };
+  }
+
+  async decideDepositIntent(
+    intentId: string,
+    operatorId: string,
+    dto: DecideDepositIntentDto
+  ): Promise<DecideDepositIntentResult> {
+    const denialReason = dto.denialReason?.trim() ?? "";
+    const note = dto.note?.trim() ?? null;
+
+    if (dto.decision === "denied" && !denialReason) {
+      throw new BadRequestException(
+        "Denial reason is required for denied deposit requests."
+      );
+    }
+
+    const existingIntent = await this.findDepositIntentForReview(intentId);
+
+    if (!existingIntent) {
+      throw new NotFoundException("Deposit transaction intent not found.");
+    }
+
+    if (
+      existingIntent.status !== TransactionIntentStatus.requested ||
+      existingIntent.policyDecision !== PolicyDecision.pending
+    ) {
+      throw new ConflictException(
+        "Deposit transaction intent is not pending operator decision."
+      );
+    }
+
+    const updatedIntent = await this.prismaService.$transaction(
+      async (transaction) => {
+        const newStatus =
+          dto.decision === "approved"
+            ? TransactionIntentStatus.approved
+            : TransactionIntentStatus.failed;
+        const newPolicyDecision =
+          dto.decision === "approved"
+            ? PolicyDecision.approved
+            : PolicyDecision.denied;
+
+        const updated = await transaction.transactionIntent.updateMany({
+          where: {
+            id: existingIntent.id,
+            intentType: TransactionIntentType.deposit,
+            chainId: this.productChainId,
+            status: TransactionIntentStatus.requested,
+            policyDecision: PolicyDecision.pending
+          },
+          data: {
+            status: newStatus,
+            policyDecision: newPolicyDecision,
+            failureCode: dto.decision === "denied" ? "policy_denied" : null,
+            failureReason: dto.decision === "denied" ? denialReason : null
+          }
+        });
+
+        if (updated.count !== 1) {
+          throw new ConflictException(
+            "Deposit transaction intent is not pending operator decision."
+          );
+        }
+
+        const intent = await transaction.transactionIntent.findFirst({
+          where: {
+            id: existingIntent.id
+          },
+          include: {
+            asset: {
+              select: {
+                id: true,
+                symbol: true,
+                displayName: true,
+                decimals: true,
+                chainId: true
+              }
+            },
+            destinationWallet: {
+              select: {
+                id: true,
+                address: true
+              }
+            },
+            customerAccount: {
+              select: {
+                id: true,
+                customerId: true,
+                customer: {
+                  select: {
+                    id: true,
+                    supabaseUserId: true,
+                    email: true,
+                    firstName: true,
+                    lastName: true
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        if (!intent) {
+          throw new NotFoundException("Deposit transaction intent not found.");
+        }
+
+        const metadata: Prisma.InputJsonObject = {
+          customerAccountId: existingIntent.customerAccount.id,
+          assetId: existingIntent.asset.id,
+          assetSymbol: existingIntent.asset.symbol,
+          assetDisplayName: existingIntent.asset.displayName,
+          requestedAmount: existingIntent.requestedAmount.toString(),
+          destinationWalletId: existingIntent.destinationWalletId,
+          destinationWalletAddress:
+            existingIntent.destinationWallet?.address ?? null,
+          chainId: existingIntent.chainId,
+          previousStatus: existingIntent.status,
+          newStatus,
+          previousPolicyDecision: existingIntent.policyDecision,
+          newPolicyDecision,
+          note,
+          denialReason: dto.decision === "denied" ? denialReason : null
+        };
+
+        await transaction.auditEvent.create({
+          data: {
+            customerId: existingIntent.customerAccount.customer.id,
+            actorType: "operator",
+            actorId: operatorId,
+            action:
+              dto.decision === "approved"
+                ? "transaction_intent.deposit.approved"
+                : "transaction_intent.deposit.denied",
+            targetType: "TransactionIntent",
+            targetId: existingIntent.id,
+            metadata
+          }
+        });
+
+        return intent;
+      }
+    );
+
+    return {
+      intent: this.mapIntentReviewProjection(updatedIntent),
+      decision: dto.decision
     };
   }
 }

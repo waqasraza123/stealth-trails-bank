@@ -3,15 +3,14 @@ export {
   loadBlockchainContractWriteRuntimeConfig,
   loadBlockchainWalletRuntimeConfig,
   loadDatabaseRuntimeConfig,
+  loadInternalOperatorRuntimeConfig,
   loadJwtRuntimeConfig,
-  loadProductChainRuntimeConfig
-} from "./src/node-runtime-config";
-
-export type {
-  BlockchainContractReadRuntimeConfig,
-  BlockchainContractWriteRuntimeConfig,
-  BlockchainWalletRuntimeConfig,
-  DatabaseRuntimeConfig,
-  JwtRuntimeConfig,
-  ProductChainRuntimeConfig
+  loadProductChainRuntimeConfig,
+  type BlockchainContractReadRuntimeConfig,
+  type BlockchainContractWriteRuntimeConfig,
+  type BlockchainWalletRuntimeConfig,
+  type DatabaseRuntimeConfig,
+  type InternalOperatorRuntimeConfig,
+  type JwtRuntimeConfig,
+  type ProductChainRuntimeConfig
 } from "./src/node-runtime-config";
