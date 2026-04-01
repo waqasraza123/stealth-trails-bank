@@ -64,6 +64,12 @@ pnpm run audit:wallet-projection-repair-events -- --surface=missing_customer_acc
 pnpm run audit:wallet-projection-repair-events -- --surface=missing_customer_projection
 ~~~
 
+### Filter to one batch run
+
+~~~bash
+pnpm run audit:wallet-projection-repair-events -- --batch-run-id=YOUR_BATCH_RUN_ID
+~~~
+
 ## Output shape
 
 The script prints JSON with:
@@ -80,6 +86,7 @@ The script prints JSON with:
 - limit
 - commandFilter
 - surfaceFilter
+- batchRunIdFilter
 - scanned
 - byCommand
 - bySurface
@@ -91,6 +98,7 @@ The script prints JSON with:
 
 Each recent event includes normalized values for:
 
+- batchRunId
 - repairCommand
 - repairSurface
 - repairMethod
@@ -111,15 +119,16 @@ Each recent event includes normalized values for:
 - date grouping is in UTC
 - the script only reads AuditEvent rows produced by wallet projection repair commands
 - if no rows match the current window or filters, the summary still returns successfully with zero counts
+- --batch-run-id is the safest way to isolate one applied safe batch run
 
 ## Recommended operator usage
 
 1. run a repair command or safe batch in apply mode
-2. run this summary script for the last 1 to 7 days
+2. run this summary script for the last 1 to 7 days, or by exact batch run id
 3. review totals by command and surface
 4. inspect recent normalized events when needed
 5. keep SQL for deep investigation only, not routine review
 
 ## Success condition
 
-Operators can review recent wallet projection repair history from one built-in JSON report, without hand-written SQL.
+Operators can review recent wallet projection repair history from one built-in JSON report, or isolate exactly one batch by batch run id, without hand-written SQL.

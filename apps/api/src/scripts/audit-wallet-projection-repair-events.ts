@@ -19,12 +19,14 @@ type ScriptOptions = {
   limit: number;
   command?: RepairCommand;
   surface?: RepairSurface;
+  batchRunId?: string;
   summaryOnly: boolean;
 };
 
 type RecentRepairEvent = {
   auditEventId: string;
   createdAt: string;
+  batchRunId: string | null;
   repairCommand: RepairCommand | null;
   repairSurface: RepairSurface | null;
   repairMethod: RepairMethod | null;
@@ -51,6 +53,7 @@ type RepairAuditSummary = {
   limit: number;
   commandFilter: RepairCommand | null;
   surfaceFilter: RepairSurface | null;
+  batchRunIdFilter: string | null;
   scanned: number;
   byCommand: Record<string, number>;
   bySurface: Record<string, number>;
@@ -76,6 +79,7 @@ function parseOptions(argv: string[]): ScriptOptions {
   let limit = 200;
   let command: RepairCommand | undefined;
   let surface: RepairSurface | undefined;
+  let batchRunId: string | undefined;
   let summaryOnly = false;
 
   for (const argument of argv) {
@@ -138,6 +142,17 @@ function parseOptions(argv: string[]): ScriptOptions {
       continue;
     }
 
+    if (argument.startsWith("--batch-run-id=")) {
+      const batchRunIdValue = argument.slice("--batch-run-id=".length).trim();
+
+      if (!batchRunIdValue) {
+        throw new Error("The --batch-run-id option requires a non-empty value.");
+      }
+
+      batchRunId = batchRunIdValue;
+      continue;
+    }
+
     throw new Error(`Unknown argument: ${argument}`);
   }
 
@@ -146,6 +161,7 @@ function parseOptions(argv: string[]): ScriptOptions {
     limit,
     command,
     surface,
+    batchRunId,
     summaryOnly
   };
 }
@@ -252,6 +268,7 @@ function mapRecentRepairEvent(event: {
   return {
     auditEventId: event.id,
     createdAt: event.createdAt.toISOString(),
+    batchRunId: readString(metadata, "batchRunId"),
     repairCommand,
     repairSurface,
     repairMethod: normalizeRepairMethod(readString(metadata, "repairMethod")),
@@ -284,6 +301,7 @@ function createSummary(
     limit: options.limit,
     commandFilter: options.command ?? null,
     surfaceFilter: options.surface ?? null,
+    batchRunIdFilter: options.batchRunId ?? null,
     scanned: 0,
     byCommand: {},
     bySurface: {},
@@ -323,6 +341,13 @@ async function main(): Promise<void> {
         lte: windowEnd
       }
     };
+
+    if (options.batchRunId) {
+      where.metadata = {
+        path: ["batchRunId"],
+        equals: options.batchRunId
+      };
+    }
 
     const events = await prisma.auditEvent.findMany({
       where,

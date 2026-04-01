@@ -38,6 +38,7 @@ Expected action values are:
 
 Each repair event stores metadata with:
 
+- batchRunId
 - repairCommand
 - repairSurface
 - repairMethod
@@ -66,8 +67,9 @@ psql "$DATABASE_URL" -c "select \"createdAt\", \"actorId\", action, \"targetId\"
 1. run a safe repair command or safe batch in apply mode
 2. inspect command JSON output
 3. inspect AuditEvent rows for durable confirmation
-4. keep exported JSON artifacts for operator handoff
-5. rely on database audit rows as the long-term trail
+4. use batchRunId to correlate events to one safe batch run
+5. keep exported JSON artifacts for operator handoff
+6. rely on database audit rows as the long-term trail
 
 ## Success condition
 
@@ -75,3 +77,4 @@ A production repair run should now leave both:
 
 - JSON command artifacts for operator review
 - durable AuditEvent records in the database
+- optional batch-linked event correlation through batchRunId

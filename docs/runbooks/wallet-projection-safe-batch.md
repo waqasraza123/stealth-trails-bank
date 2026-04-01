@@ -12,7 +12,8 @@ The batch runner chains these steps:
 4. wallet-only repair
 5. post-repair audit summary
 6. derived delta report
-7. optional manual-review export
+7. optional repair-event audit summary for this batch run
+8. optional manual-review export
 
 The runner stops on the first failing step.
 
@@ -20,7 +21,7 @@ Dry-run mode is the default.
 
 ## Script
 
-From `apps/api`:
+From apps/api:
 
 ~~~bash
 pnpm run repair:wallet-projection-safe-batch
@@ -44,6 +45,18 @@ pnpm run repair:wallet-projection-safe-batch -- --limit=100
 
 ~~~bash
 pnpm run repair:wallet-projection-safe-batch -- --limit=100 --apply
+~~~
+
+### Apply and include repair-event summary for this batch
+
+~~~bash
+pnpm run repair:wallet-projection-safe-batch -- --limit=100 --apply --include-repair-event-summary
+~~~
+
+### Apply and tune repair-event summary size
+
+~~~bash
+pnpm run repair:wallet-projection-safe-batch -- --limit=100 --apply --include-repair-event-summary --repair-event-limit=50
 ~~~
 
 ### Dry-run one user
@@ -80,57 +93,57 @@ pnpm run repair:wallet-projection-safe-batch -- --limit=100 --report-output=.art
 
 The script prints one JSON object with:
 
-* `mode`
-* `productChainId`
-* `filters`
-* `steps`
-* `delta`
-* `manualReviewExport`
-* `reportOutputPath`
+- mode
+- productChainId
+- filters
+- steps
+- delta
+- repairEventAudit
+- manualReviewExport
+- reportOutputPath
 
-Each step includes:
+### Repair event audit section
 
-* `command`
-* `summary`
+When enabled, repairEventAudit includes:
 
-The delta section includes:
+- batchRunId
+- limit
+- command
+- summary
+- recentEvents
 
-* `byMetric`
-* `highlights`
+This section only includes repair audit events whose metadata batchRunId matches the current batch run.
 
 ## Delta semantics
 
 For each metric in the audit summary:
 
-* `before`
-* `after`
-* `delta`
+- before
+- after
+- delta
 
 Examples:
 
-* `walletProjected`
+- walletProjected
+  - positive delta is good
 
-  * positive delta is good
+- autoRepairableProfiles
+  - negative delta is good
 
-* `autoRepairableProfiles`
+- manualReviewProfiles
+  - negative delta is good
 
-  * negative delta is good
-
-* `manualReviewProfiles`
-
-  * negative delta is good
-
-* `legacySourceProfiles`
-
-  * negative delta is good
+- legacySourceProfiles
+  - negative delta is good
 
 ## Safety notes
 
-* dry-run is the default
-* `--apply` must be explicit
-* the runner only chains the already-bounded safe repair commands
-* manual-review-only rows are not auto-repaired by this command
-* the batch stops immediately if any sub-step fails
+- dry-run is the default
+- --apply must be explicit
+- --include-repair-event-summary requires --apply
+- the runner only chains the already-bounded safe repair commands
+- manual-review-only rows are not auto-repaired by this command
+- the batch stops immediately if any sub-step fails
 
 ## Recommended rollout
 
@@ -138,14 +151,16 @@ Examples:
 2. Review the pre vs post delta
 3. Apply a small limited batch
 4. Re-run with report output enabled
-5. Re-run with manual-review export enabled if needed
-6. Hand remaining hard cases to operators
+5. Re-run with repair-event summary enabled
+6. Re-run with manual-review export enabled if needed
+7. Hand remaining hard cases to operators
 
 ## Success condition
 
 A successful batch should show:
 
-* `walletProjected` increasing
-* `autoRepairableProfiles` decreasing
-* `legacySourceProfiles` decreasing
-* manual-review export containing only the true hard cases
+- walletProjected increasing
+- autoRepairableProfiles decreasing
+- legacySourceProfiles decreasing
+- batch-linked repair-event summary rows matching the applied repair actions
+- manual-review export containing only the true hard cases

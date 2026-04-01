@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
@@ -13,6 +14,8 @@ type ScriptOptions = {
   exportManualReview: boolean;
   manualReviewOutputPath?: string;
   reportOutputPath?: string;
+  includeRepairEventSummary: boolean;
+  repairEventLimit: number;
 };
 
 type JsonObject = Record<string, unknown>;
@@ -47,6 +50,15 @@ type BatchDeltaReport = {
   };
 };
 
+type RepairEventAuditResult = {
+  enabled: boolean;
+  batchRunId: string | null;
+  limit: number | null;
+  command: string | null;
+  summary: JsonObject | null;
+  recentEvents: unknown[];
+};
+
 type BatchResult = {
   mode: "dry-run" | "apply";
   productChainId: number;
@@ -56,6 +68,7 @@ type BatchResult = {
   };
   steps: Partial<Record<BatchStepKey, BatchStepResult>>;
   delta: BatchDeltaReport;
+  repairEventAudit: RepairEventAuditResult;
   manualReviewExport: {
     enabled: boolean;
     outputPath: string | null;
@@ -73,6 +86,8 @@ function parseOptions(argv: string[]): ScriptOptions {
   let exportManualReview = false;
   let manualReviewOutputPath: string | undefined;
   let reportOutputPath: string | undefined;
+  let includeRepairEventSummary = false;
+  let repairEventLimit = 200;
 
   for (const argument of argv) {
     if (argument === "--") {
@@ -86,6 +101,11 @@ function parseOptions(argv: string[]): ScriptOptions {
 
     if (argument === "--export-manual-review") {
       exportManualReview = true;
+      continue;
+    }
+
+    if (argument === "--include-repair-event-summary") {
+      includeRepairEventSummary = true;
       continue;
     }
 
@@ -141,7 +161,27 @@ function parseOptions(argv: string[]): ScriptOptions {
       continue;
     }
 
+    if (argument.startsWith("--repair-event-limit=")) {
+      const rawLimit = argument.slice("--repair-event-limit=".length).trim();
+      const parsedLimit = Number(rawLimit);
+
+      if (!Number.isInteger(parsedLimit) || parsedLimit <= 0) {
+        throw new Error(
+          "The --repair-event-limit option must be a positive integer."
+        );
+      }
+
+      repairEventLimit = parsedLimit;
+      continue;
+    }
+
     throw new Error(`Unknown argument: ${argument}`);
+  }
+
+  if (includeRepairEventSummary && !applyChanges) {
+    throw new Error(
+      "The --include-repair-event-summary option requires --apply because dry-run does not write audit events."
+    );
   }
 
   return {
@@ -150,7 +190,9 @@ function parseOptions(argv: string[]): ScriptOptions {
     limit,
     exportManualReview,
     manualReviewOutputPath,
-    reportOutputPath
+    reportOutputPath,
+    includeRepairEventSummary,
+    repairEventLimit
   };
 }
 
@@ -202,6 +244,16 @@ function extractSummary(payload: JsonObject): JsonObject {
   }
 
   return summary as JsonObject;
+}
+
+function extractRecentEvents(payload: JsonObject): unknown[] {
+  const recentEvents = payload["recentEvents"];
+
+  if (!Array.isArray(recentEvents)) {
+    throw new Error("Command JSON output did not contain a recentEvents array.");
+  }
+
+  return recentEvents;
 }
 
 function extractNumericSummary(summary: JsonObject): NumericSummary {
@@ -267,7 +319,8 @@ async function writeOutputFile(
 
 function runJsonScript(
   scriptFileName: string,
-  scriptArgs: string[]
+  scriptArgs: string[],
+  envOverrides?: NodeJS.ProcessEnv
 ): { command: string; payload: JsonObject } {
   const scriptsDir = __dirname;
   const apiRootDir = resolve(scriptsDir, "..", "..");
@@ -278,6 +331,10 @@ function runJsonScript(
   const result = spawnSync(process.execPath, nodeArgs, {
     cwd: apiRootDir,
     encoding: "utf-8",
+    env: {
+      ...process.env,
+      ...envOverrides
+    },
     maxBuffer: 10 * 1024 * 1024
   });
 
@@ -307,7 +364,8 @@ function runJsonScript(
 
 function runRepairStep(
   scriptFileName: string,
-  options: ScriptOptions
+  options: ScriptOptions,
+  batchRunId: string | null
 ): BatchStepResult {
   const args = buildSharedArgs(options);
 
@@ -315,7 +373,14 @@ function runRepairStep(
     args.push("--apply");
   }
 
-  const result = runJsonScript(scriptFileName, args);
+  const envOverrides =
+    batchRunId && options.applyChanges
+      ? {
+          WALLET_PROJECTION_BATCH_RUN_ID: batchRunId
+        }
+      : undefined;
+
+  const result = runJsonScript(scriptFileName, args, envOverrides);
 
   return {
     command: result.command,
@@ -352,6 +417,28 @@ function runManualReviewExportStep(options: ScriptOptions): BatchStepResult {
   };
 }
 
+function runRepairEventAudit(
+  batchRunId: string,
+  repairEventLimit: number
+): {
+  command: string;
+  summary: JsonObject;
+  recentEvents: unknown[];
+} {
+  const args = [
+    "--days=7",
+    `--limit=${repairEventLimit}`,
+    `--batch-run-id=${batchRunId}`
+  ];
+  const result = runJsonScript("audit-wallet-projection-repair-events.ts", args);
+
+  return {
+    command: result.command,
+    summary: extractSummary(result.payload),
+    recentEvents: extractRecentEvents(result.payload)
+  };
+}
+
 async function main(): Promise<void> {
   loadDatabaseRuntimeConfig();
 
@@ -359,6 +446,7 @@ async function main(): Promise<void> {
   const scriptsDir = __dirname;
   const apiRootDir = resolve(scriptsDir, "..", "..");
   const productChainId = loadProductChainRuntimeConfig().productChainId;
+  const batchRunId = options.applyChanges ? randomUUID() : null;
 
   const batchResult: BatchResult = {
     mode: options.applyChanges ? "apply" : "dry-run",
@@ -377,6 +465,14 @@ async function main(): Promise<void> {
         legacySourceProfiles: null
       }
     },
+    repairEventAudit: {
+      enabled: options.includeRepairEventSummary,
+      batchRunId,
+      limit: options.includeRepairEventSummary ? options.repairEventLimit : null,
+      command: null,
+      summary: null,
+      recentEvents: []
+    },
     manualReviewExport: {
       enabled: options.exportManualReview,
       outputPath: options.exportManualReview
@@ -391,21 +487,24 @@ async function main(): Promise<void> {
 
   const repairMissingCustomerProjection = runRepairStep(
     "repair-missing-customer-projections.ts",
-    options
+    options,
+    batchRunId
   );
   batchResult.steps.repairMissingCustomerProjection =
     repairMissingCustomerProjection;
 
   const repairMissingCustomerAccount = runRepairStep(
     "repair-customer-account-wallet-projections.ts",
-    options
+    options,
+    batchRunId
   );
   batchResult.steps.repairMissingCustomerAccount =
     repairMissingCustomerAccount;
 
   const repairWalletOnly = runRepairStep(
     "repair-customer-wallet-projections.ts",
-    options
+    options,
+    batchRunId
   );
   batchResult.steps.repairWalletOnly = repairWalletOnly;
 
@@ -416,6 +515,17 @@ async function main(): Promise<void> {
     preRepairAudit.summary,
     postRepairAudit.summary
   );
+
+  if (options.includeRepairEventSummary && batchRunId) {
+    const repairEventAudit = runRepairEventAudit(
+      batchRunId,
+      options.repairEventLimit
+    );
+
+    batchResult.repairEventAudit.command = repairEventAudit.command;
+    batchResult.repairEventAudit.summary = repairEventAudit.summary;
+    batchResult.repairEventAudit.recentEvents = repairEventAudit.recentEvents;
+  }
 
   if (options.exportManualReview) {
     const manualReviewExport = runManualReviewExportStep(options);
