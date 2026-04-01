@@ -3,8 +3,16 @@ import {
   loadProductChainRuntimeConfig
 } from "@stealth-trails-bank/config/api";
 import { createStealthTrailsPrismaClient } from "@stealth-trails-bank/db";
-import type { Customer } from "@prisma/client";
-import { ethers } from "ethers";
+import {
+  isWalletProjectionActionable,
+  isWalletProjectionAutoRepairable,
+  mapWalletProjectionSurfaceToManualReviewCase,
+  mapWalletProjectionSurfaceToRepairCommand,
+  type LegacyUserRecord,
+  type WalletProjectionAddressSource,
+  type WalletProjectionSurface,
+  resolveWalletProjectionResolution
+} from "./lib/wallet-projection-migration";
 
 type ScriptOptions = {
   email?: string;
@@ -13,53 +21,26 @@ type ScriptOptions = {
   summaryOnly: boolean;
 };
 
-type LegacyUserRecord = {
-  id: number;
-  firstName: string;
-  lastName: string;
-  email: string;
-  supabaseUserId: string;
-  ethereumAddress: string | null;
-};
-
-type CoverageStatus =
-  | "wallet_projected"
-  | "repair_missing_customer_projection"
-  | "repair_missing_customer_account"
-  | "repair_wallet_only"
-  | "manual_review_missing_wallet_address"
-  | "manual_review_invalid_wallet_address"
-  | "manual_review_conflicting_customer_records"
-  | "manual_review_wallet_linked_to_other_account"
-  | "manual_review_wallet_legacy_mismatch"
-  | "manual_review_multiple_product_chain_wallets";
-
-type AddressSource = "wallet" | "legacy" | "none" | "conflict";
-
-type RepairCommand =
-  | "repair:missing-customer-projections"
-  | "repair:customer-account-wallet-projections"
-  | "repair:customer-wallet-projections"
-  | null;
-
-type ManualReviewCase =
-  | "missing_wallet_address"
-  | "invalid_wallet_address"
-  | "conflicting_customer_records"
-  | "wallet_linked_to_other_account"
-  | "wallet_legacy_mismatch"
-  | "multiple_product_chain_wallets"
-  | null;
-
 type CoverageRecord = {
   legacyUserId: number;
   email: string;
   supabaseUserId: string;
   productChainId: number;
-  status: CoverageStatus;
-  addressSource: AddressSource;
-  repairCommand: RepairCommand;
-  manualReviewCase: ManualReviewCase;
+  status: WalletProjectionSurface;
+  addressSource: WalletProjectionAddressSource;
+  repairCommand:
+    | "repair:missing-customer-projections"
+    | "repair:customer-account-wallet-projections"
+    | "repair:customer-wallet-projections"
+    | null;
+  manualReviewCase:
+    | "missing_wallet_address"
+    | "invalid_wallet_address"
+    | "conflicting_customer_records"
+    | "wallet_linked_to_other_account"
+    | "wallet_legacy_mismatch"
+    | "multiple_product_chain_wallets"
+    | null;
   legacyEthereumAddress: string | null;
   walletAddresses: string[];
   customerId: string | null;
@@ -129,7 +110,7 @@ function parseOptions(argv: string[]): ScriptOptions {
       continue;
     }
 
-    throw new Error("Unknown argument: " + argument);
+    throw new Error(`Unknown argument: ${argument}`);
   }
 
   return {
@@ -137,87 +118,6 @@ function parseOptions(argv: string[]): ScriptOptions {
     limit,
     onlyActionable,
     summaryOnly
-  };
-}
-
-function normalizeWalletAddress(address: string | null): {
-  normalizedAddress: string | null;
-  reason?: string;
-} {
-  const rawAddress = address?.trim() ?? "";
-
-  if (!rawAddress) {
-    return {
-      normalizedAddress: null
-    };
-  }
-
-  if (!ethers.utils.isAddress(rawAddress)) {
-    return {
-      normalizedAddress: null,
-      reason: "Legacy ethereumAddress is not a valid EVM address."
-    };
-  }
-
-  return {
-    normalizedAddress: ethers.utils.getAddress(rawAddress).toLowerCase()
-  };
-}
-
-function normalizeProjectedWalletAddress(address: string): string {
-  return address.trim().toLowerCase();
-}
-
-function resolveLegacyAddressSource(address: string | null): AddressSource {
-  return address?.trim() ? "legacy" : "none";
-}
-
-function resolveExistingCustomer(
-  legacyUser: LegacyUserRecord,
-  customerBySupabaseUserId: Customer | null,
-  customerByEmail: Customer | null
-): { customer: Customer | null; reason?: string } {
-  if (
-    customerBySupabaseUserId &&
-    customerByEmail &&
-    customerBySupabaseUserId.id !== customerByEmail.id
-  ) {
-    return {
-      customer: null,
-      reason:
-        "Conflicting customer records found for supabaseUserId and email."
-    };
-  }
-
-  if (customerBySupabaseUserId) {
-    if (customerBySupabaseUserId.email !== legacyUser.email) {
-      return {
-        customer: null,
-        reason: "Existing customer email does not match legacy user email."
-      };
-    }
-
-    return {
-      customer: customerBySupabaseUserId
-    };
-  }
-
-  if (customerByEmail) {
-    if (customerByEmail.supabaseUserId !== legacyUser.supabaseUserId) {
-      return {
-        customer: null,
-        reason:
-          "Existing customer supabaseUserId does not match legacy user supabaseUserId."
-      };
-    }
-
-    return {
-      customer: customerByEmail
-    };
-  }
-
-  return {
-    customer: null
   };
 }
 
@@ -242,18 +142,6 @@ function createSummary(productChainId: number): CoverageSummary {
     noAddressProfiles: 0,
     conflictSourceProfiles: 0
   };
-}
-
-function isActionableStatus(status: CoverageStatus): boolean {
-  return status !== "wallet_projected";
-}
-
-function isAutoRepairableStatus(status: CoverageStatus): boolean {
-  return (
-    status === "repair_missing_customer_projection" ||
-    status === "repair_missing_customer_account" ||
-    status === "repair_wallet_only"
-  );
 }
 
 function accumulateSummary(
@@ -302,13 +190,13 @@ function accumulateSummary(
     summary.manualReviewMultipleProductChainWallets += 1;
   }
 
-  if (isAutoRepairableStatus(record.status)) {
+  if (isWalletProjectionAutoRepairable(record.status)) {
     summary.autoRepairableProfiles += 1;
   }
 
   if (
-    isActionableStatus(record.status) &&
-    !isAutoRepairableStatus(record.status)
+    isWalletProjectionActionable(record.status) &&
+    !isWalletProjectionAutoRepairable(record.status)
   ) {
     summary.manualReviewProfiles += 1;
   }
@@ -335,350 +223,31 @@ async function buildCoverageRecord(
   legacyUser: LegacyUserRecord,
   productChainId: number
 ): Promise<CoverageRecord> {
-  const normalizedLegacyWallet = normalizeWalletAddress(
-    legacyUser.ethereumAddress
-  );
-  const legacyAddressSource = resolveLegacyAddressSource(
-    legacyUser.ethereumAddress
-  );
-
-  const customerBySupabaseUserId = await prisma.customer.findUnique({
-    where: {
-      supabaseUserId: legacyUser.supabaseUserId
-    }
-  });
-
-  const customerByEmail = await prisma.customer.findUnique({
-    where: {
-      email: legacyUser.email
-    }
-  });
-
-  const resolvedCustomer = resolveExistingCustomer(
+  const resolution = await resolveWalletProjectionResolution(
+    prisma,
     legacyUser,
-    customerBySupabaseUserId,
-    customerByEmail
+    productChainId
   );
-
-  if (!resolvedCustomer.customer && resolvedCustomer.reason) {
-    return {
-      legacyUserId: legacyUser.id,
-      email: legacyUser.email,
-      supabaseUserId: legacyUser.supabaseUserId,
-      productChainId,
-      status: "manual_review_conflicting_customer_records",
-      addressSource: "conflict",
-      repairCommand: null,
-      manualReviewCase: "conflicting_customer_records",
-      legacyEthereumAddress: normalizedLegacyWallet.normalizedAddress,
-      walletAddresses: [],
-      customerId: null,
-      customerAccountId: null,
-      linkedCustomerAccountId: null,
-      reason: resolvedCustomer.reason
-    };
-  }
-
-  if (!resolvedCustomer.customer) {
-    if (!normalizedLegacyWallet.normalizedAddress) {
-      return {
-        legacyUserId: legacyUser.id,
-        email: legacyUser.email,
-        supabaseUserId: legacyUser.supabaseUserId,
-        productChainId,
-        status: normalizedLegacyWallet.reason
-          ? "manual_review_invalid_wallet_address"
-          : "manual_review_missing_wallet_address",
-        addressSource: legacyAddressSource,
-        repairCommand: null,
-        manualReviewCase: normalizedLegacyWallet.reason
-          ? "invalid_wallet_address"
-          : "missing_wallet_address",
-        legacyEthereumAddress: normalizedLegacyWallet.normalizedAddress,
-        walletAddresses: [],
-        customerId: null,
-        customerAccountId: null,
-        linkedCustomerAccountId: null,
-        reason:
-          normalizedLegacyWallet.reason ??
-          "Customer projection does not exist and legacy ethereumAddress is blank."
-      };
-    }
-
-    const existingWallet = await prisma.wallet.findUnique({
-      where: {
-        chainId_address: {
-          chainId: productChainId,
-          address: normalizedLegacyWallet.normalizedAddress
-        }
-      }
-    });
-
-    if (existingWallet?.customerAccountId) {
-      return {
-        legacyUserId: legacyUser.id,
-        email: legacyUser.email,
-        supabaseUserId: legacyUser.supabaseUserId,
-        productChainId,
-        status: "manual_review_wallet_linked_to_other_account",
-        addressSource: "legacy",
-        repairCommand: null,
-        manualReviewCase: "wallet_linked_to_other_account",
-        legacyEthereumAddress: normalizedLegacyWallet.normalizedAddress,
-        walletAddresses: [normalizedLegacyWallet.normalizedAddress],
-        customerId: null,
-        customerAccountId: null,
-        linkedCustomerAccountId: existingWallet.customerAccountId,
-        reason: "Wallet address is already linked to another customer account."
-      };
-    }
-
-    return {
-      legacyUserId: legacyUser.id,
-      email: legacyUser.email,
-      supabaseUserId: legacyUser.supabaseUserId,
-      productChainId,
-      status: "repair_missing_customer_projection",
-      addressSource: "legacy",
-      repairCommand: "repair:missing-customer-projections",
-      manualReviewCase: null,
-      legacyEthereumAddress: normalizedLegacyWallet.normalizedAddress,
-      walletAddresses: [],
-      customerId: null,
-      customerAccountId: null,
-      linkedCustomerAccountId: null,
-      reason: "Customer projection is missing and the row is safe to auto-repair."
-    };
-  }
-
-  const customerAccount = await prisma.customerAccount.findUnique({
-    where: {
-      customerId: resolvedCustomer.customer.id
-    },
-    include: {
-      wallets: {
-        where: {
-          chainId: productChainId
-        },
-        orderBy: {
-          createdAt: "asc"
-        }
-      }
-    }
-  });
-
-  if (!customerAccount) {
-    if (!normalizedLegacyWallet.normalizedAddress) {
-      return {
-        legacyUserId: legacyUser.id,
-        email: legacyUser.email,
-        supabaseUserId: legacyUser.supabaseUserId,
-        productChainId,
-        status: normalizedLegacyWallet.reason
-          ? "manual_review_invalid_wallet_address"
-          : "manual_review_missing_wallet_address",
-        addressSource: legacyAddressSource,
-        repairCommand: null,
-        manualReviewCase: normalizedLegacyWallet.reason
-          ? "invalid_wallet_address"
-          : "missing_wallet_address",
-        legacyEthereumAddress: normalizedLegacyWallet.normalizedAddress,
-        walletAddresses: [],
-        customerId: resolvedCustomer.customer.id,
-        customerAccountId: null,
-        linkedCustomerAccountId: null,
-        reason:
-          normalizedLegacyWallet.reason ??
-          "Customer exists but legacy ethereumAddress is missing, so account-and-wallet repair cannot proceed."
-      };
-    }
-
-    const existingWallet = await prisma.wallet.findUnique({
-      where: {
-        chainId_address: {
-          chainId: productChainId,
-          address: normalizedLegacyWallet.normalizedAddress
-        }
-      }
-    });
-
-    if (existingWallet?.customerAccountId) {
-      return {
-        legacyUserId: legacyUser.id,
-        email: legacyUser.email,
-        supabaseUserId: legacyUser.supabaseUserId,
-        productChainId,
-        status: "manual_review_wallet_linked_to_other_account",
-        addressSource: "legacy",
-        repairCommand: null,
-        manualReviewCase: "wallet_linked_to_other_account",
-        legacyEthereumAddress: normalizedLegacyWallet.normalizedAddress,
-        walletAddresses: [normalizedLegacyWallet.normalizedAddress],
-        customerId: resolvedCustomer.customer.id,
-        customerAccountId: null,
-        linkedCustomerAccountId: existingWallet.customerAccountId,
-        reason: "Wallet address is already linked to another customer account."
-      };
-    }
-
-    return {
-      legacyUserId: legacyUser.id,
-      email: legacyUser.email,
-      supabaseUserId: legacyUser.supabaseUserId,
-      productChainId,
-      status: "repair_missing_customer_account",
-      addressSource: "legacy",
-      repairCommand: "repair:customer-account-wallet-projections",
-      manualReviewCase: null,
-      legacyEthereumAddress: normalizedLegacyWallet.normalizedAddress,
-      walletAddresses: [],
-      customerId: resolvedCustomer.customer.id,
-      customerAccountId: null,
-      linkedCustomerAccountId: null,
-      reason:
-        "Customer account projection is missing and the row is safe to auto-repair."
-    };
-  }
-
-  if (customerAccount.wallets.length > 1) {
-    return {
-      legacyUserId: legacyUser.id,
-      email: legacyUser.email,
-      supabaseUserId: legacyUser.supabaseUserId,
-      productChainId,
-      status: "manual_review_multiple_product_chain_wallets",
-      addressSource: "conflict",
-      repairCommand: null,
-      manualReviewCase: "multiple_product_chain_wallets",
-      legacyEthereumAddress: normalizedLegacyWallet.normalizedAddress,
-      walletAddresses: customerAccount.wallets
-        .map((wallet) => normalizeProjectedWalletAddress(wallet.address))
-        .filter((walletAddress): walletAddress is string => Boolean(walletAddress)),
-      customerId: resolvedCustomer.customer.id,
-      customerAccountId: customerAccount.id,
-      linkedCustomerAccountId: null,
-      reason: "Multiple product-chain wallets exist for this customer account."
-    };
-  }
-
-  const wallet = customerAccount.wallets[0] ?? null;
-
-  if (!wallet) {
-    if (!normalizedLegacyWallet.normalizedAddress) {
-      return {
-        legacyUserId: legacyUser.id,
-        email: legacyUser.email,
-        supabaseUserId: legacyUser.supabaseUserId,
-        productChainId,
-        status: normalizedLegacyWallet.reason
-          ? "manual_review_invalid_wallet_address"
-          : "manual_review_missing_wallet_address",
-        addressSource: legacyAddressSource,
-        repairCommand: null,
-        manualReviewCase: normalizedLegacyWallet.reason
-          ? "invalid_wallet_address"
-          : "missing_wallet_address",
-        legacyEthereumAddress: normalizedLegacyWallet.normalizedAddress,
-        walletAddresses: [],
-        customerId: resolvedCustomer.customer.id,
-        customerAccountId: customerAccount.id,
-        linkedCustomerAccountId: null,
-        reason:
-          normalizedLegacyWallet.reason ??
-          "Customer account exists but both wallet projection and legacy ethereumAddress are missing."
-      };
-    }
-
-    const existingWallet = await prisma.wallet.findUnique({
-      where: {
-        chainId_address: {
-          chainId: productChainId,
-          address: normalizedLegacyWallet.normalizedAddress
-        }
-      }
-    });
-
-    if (
-      existingWallet?.customerAccountId &&
-      existingWallet.customerAccountId !== customerAccount.id
-    ) {
-      return {
-        legacyUserId: legacyUser.id,
-        email: legacyUser.email,
-        supabaseUserId: legacyUser.supabaseUserId,
-        productChainId,
-        status: "manual_review_wallet_linked_to_other_account",
-        addressSource: "legacy",
-        repairCommand: null,
-        manualReviewCase: "wallet_linked_to_other_account",
-        legacyEthereumAddress: normalizedLegacyWallet.normalizedAddress,
-        walletAddresses: [normalizedLegacyWallet.normalizedAddress],
-        customerId: resolvedCustomer.customer.id,
-        customerAccountId: customerAccount.id,
-        linkedCustomerAccountId: existingWallet.customerAccountId,
-        reason: "Wallet address is already linked to another customer account."
-      };
-    }
-
-    return {
-      legacyUserId: legacyUser.id,
-      email: legacyUser.email,
-      supabaseUserId: legacyUser.supabaseUserId,
-      productChainId,
-      status: "repair_wallet_only",
-      addressSource: "legacy",
-      repairCommand: "repair:customer-wallet-projections",
-      manualReviewCase: null,
-      legacyEthereumAddress: normalizedLegacyWallet.normalizedAddress,
-      walletAddresses: [],
-      customerId: resolvedCustomer.customer.id,
-      customerAccountId: customerAccount.id,
-      linkedCustomerAccountId: null,
-      reason:
-        "Wallet projection is missing and the row is safe to auto-repair."
-    };
-  }
-
-  const normalizedWalletAddress = normalizeProjectedWalletAddress(wallet.address);
-
-  if (
-    normalizedLegacyWallet.normalizedAddress &&
-    normalizedLegacyWallet.normalizedAddress !== normalizedWalletAddress
-  ) {
-    return {
-      legacyUserId: legacyUser.id,
-      email: legacyUser.email,
-      supabaseUserId: legacyUser.supabaseUserId,
-      productChainId,
-      status: "manual_review_wallet_legacy_mismatch",
-      addressSource: "wallet",
-      repairCommand: null,
-      manualReviewCase: "wallet_legacy_mismatch",
-      legacyEthereumAddress: normalizedLegacyWallet.normalizedAddress,
-      walletAddresses: [normalizedWalletAddress],
-      customerId: resolvedCustomer.customer.id,
-      customerAccountId: customerAccount.id,
-      linkedCustomerAccountId: null,
-      reason:
-        "Wallet projection exists but differs from legacy ethereumAddress."
-    };
-  }
 
   return {
     legacyUserId: legacyUser.id,
     email: legacyUser.email,
     supabaseUserId: legacyUser.supabaseUserId,
     productChainId,
-    status: "wallet_projected",
-    addressSource: "wallet",
-    repairCommand: null,
-    manualReviewCase: null,
-    legacyEthereumAddress: normalizedLegacyWallet.normalizedAddress,
-    walletAddresses: [normalizedWalletAddress],
-    customerId: resolvedCustomer.customer.id,
-    customerAccountId: customerAccount.id,
-    linkedCustomerAccountId: null,
-    reason: "Wallet projection is present for the configured product chain."
+    status: resolution.surface,
+    addressSource: resolution.addressSource,
+    repairCommand: mapWalletProjectionSurfaceToRepairCommand(
+      resolution.surface
+    ),
+    manualReviewCase: mapWalletProjectionSurfaceToManualReviewCase(
+      resolution.surface
+    ),
+    legacyEthereumAddress: resolution.normalizedLegacyEthereumAddress,
+    walletAddresses: resolution.walletAddresses,
+    customerId: resolution.customerId,
+    customerAccountId: resolution.customerAccountId,
+    linkedCustomerAccountId: resolution.linkedCustomerAccountId,
+    reason: resolution.reason
   };
 }
 
@@ -693,11 +262,7 @@ async function main(): Promise<void> {
 
   try {
     const legacyUsers = await prisma.user.findMany({
-      where: options.email
-        ? {
-            email: options.email
-          }
-        : undefined,
+      where: options.email ? { email: options.email } : undefined,
       orderBy: {
         id: "asc"
       },
@@ -717,7 +282,7 @@ async function main(): Promise<void> {
         continue;
       }
 
-      if (options.onlyActionable && !isActionableStatus(record.status)) {
+      if (options.onlyActionable && !isWalletProjectionActionable(record.status)) {
         continue;
       }
 
