@@ -27,7 +27,6 @@ type LegacyUserRecord = {
 };
 
 type ManualReviewCase =
-  | "missing_customer_projection"
   | "conflicting_customer_records"
   | "missing_wallet_address"
   | "invalid_wallet_address"
@@ -36,7 +35,6 @@ type ManualReviewCase =
   | "multiple_product_chain_wallets";
 
 type SuggestedAction =
-  | "create_customer_manually"
   | "repair_legacy_wallet_address"
   | "reconcile_wallet_mismatch"
   | "review_wallet_link_conflict"
@@ -62,7 +60,6 @@ type ManualReviewSummary = {
   productChainId: number;
   scanned: number;
   queueItems: number;
-  missingCustomerProjection: number;
   conflictingCustomerRecords: number;
   missingWalletAddress: number;
   invalidWalletAddress: number;
@@ -217,7 +214,6 @@ function createSummary(productChainId: number): ManualReviewSummary {
     productChainId,
     scanned: 0,
     queueItems: 0,
-    missingCustomerProjection: 0,
     conflictingCustomerRecords: 0,
     missingWalletAddress: 0,
     invalidWalletAddress: 0,
@@ -238,10 +234,6 @@ function accumulateSummary(
   }
 
   summary.queueItems += 1;
-
-  if (item.reviewCase === "missing_customer_projection") {
-    summary.missingCustomerProjection += 1;
-  }
 
   if (item.reviewCase === "conflicting_customer_records") {
     summary.conflictingCustomerRecords += 1;
@@ -274,7 +266,7 @@ function joinWalletAddresses(walletAddresses: string[]): string {
 
 function escapeCsvValue(value: string): string {
   if (value.includes("\"") || value.includes(",") || value.includes("\n")) {
-    return "\"" + value.replace(/\"/g, "\"\"") + "\"";
+    return "\"" + value.split("\"").join("\"\"") + "\"";
   }
 
   return value;
@@ -686,4 +678,5 @@ main().catch((error: unknown) => {
   }
 
   console.error("Wallet projection manual review export failed.");
+  process.exit(1);
 });

@@ -33,23 +33,23 @@ Dry-run mode is the default.
 
 ### Apply safe repairs
 
-    pnpm run repair:missing-customer-projections --apply
+    pnpm run repair:missing-customer-projections -- --apply
 
 ### Dry-run one user
 
-    pnpm run repair:missing-customer-projections --email=user@example.com
+    pnpm run repair:missing-customer-projections -- --email=user@example.com
 
 ### Apply one user
 
-    pnpm run repair:missing-customer-projections --email=user@example.com --apply
+    pnpm run repair:missing-customer-projections -- --email=user@example.com --apply
 
 ### Dry-run limited batch
 
-    pnpm run repair:missing-customer-projections --limit=100
+    pnpm run repair:missing-customer-projections -- --limit=100
 
 ### Apply limited batch
 
-    pnpm run repair:missing-customer-projections --limit=100 --apply
+    pnpm run repair:missing-customer-projections -- --limit=100 --apply
 
 ## Output shape
 

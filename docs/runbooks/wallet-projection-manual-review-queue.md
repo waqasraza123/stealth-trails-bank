@@ -31,19 +31,19 @@ From `apps/api`:
 
 ### JSON export for a limited batch
 
-    pnpm run export:wallet-projection-manual-review-queue --limit=100
+    pnpm run export:wallet-projection-manual-review-queue -- --limit=100
 
 ### One user by email
 
-    pnpm run export:wallet-projection-manual-review-queue --email=user@example.com
+    pnpm run export:wallet-projection-manual-review-queue -- --email=user@example.com
 
 ### CSV export to a file
 
-    pnpm run export:wallet-projection-manual-review-queue --format=csv --output=.artifacts/wallet-manual-review.csv
+    pnpm run export:wallet-projection-manual-review-queue -- --format=csv --output=.artifacts/wallet-manual-review.csv
 
 ### JSON export to a file
 
-    pnpm run export:wallet-projection-manual-review-queue --format=json --output=.artifacts/wallet-manual-review.json
+    pnpm run export:wallet-projection-manual-review-queue -- --format=json --output=.artifacts/wallet-manual-review.json
 
 ## Output
 
@@ -71,7 +71,6 @@ CSV output includes one row per manual review item with:
 
 ## Suggested action meanings
 
-- `create_customer_manually`
 - `repair_legacy_wallet_address`
 - `reconcile_wallet_mismatch`
 - `review_wallet_link_conflict`
