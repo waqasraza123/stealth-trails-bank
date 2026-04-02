@@ -5,10 +5,13 @@ import { LedgerModule } from "../ledger/ledger.module";
 import { PrismaService } from "../prisma/prisma.service";
 import { DepositSettlementReconciliationController } from "./deposit-settlement-reconciliation.controller";
 import { DepositSettlementReconciliationService } from "./deposit-settlement-reconciliation.service";
+import { TransactionHistoryController } from "./transaction-history.controller";
 import { TransactionIntentsController } from "./transaction-intents.controller";
 import { TransactionIntentsInternalController } from "./transaction-intents-internal.controller";
 import { TransactionIntentsService } from "./transaction-intents.service";
 import { TransactionIntentsWorkerController } from "./transaction-intents-worker.controller";
+import { TransactionOperationsController } from "./transaction-operations.controller";
+import { TransactionOperationsService } from "./transaction-operations.service";
 import { WithdrawalIntentsController } from "./withdrawal-intents.controller";
 import { WithdrawalIntentsInternalController } from "./withdrawal-intents-internal.controller";
 import { WithdrawalIntentsService } from "./withdrawal-intents.service";
@@ -20,9 +23,11 @@ import { WithdrawalSettlementReconciliationService } from "./withdrawal-settleme
   imports: [LedgerModule],
   controllers: [
     TransactionIntentsController,
+    TransactionHistoryController,
     WithdrawalIntentsController,
     TransactionIntentsInternalController,
     WithdrawalIntentsInternalController,
+    TransactionOperationsController,
     TransactionIntentsWorkerController,
     WithdrawalIntentsWorkerController,
     DepositSettlementReconciliationController,
@@ -31,6 +36,7 @@ import { WithdrawalSettlementReconciliationService } from "./withdrawal-settleme
   providers: [
     TransactionIntentsService,
     WithdrawalIntentsService,
+    TransactionOperationsService,
     DepositSettlementReconciliationService,
     WithdrawalSettlementReconciliationService,
     PrismaService,
