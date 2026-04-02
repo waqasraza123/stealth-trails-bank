@@ -3,8 +3,10 @@ import {
   NotFoundException
 } from "@nestjs/common";
 import {
+  BlockchainTransactionStatus,
   PolicyDecision,
   Prisma,
+  ReviewCaseEventType,
   ReviewCaseStatus,
   ReviewCaseType,
   TransactionIntentStatus,
@@ -25,6 +27,10 @@ function buildReviewCaseRecord(
     status: ReviewCaseStatus.open,
     reasonCode: "settled_amount_mismatch",
     notes: "Manual review is required.",
+    assignedOperatorId: null,
+    startedAt: null,
+    resolvedAt: null,
+    dismissedAt: null,
     createdAt: new Date("2026-04-01T00:00:00.000Z"),
     updatedAt: new Date("2026-04-01T00:00:00.000Z"),
     customer: {
@@ -47,16 +53,39 @@ function buildReviewCaseRecord(
       settledAmount: new Prisma.Decimal("20"),
       failureCode: null,
       failureReason: null,
+      manuallyResolvedAt: null,
+      manualResolutionReasonCode: null,
+      manualResolutionNote: null,
       sourceWalletId: null,
       destinationWalletId: "wallet_1",
       externalAddress: null,
+      createdAt: new Date("2026-04-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-01T00:10:00.000Z"),
       asset: {
         id: "asset_1",
         symbol: "USDC",
         displayName: "USD Coin",
         decimals: 6,
         chainId: 8453
-      }
+      },
+      sourceWallet: null,
+      destinationWallet: {
+        id: "wallet_1",
+        address: "0x0000000000000000000000000000000000000fed"
+      },
+      blockchainTransactions: [
+        {
+          id: "tx_1",
+          txHash:
+            "0x1111111111111111111111111111111111111111111111111111111111111111",
+          status: BlockchainTransactionStatus.confirmed,
+          fromAddress: "0x0000000000000000000000000000000000000def",
+          toAddress: "0x0000000000000000000000000000000000000fed",
+          createdAt: new Date("2026-04-01T00:01:00.000Z"),
+          updatedAt: new Date("2026-04-01T00:05:00.000Z"),
+          confirmedAt: new Date("2026-04-01T00:05:00.000Z")
+        }
+      ]
     },
     ...overrides
   };
@@ -71,11 +100,20 @@ function createService() {
       create: jest.fn(),
       update: jest.fn()
     },
+    reviewCaseEvent: {
+      findMany: jest.fn(),
+      create: jest.fn()
+    },
     transactionIntent: {
-      findFirst: jest.fn()
+      findFirst: jest.fn(),
+      findMany: jest.fn()
     },
     auditEvent: {
-      create: jest.fn()
+      create: jest.fn(),
+      findMany: jest.fn()
+    },
+    customerAssetBalance: {
+      findMany: jest.fn()
     },
     $transaction: jest.fn()
   } as unknown as PrismaService;
@@ -102,6 +140,18 @@ describe("ReviewCasesService", () => {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(buildReviewCaseRecord())
       },
+      reviewCaseEvent: {
+        create: jest.fn().mockResolvedValue({
+          id: "event_1",
+          reviewCaseId: "review_case_1",
+          actorType: "operator",
+          actorId: "ops_1",
+          eventType: ReviewCaseEventType.opened,
+          note: "Manual review is required.",
+          metadata: null,
+          createdAt: new Date("2026-04-01T00:00:00.000Z")
+        })
+      },
       auditEvent: {
         create: jest.fn().mockResolvedValue(undefined)
       }
@@ -124,7 +174,7 @@ describe("ReviewCasesService", () => {
 
     expect(result.reviewCaseReused).toBe(false);
     expect(result.reviewCase.type).toBe(ReviewCaseType.reconciliation_review);
-    expect(mutationClient.auditEvent.create).toHaveBeenCalled();
+    expect(mutationClient.reviewCaseEvent.create).toHaveBeenCalled();
     expect(prismaService).toBeDefined();
   });
 
@@ -134,6 +184,9 @@ describe("ReviewCasesService", () => {
     const mutationClient = {
       reviewCase: {
         findFirst: jest.fn().mockResolvedValue(buildReviewCaseRecord())
+      },
+      reviewCaseEvent: {
+        create: jest.fn()
       },
       auditEvent: {
         create: jest.fn()
@@ -240,12 +293,25 @@ describe("ReviewCasesService", () => {
 
     const updatedRecord = buildReviewCaseRecord({
       status: ReviewCaseStatus.resolved,
+      resolvedAt: new Date("2026-04-01T00:40:00.000Z"),
       notes: "Resolved by operator."
     });
 
     const transaction = {
       reviewCase: {
         update: jest.fn().mockResolvedValue(updatedRecord)
+      },
+      reviewCaseEvent: {
+        create: jest.fn().mockResolvedValue({
+          id: "event_4",
+          reviewCaseId: "review_case_1",
+          actorType: "operator",
+          actorId: "ops_1",
+          eventType: ReviewCaseEventType.resolved,
+          note: "Resolved by operator.",
+          metadata: null,
+          createdAt: new Date("2026-04-01T00:40:00.000Z")
+        })
       },
       auditEvent: {
         create: jest.fn().mockResolvedValue(undefined)
@@ -261,7 +327,7 @@ describe("ReviewCasesService", () => {
       note: "Resolved by operator."
     });
 
-    expect(result.statusReused).toBe(false);
+    expect(result.stateReused).toBe(false);
     expect(result.reviewCase.status).toBe(ReviewCaseStatus.resolved);
   });
 

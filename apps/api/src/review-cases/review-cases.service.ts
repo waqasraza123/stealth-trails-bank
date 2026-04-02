@@ -16,6 +16,7 @@ import {
 } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AddReviewCaseNoteDto } from "./dto/add-review-case-note.dto";
+import { ApplyManualResolutionDto } from "./dto/apply-manual-resolution.dto";
 import { DismissReviewCaseDto } from "./dto/dismiss-review-case.dto";
 import { GetReviewCaseWorkspaceDto } from "./dto/get-review-case-workspace.dto";
 import { HandoffReviewCaseDto } from "./dto/handoff-review-case.dto";
@@ -117,6 +118,9 @@ type TransactionIntentProjection = {
   settledAmount: string | null;
   failureCode: string | null;
   failureReason: string | null;
+  manuallyResolvedAt: string | null;
+  manualResolutionReasonCode: string | null;
+  manualResolutionNote: string | null;
   sourceWalletId: string | null;
   sourceWalletAddress: string | null;
   destinationWalletId: string | null;
@@ -191,6 +195,22 @@ type CustomerBalanceProjection = {
   updatedAt: string;
 };
 
+type ManualResolutionRecommendedAction =
+  | "apply_manual_resolution"
+  | "use_runtime_flow"
+  | "resolve_case_only"
+  | "not_supported";
+
+type ManualResolutionEligibilityProjection = {
+  eligible: boolean;
+  reasonCode: string;
+  reason: string;
+  currentIntentStatus: TransactionIntentStatus | null;
+  currentReviewCaseStatus: ReviewCaseStatus;
+  currentReviewCaseType: ReviewCaseType;
+  recommendedAction: ManualResolutionRecommendedAction;
+};
+
 type OpenOrReuseReviewCaseParams = {
   customerId: string | null;
   customerAccountId: string | null;
@@ -201,7 +221,7 @@ type OpenOrReuseReviewCaseParams = {
   actorType: string;
   actorId: string | null;
   auditAction: string;
-  auditMetadata: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | null;
+  auditMetadata: Record<string, unknown> | null;
 };
 
 type OpenReviewCaseResult = {
@@ -220,6 +240,7 @@ type GetReviewCaseResult = {
 
 type ReviewCaseWorkspaceResult = {
   reviewCase: ReviewCaseProjection;
+  manualResolutionEligibility: ManualResolutionEligibilityProjection;
   caseEvents: ReviewCaseEventProjection[];
   relatedTransactionAuditEvents: AuditTimelineProjection[];
   balances: CustomerBalanceProjection[];
@@ -235,6 +256,12 @@ type UpdateReviewCaseStateResult = {
 type AddReviewCaseNoteResult = {
   reviewCase: ReviewCaseProjection;
   event: ReviewCaseEventProjection;
+};
+
+type ApplyManualResolutionResult = {
+  reviewCase: ReviewCaseProjection;
+  transactionIntent: TransactionIntentProjection;
+  stateReused: boolean;
 };
 
 @Injectable()
@@ -278,6 +305,9 @@ export class ReviewCasesService {
       settledAmount: intent.settledAmount?.toString() ?? null,
       failureCode: intent.failureCode,
       failureReason: intent.failureReason,
+      manuallyResolvedAt: intent.manuallyResolvedAt?.toISOString() ?? null,
+      manualResolutionReasonCode: intent.manualResolutionReasonCode,
+      manualResolutionNote: intent.manualResolutionNote,
       sourceWalletId: intent.sourceWalletId,
       sourceWalletAddress: intent.sourceWallet?.address ?? null,
       destinationWalletId: intent.destinationWalletId,
@@ -338,10 +368,9 @@ export class ReviewCasesService {
   }
 
   private async findReviewCaseById(
-    reviewCaseId: string,
-    client: Pick<PrismaService, "reviewCase"> | ReviewCaseMutationClient = this.prismaService
+    reviewCaseId: string
   ): Promise<ReviewCaseRecord | null> {
-    return client.reviewCase.findUnique({
+    return this.prismaService.reviewCase.findUnique({
       where: {
         id: reviewCaseId
       },
@@ -359,6 +388,21 @@ export class ReviewCasesService {
     }
   }
 
+  private ensureOperatorCanMutateReviewCase(
+    reviewCase: ReviewCaseRecord,
+    operatorId: string
+  ): void {
+    if (
+      reviewCase.status === ReviewCaseStatus.in_progress &&
+      reviewCase.assignedOperatorId &&
+      reviewCase.assignedOperatorId !== operatorId
+    ) {
+      throw new ConflictException(
+        "Review case is currently assigned to another operator."
+      );
+    }
+  }
+
   private async appendReviewCaseEvent(
     client: ReviewCaseMutationClient,
     reviewCaseId: string,
@@ -366,7 +410,7 @@ export class ReviewCasesService {
     actorId: string | null,
     eventType: ReviewCaseEventType,
     note: string | null,
-    metadata: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | null
+    metadata: Prisma.InputJsonValue | null
   ): Promise<ReviewCaseEventRecord> {
     return client.reviewCaseEvent.create({
       data: {
@@ -380,14 +424,144 @@ export class ReviewCasesService {
     });
   }
 
-  private normalizeNestedJsonValue(
-    value: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | null
-  ): Prisma.InputJsonValue | null {
-    if (value === null || value === Prisma.JsonNull || value === Prisma.DbNull) {
-      return null;
+  private buildManualResolutionEligibility(
+    reviewCase: ReviewCaseRecord
+  ): ManualResolutionEligibilityProjection {
+    const intent = reviewCase.transactionIntent;
+
+    if (!intent) {
+      return {
+        eligible: false,
+        reasonCode: "no_linked_transaction_intent",
+        reason: "Review case is not linked to a transaction intent.",
+        currentIntentStatus: null,
+        currentReviewCaseStatus: reviewCase.status,
+        currentReviewCaseType: reviewCase.type,
+        recommendedAction: "resolve_case_only"
+      };
     }
 
-    return value as Prisma.InputJsonValue;
+    if (reviewCase.status === ReviewCaseStatus.dismissed) {
+      return {
+        eligible: false,
+        reasonCode: "review_case_dismissed",
+        reason: "Dismissed review cases do not support manual resolution.",
+        currentIntentStatus: intent.status,
+        currentReviewCaseStatus: reviewCase.status,
+        currentReviewCaseType: reviewCase.type,
+        recommendedAction: "resolve_case_only"
+      };
+    }
+
+    if (reviewCase.status === ReviewCaseStatus.resolved) {
+      return {
+        eligible: false,
+        reasonCode: "review_case_resolved",
+        reason: "Resolved review cases do not support another manual intervention.",
+        currentIntentStatus: intent.status,
+        currentReviewCaseStatus: reviewCase.status,
+        currentReviewCaseType: reviewCase.type,
+        recommendedAction: "resolve_case_only"
+      };
+    }
+
+    if (intent.status === TransactionIntentStatus.manually_resolved) {
+      return {
+        eligible: false,
+        reasonCode: "intent_already_manually_resolved",
+        reason: "The linked transaction intent is already manually resolved.",
+        currentIntentStatus: intent.status,
+        currentReviewCaseStatus: reviewCase.status,
+        currentReviewCaseType: reviewCase.type,
+        recommendedAction: "resolve_case_only"
+      };
+    }
+
+    if (
+      intent.status === TransactionIntentStatus.failed ||
+      intent.status === TransactionIntentStatus.cancelled
+    ) {
+      return {
+        eligible: true,
+        reasonCode: "terminal_intent_safe_for_manual_resolution",
+        reason:
+          "The linked transaction intent is already in a terminal non-money-truth runtime state and can be manually resolved safely.",
+        currentIntentStatus: intent.status,
+        currentReviewCaseStatus: reviewCase.status,
+        currentReviewCaseType: reviewCase.type,
+        recommendedAction: "apply_manual_resolution"
+      };
+    }
+
+    if (
+      intent.status === TransactionIntentStatus.broadcast ||
+      intent.status === TransactionIntentStatus.confirmed
+    ) {
+      return {
+        eligible: false,
+        reasonCode: "active_runtime_state_use_runtime_flow",
+        reason:
+          "The linked transaction intent is still in an active runtime state. Use replay or runtime recovery instead of manual resolution.",
+        currentIntentStatus: intent.status,
+        currentReviewCaseStatus: reviewCase.status,
+        currentReviewCaseType: reviewCase.type,
+        recommendedAction: "use_runtime_flow"
+      };
+    }
+
+    if (
+      intent.status === TransactionIntentStatus.requested ||
+      intent.status === TransactionIntentStatus.review_required ||
+      intent.status === TransactionIntentStatus.approved ||
+      intent.status === TransactionIntentStatus.queued
+    ) {
+      return {
+        eligible: false,
+        reasonCode: "non_terminal_runtime_state_use_runtime_flow",
+        reason:
+          "The linked transaction intent is not terminal yet. Continue the normal runtime workflow instead of applying manual resolution.",
+        currentIntentStatus: intent.status,
+        currentReviewCaseStatus: reviewCase.status,
+        currentReviewCaseType: reviewCase.type,
+        recommendedAction: "use_runtime_flow"
+      };
+    }
+
+    if (intent.status === TransactionIntentStatus.settled) {
+      return {
+        eligible: false,
+        reasonCode: "settled_money_state_not_supported",
+        reason:
+          "Settled transaction intents are money-truth states and cannot be manually resolved in this slice.",
+        currentIntentStatus: intent.status,
+        currentReviewCaseStatus: reviewCase.status,
+        currentReviewCaseType: reviewCase.type,
+        recommendedAction: "not_supported"
+      };
+    }
+
+    return {
+      eligible: false,
+      reasonCode: "unsupported_manual_resolution_state",
+      reason:
+        "The linked transaction intent is in a state that does not support manual resolution.",
+      currentIntentStatus: intent.status,
+      currentReviewCaseStatus: reviewCase.status,
+      currentReviewCaseType: reviewCase.type,
+      recommendedAction: "not_supported"
+    };
+  }
+
+  async getManualResolutionEligibility(
+    reviewCaseId: string
+  ): Promise<ManualResolutionEligibilityProjection> {
+    const reviewCase = await this.findReviewCaseById(reviewCaseId);
+
+    if (!reviewCase) {
+      throw new NotFoundException("Review case not found.");
+    }
+
+    return this.buildManualResolutionEligibility(reviewCase);
   }
 
   async openOrReuseReviewCase(
@@ -413,8 +587,6 @@ export class ReviewCasesService {
         reviewCaseReused: true
       };
     }
-
-    const auditContext = this.normalizeNestedJsonValue(params.auditMetadata);
 
     const createdReviewCase = await client.reviewCase.create({
       data: {
@@ -444,7 +616,7 @@ export class ReviewCasesService {
         reasonCode: params.reasonCode,
         reviewCaseType: params.type,
         reviewCaseStatus: ReviewCaseStatus.open,
-        context: auditContext
+        context: params.auditMetadata ?? null
       } as Prisma.InputJsonValue
     );
 
@@ -463,8 +635,8 @@ export class ReviewCasesService {
           reviewCaseStatus: ReviewCaseStatus.open,
           reasonCode: params.reasonCode,
           notes: params.notes,
-          context: auditContext
-        }
+          context: params.auditMetadata ?? null
+        } as Prisma.InputJsonValue
       }
     });
 
@@ -476,20 +648,44 @@ export class ReviewCasesService {
 
   async listReviewCases(query: ListReviewCasesDto): Promise<ListReviewCasesResult> {
     const limit = query.limit ?? 20;
+    const where: Prisma.ReviewCaseWhereInput = {};
+
+    if (query.status) {
+      where.status = query.status as ReviewCaseStatus;
+    }
+
+    if (query.type) {
+      where.type = query.type as ReviewCaseType;
+    }
+
+    if (query.customerAccountId?.trim()) {
+      where.customerAccountId = query.customerAccountId.trim();
+    }
+
+    if (query.transactionIntentId?.trim()) {
+      where.transactionIntentId = query.transactionIntentId.trim();
+    }
+
+    if (query.reasonCode?.trim()) {
+      where.reasonCode = query.reasonCode.trim();
+    }
+
+    if (query.assignedOperatorId?.trim()) {
+      where.assignedOperatorId = query.assignedOperatorId.trim();
+    }
+
+    if (query.email?.trim() || query.supabaseUserId?.trim()) {
+      where.customer = {};
+      if (query.email?.trim()) {
+        where.customer.email = query.email.trim().toLowerCase();
+      }
+      if (query.supabaseUserId?.trim()) {
+        where.customer.supabaseUserId = query.supabaseUserId.trim();
+      }
+    }
 
     const reviewCases = await this.prismaService.reviewCase.findMany({
-      where: {
-        status: query.status as ReviewCaseStatus | undefined,
-        type: query.type as ReviewCaseType | undefined,
-        customerAccountId: query.customerAccountId?.trim() || undefined,
-        transactionIntentId: query.transactionIntentId?.trim() || undefined,
-        reasonCode: query.reasonCode?.trim() || undefined,
-        assignedOperatorId: query.assignedOperatorId?.trim() || undefined,
-        customer: {
-          email: query.email?.trim().toLowerCase() || undefined,
-          supabaseUserId: query.supabaseUserId?.trim() || undefined
-        }
-      },
+      where,
       orderBy: {
         updatedAt: "desc"
       },
@@ -555,7 +751,9 @@ export class ReviewCasesService {
             customerAccountId: reviewCase.customerAccountId
           },
           orderBy: {
-            updatedAt: "desc"
+            asset: {
+              symbol: "asc"
+            }
           },
           include: {
             asset: {
@@ -587,6 +785,8 @@ export class ReviewCasesService {
 
     return {
       reviewCase: this.mapReviewCaseProjection(reviewCase),
+      manualResolutionEligibility:
+        this.buildManualResolutionEligibility(reviewCase),
       caseEvents: caseEvents.map((event) =>
         this.mapReviewCaseEventProjection(event)
       ),
@@ -631,6 +831,7 @@ export class ReviewCasesService {
     }
 
     this.ensureReviewCaseIsActionable(existingReviewCase);
+    this.ensureOperatorCanMutateReviewCase(existingReviewCase, operatorId);
 
     if (
       existingReviewCase.status === ReviewCaseStatus.in_progress &&
@@ -688,7 +889,7 @@ export class ReviewCasesService {
               note: dto.note?.trim() ?? null,
               transactionIntentId: existingReviewCase.transactionIntentId,
               customerAccountId: existingReviewCase.customerAccountId
-            }
+            } as Prisma.InputJsonValue
           }
         });
 
@@ -714,6 +915,7 @@ export class ReviewCasesService {
     }
 
     this.ensureReviewCaseIsActionable(existingReviewCase);
+    this.ensureOperatorCanMutateReviewCase(existingReviewCase, operatorId);
 
     const noteText = dto.note.trim();
 
@@ -755,7 +957,7 @@ export class ReviewCasesService {
             status: existingReviewCase.status,
             transactionIntentId: existingReviewCase.transactionIntentId,
             customerAccountId: existingReviewCase.customerAccountId
-          }
+          } as Prisma.InputJsonValue
         }
       });
 
@@ -783,6 +985,7 @@ export class ReviewCasesService {
     }
 
     this.ensureReviewCaseIsActionable(existingReviewCase);
+    this.ensureOperatorCanMutateReviewCase(existingReviewCase, operatorId);
 
     const nextOperatorId = dto.nextOperatorId.trim();
 
@@ -842,7 +1045,7 @@ export class ReviewCasesService {
               note: dto.note?.trim() ?? null,
               transactionIntentId: existingReviewCase.transactionIntentId,
               customerAccountId: existingReviewCase.customerAccountId
-            }
+            } as Prisma.InputJsonValue
           }
         });
 
@@ -878,6 +1081,8 @@ export class ReviewCasesService {
       throw new ConflictException("Review case is already dismissed.");
     }
 
+    this.ensureOperatorCanMutateReviewCase(existingReviewCase, operatorId);
+
     const updatedReviewCase = await this.prismaService.$transaction(
       async (transaction) => {
         const reviewCase = await transaction.reviewCase.update({
@@ -887,6 +1092,7 @@ export class ReviewCasesService {
           data: {
             status: ReviewCaseStatus.resolved,
             resolvedAt: new Date(),
+            assignedOperatorId: existingReviewCase.assignedOperatorId ?? operatorId,
             notes: dto.note?.trim() ?? existingReviewCase.notes
           },
           include: reviewCaseInclude
@@ -920,7 +1126,7 @@ export class ReviewCasesService {
               reviewCaseType: existingReviewCase.type,
               transactionIntentId: existingReviewCase.transactionIntentId,
               customerAccountId: existingReviewCase.customerAccountId
-            }
+            } as Prisma.InputJsonValue
           }
         });
 
@@ -956,6 +1162,8 @@ export class ReviewCasesService {
       throw new ConflictException("Review case is already resolved.");
     }
 
+    this.ensureOperatorCanMutateReviewCase(existingReviewCase, operatorId);
+
     const updatedReviewCase = await this.prismaService.$transaction(
       async (transaction) => {
         const reviewCase = await transaction.reviewCase.update({
@@ -965,6 +1173,7 @@ export class ReviewCasesService {
           data: {
             status: ReviewCaseStatus.dismissed,
             dismissedAt: new Date(),
+            assignedOperatorId: existingReviewCase.assignedOperatorId ?? operatorId,
             notes: dto.note?.trim() ?? existingReviewCase.notes
           },
           include: reviewCaseInclude
@@ -998,7 +1207,7 @@ export class ReviewCasesService {
               reviewCaseType: existingReviewCase.type,
               transactionIntentId: existingReviewCase.transactionIntentId,
               customerAccountId: existingReviewCase.customerAccountId
-            }
+            } as Prisma.InputJsonValue
           }
         });
 
@@ -1008,6 +1217,159 @@ export class ReviewCasesService {
 
     return {
       reviewCase: this.mapReviewCaseProjection(updatedReviewCase),
+      stateReused: false
+    };
+  }
+
+  async applyManualResolution(
+    reviewCaseId: string,
+    operatorId: string,
+    dto: ApplyManualResolutionDto
+  ): Promise<ApplyManualResolutionResult> {
+    const existingReviewCase = await this.findReviewCaseById(reviewCaseId);
+
+    if (!existingReviewCase) {
+      throw new NotFoundException("Review case not found.");
+    }
+
+    this.ensureOperatorCanMutateReviewCase(existingReviewCase, operatorId);
+
+    if (
+      existingReviewCase.status === ReviewCaseStatus.resolved &&
+      existingReviewCase.transactionIntent?.status ===
+        TransactionIntentStatus.manually_resolved
+    ) {
+      return {
+        reviewCase: this.mapReviewCaseProjection(existingReviewCase),
+        transactionIntent: this.mapTransactionIntentProjection(
+          existingReviewCase.transactionIntent
+        ),
+        stateReused: true
+      };
+    }
+
+    const eligibility = this.buildManualResolutionEligibility(existingReviewCase);
+
+    if (!eligibility.eligible) {
+      throw new ConflictException(eligibility.reason);
+    }
+
+    if (!existingReviewCase.transactionIntent) {
+      throw new ConflictException(
+        "Review case is not linked to a transaction intent."
+      );
+    }
+
+    const manualResolutionReasonCode = dto.manualResolutionReasonCode.trim();
+    const note = dto.note?.trim() ?? null;
+
+    const result = await this.prismaService.$transaction(async (transaction) => {
+      const updatedIntent = await transaction.transactionIntent.update({
+        where: {
+          id: existingReviewCase.transactionIntent!.id
+        },
+        data: {
+          status: TransactionIntentStatus.manually_resolved,
+          manuallyResolvedAt: new Date(),
+          manualResolutionReasonCode,
+          manualResolutionNote: note
+        },
+        include: transactionIntentInclude
+      });
+
+      const updatedReviewCase = await transaction.reviewCase.update({
+        where: {
+          id: existingReviewCase.id
+        },
+        data: {
+          status: ReviewCaseStatus.resolved,
+          assignedOperatorId: existingReviewCase.assignedOperatorId ?? operatorId,
+          startedAt: existingReviewCase.startedAt ?? new Date(),
+          resolvedAt: new Date(),
+          notes: note ?? existingReviewCase.notes
+        },
+        include: reviewCaseInclude
+      });
+
+      await this.appendReviewCaseEvent(
+        transaction,
+        existingReviewCase.id,
+        "operator",
+        operatorId,
+        ReviewCaseEventType.manual_resolution_applied,
+        note,
+        {
+          previousIntentStatus: existingReviewCase.transactionIntent!.status,
+          newIntentStatus: TransactionIntentStatus.manually_resolved,
+          manualResolutionReasonCode
+        } as Prisma.InputJsonValue
+      );
+
+      await this.appendReviewCaseEvent(
+        transaction,
+        existingReviewCase.id,
+        "operator",
+        operatorId,
+        ReviewCaseEventType.resolved,
+        note,
+        {
+          previousStatus: existingReviewCase.status,
+          newStatus: ReviewCaseStatus.resolved,
+          resolutionSource: "manual_intervention"
+        } as Prisma.InputJsonValue
+      );
+
+      await transaction.auditEvent.create({
+        data: {
+          customerId: existingReviewCase.customerId,
+          actorType: "operator",
+          actorId: operatorId,
+          action: "transaction_intent.manually_resolved",
+          targetType: "TransactionIntent",
+          targetId: existingReviewCase.transactionIntent!.id,
+          metadata: {
+            previousStatus: existingReviewCase.transactionIntent!.status,
+            newStatus: TransactionIntentStatus.manually_resolved,
+            manualResolutionReasonCode,
+            manualResolutionNote: note,
+            reviewCaseId: existingReviewCase.id,
+            reviewCaseType: existingReviewCase.type,
+            customerAccountId: existingReviewCase.customerAccountId
+          } as Prisma.InputJsonValue
+        }
+      });
+
+      await transaction.auditEvent.create({
+        data: {
+          customerId: existingReviewCase.customerId,
+          actorType: "operator",
+          actorId: operatorId,
+          action: "review_case.resolved",
+          targetType: "ReviewCase",
+          targetId: existingReviewCase.id,
+          metadata: {
+            previousStatus: existingReviewCase.status,
+            newStatus: ReviewCaseStatus.resolved,
+            resolutionSource: "manual_intervention",
+            manualResolutionReasonCode,
+            manualResolutionNote: note,
+            transactionIntentId: existingReviewCase.transactionIntentId,
+            customerAccountId: existingReviewCase.customerAccountId
+          } as Prisma.InputJsonValue
+        }
+      });
+
+      return {
+        reviewCase: updatedReviewCase,
+        transactionIntent: updatedIntent
+      };
+    });
+
+    return {
+      reviewCase: this.mapReviewCaseProjection(result.reviewCase),
+      transactionIntent: this.mapTransactionIntentProjection(
+        result.transactionIntent
+      ),
       stateReused: false
     };
   }
@@ -1086,7 +1448,7 @@ export class ReviewCasesService {
         failureCode: transactionIntent.failureCode,
         failureReason: transactionIntent.failureReason,
         chainId: transactionIntent.chainId
-      } as Prisma.InputJsonValue
+      }
     });
   }
 }

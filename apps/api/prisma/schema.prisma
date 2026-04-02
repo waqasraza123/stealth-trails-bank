@@ -115,6 +115,9 @@ model TransactionIntent {
   idempotencyKey         String                  @unique
   failureCode            String?
   failureReason          String?
+  manuallyResolvedAt         DateTime?
+  manualResolutionReasonCode String?
+  manualResolutionNote       String?
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   blockchainTransactions BlockchainTransaction[]
@@ -127,6 +130,7 @@ model TransactionIntent {
   @@index([chainId, intentType])
   @@index([status, policyDecision])
   @@index([chainId, externalAddress])
+  @@index([status, manuallyResolvedAt])
   ledgerJournal          LedgerJournal?
 }
 
@@ -443,6 +447,7 @@ enum ReviewCaseEventType {
   started
   note_added
   handed_off
+  manual_resolution_applied
   resolved
   dismissed
 }
