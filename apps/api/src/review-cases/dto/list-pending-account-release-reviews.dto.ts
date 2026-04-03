@@ -8,20 +8,13 @@ import {
   Min
 } from "class-validator";
 
-export class ListReleasedAccountHoldsDto {
+export class ListPendingAccountReleaseReviewsDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(100)
   limit?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(3650)
-  sinceDays?: number;
 
   @IsOptional()
   @IsIn([
@@ -38,15 +31,11 @@ export class ListReleasedAccountHoldsDto {
 
   @IsOptional()
   @IsString()
-  appliedByOperatorId?: string;
+  requestedByOperatorId?: string;
 
   @IsOptional()
   @IsString()
-  releasedByOperatorId?: string;
-
-  @IsOptional()
-  @IsIn(["approved"])
-  releaseDecisionStatus?: "approved";
+  assignedOperatorId?: string;
 
   @IsOptional()
   @IsString()

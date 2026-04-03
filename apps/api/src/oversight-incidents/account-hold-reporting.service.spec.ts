@@ -1,8 +1,10 @@
 import {
   AccountLifecycleStatus,
+  CustomerAccountRestrictionReleaseDecisionStatus,
   CustomerAccountRestrictionStatus,
   OversightIncidentStatus,
-  OversightIncidentType
+  OversightIncidentType,
+  ReviewCaseStatus
 } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AccountHoldReportingService } from "./account-hold-reporting.service";
@@ -26,19 +28,20 @@ function buildAccountHoldRecord(
     releasedByOperatorRole: null,
     releaseNote: null,
     restoredStatus: null,
+    releaseDecisionStatus:
+      CustomerAccountRestrictionReleaseDecisionStatus.not_requested,
+    releaseRequestedAt: null,
+    releaseRequestedByOperatorId: null,
+    releaseRequestNote: null,
+    releaseDecidedAt: null,
+    releaseDecidedByOperatorId: null,
+    releaseDecisionNote: null,
+    releaseReviewCaseId: "review_case_1",
     createdAt: new Date("2026-04-02T00:00:00.000Z"),
     updatedAt: new Date("2026-04-02T00:00:00.000Z"),
     customerAccount: {
       id: "account_1",
-      customerId: "customer_1",
       status: AccountLifecycleStatus.restricted,
-      restrictedAt: new Date("2026-04-02T00:00:00.000Z"),
-      restrictedFromStatus: AccountLifecycleStatus.active,
-      restrictionReasonCode: "oversight_risk_hold",
-      restrictedByOperatorId: "ops_1",
-      restrictedByOversightIncidentId: "incident_1",
-      restrictionReleasedAt: null,
-      restrictionReleasedByOperatorId: null,
       customer: {
         id: "customer_1",
         supabaseUserId: "supabase_1",
@@ -56,6 +59,11 @@ function buildAccountHoldRecord(
       assignedOperatorId: "ops_1",
       openedAt: new Date("2026-04-02T00:00:00.000Z"),
       updatedAt: new Date("2026-04-02T00:00:00.000Z")
+    },
+    releaseReviewCase: {
+      id: "review_case_1",
+      status: ReviewCaseStatus.open,
+      assignedOperatorId: null
     },
     ...overrides
   };
@@ -82,11 +90,19 @@ describe("AccountHoldReportingService", () => {
     jest.restoreAllMocks();
   });
 
-  it("lists active account holds", async () => {
+  it("lists active account holds with release review state", async () => {
     const { service, prismaService } = createService();
 
     (prismaService.customerAccountRestriction.findMany as jest.Mock).mockResolvedValue(
-      [buildAccountHoldRecord()]
+      [
+        buildAccountHoldRecord({
+          releaseDecisionStatus:
+            CustomerAccountRestrictionReleaseDecisionStatus.pending,
+          releaseRequestedAt: new Date("2026-04-03T00:00:00.000Z"),
+          releaseRequestedByOperatorId: "ops_2",
+          releaseRequestNote: "Escalating for approval."
+        })
+      ]
     );
 
     const result = await service.listActiveAccountHolds({
@@ -97,10 +113,13 @@ describe("AccountHoldReportingService", () => {
     expect(result.holds[0].hold.status).toBe(
       CustomerAccountRestrictionStatus.active
     );
-    expect(result.holds[0].hold.appliedByOperatorId).toBe("ops_1");
+    expect(result.holds[0].releaseReview.decisionStatus).toBe(
+      CustomerAccountRestrictionReleaseDecisionStatus.pending
+    );
+    expect(result.holds[0].releaseReview.reviewCaseId).toBe("review_case_1");
   });
 
-  it("lists released account holds", async () => {
+  it("lists released account holds with hold duration", async () => {
     const { service, prismaService } = createService();
 
     (prismaService.customerAccountRestriction.findMany as jest.Mock).mockResolvedValue(
@@ -112,11 +131,22 @@ describe("AccountHoldReportingService", () => {
           releasedByOperatorRole: "compliance_lead",
           releaseNote: "Released after investigation.",
           restoredStatus: AccountLifecycleStatus.active,
+          releaseDecisionStatus:
+            CustomerAccountRestrictionReleaseDecisionStatus.approved,
+          releaseRequestedAt: new Date("2026-04-02T12:00:00.000Z"),
+          releaseRequestedByOperatorId: "ops_3",
+          releaseRequestNote: "Requesting release.",
+          releaseDecidedAt: new Date("2026-04-03T00:00:00.000Z"),
+          releaseDecidedByOperatorId: "ops_2",
+          releaseDecisionNote: "Released after investigation.",
           customerAccount: {
             ...buildAccountHoldRecord().customerAccount,
-            status: AccountLifecycleStatus.active,
-            restrictionReleasedAt: new Date("2026-04-03T00:00:00.000Z"),
-            restrictionReleasedByOperatorId: "ops_2"
+            status: AccountLifecycleStatus.active
+          },
+          releaseReviewCase: {
+            id: "review_case_1",
+            status: ReviewCaseStatus.resolved,
+            assignedOperatorId: "ops_3"
           }
         })
       ]
@@ -124,13 +154,18 @@ describe("AccountHoldReportingService", () => {
 
     const result = await service.listReleasedAccountHolds({
       limit: 20,
-      sinceDays: 30
+      sinceDays: 30,
+      releaseDecisionStatus: "approved"
     });
 
     expect(result.holds).toHaveLength(1);
     expect(result.holds[0].hold.releasedByOperatorId).toBe("ops_2");
     expect(result.holds[0].hold.status).toBe(
       CustomerAccountRestrictionStatus.released
+    );
+    expect(result.holds[0].hold.holdDurationMs).toBe(86400000);
+    expect(result.holds[0].releaseReview.decisionStatus).toBe(
+      CustomerAccountRestrictionReleaseDecisionStatus.approved
     );
   });
 
@@ -146,6 +181,8 @@ describe("AccountHoldReportingService", () => {
           releasedAt: new Date("2026-04-03T00:00:00.000Z"),
           releasedByOperatorId: "ops_2",
           releasedByOperatorRole: "compliance_lead",
+          releaseDecisionStatus:
+            CustomerAccountRestrictionReleaseDecisionStatus.approved,
           restoredStatus: AccountLifecycleStatus.active,
           oversightIncident: {
             ...buildAccountHoldRecord().oversightIncident,

@@ -6,6 +6,7 @@ import {
   OversightIncidentType
 } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { ReviewCasesService } from "../review-cases/review-cases.service";
 import { OversightIncidentsService } from "./oversight-incidents.service";
 
 function buildOversightIncident(
@@ -103,11 +104,21 @@ function createService() {
     $transaction: jest.fn()
   } as unknown as PrismaService;
 
-  const service = new OversightIncidentsService(prismaService);
+  const reviewCasesService = {
+    openOrReuseReviewCase: jest.fn().mockResolvedValue({
+      reviewCase: {
+        id: "review_case_1"
+      },
+      reviewCaseReused: false
+    })
+  } as unknown as ReviewCasesService;
+
+  const service = new OversightIncidentsService(prismaService, reviewCasesService);
 
   return {
     service,
-    prismaService
+    prismaService,
+    reviewCasesService
   };
 }
 
@@ -118,7 +129,7 @@ describe("OversightIncidentsService account restriction workflow", () => {
   });
 
   it("places an account restriction from an oversight incident", async () => {
-    const { service, prismaService } = createService();
+    const { service, prismaService, reviewCasesService } = createService();
 
     (prismaService.oversightIncident.findUnique as jest.Mock).mockResolvedValue(
       buildOversightIncident()
@@ -184,20 +195,23 @@ describe("OversightIncidentsService account restriction workflow", () => {
     expect(result.accountRestriction.accountStatus).toBe(
       AccountLifecycleStatus.restricted
     );
+    expect(reviewCasesService.openOrReuseReviewCase).toHaveBeenCalled();
     expect(transaction.customerAccountRestriction.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: CustomerAccountRestrictionStatus.active,
           appliedByOperatorId: "ops_1",
           appliedByOperatorRole: "risk_manager",
-          restrictionReasonCode: "oversight_risk_hold"
+          restrictionReasonCode: "oversight_risk_hold",
+          releaseDecisionStatus: "not_requested",
+          releaseReviewCaseId: "review_case_1"
         })
       })
     );
   });
 
   it("reuses account restriction placement when the same incident already holds the account", async () => {
-    const { service, prismaService } = createService();
+    const { service, prismaService, reviewCasesService } = createService();
 
     (prismaService.oversightIncident.findUnique as jest.Mock).mockResolvedValue(
       buildOversightIncident({
@@ -238,119 +252,7 @@ describe("OversightIncidentsService account restriction workflow", () => {
 
     expect(result.stateReused).toBe(true);
     expect(result.accountRestriction.active).toBe(true);
-  });
-
-  it("releases an account restriction back to its previous status", async () => {
-    const { service, prismaService } = createService();
-
-    (prismaService.oversightIncident.findUnique as jest.Mock).mockResolvedValue(
-      buildOversightIncident({
-        status: OversightIncidentStatus.in_progress,
-        assignedOperatorId: "ops_1",
-        subjectCustomerAccount: buildCustomerAccount({
-          status: AccountLifecycleStatus.restricted,
-          restrictedAt: new Date("2026-04-01T01:10:00.000Z"),
-          restrictedFromStatus: AccountLifecycleStatus.active,
-          restrictionReasonCode: "oversight_risk_hold",
-          restrictedByOperatorId: "ops_1",
-          restrictedByOversightIncidentId: "incident_1",
-          restrictionReleasedAt: null,
-          restrictionReleasedByOperatorId: null
-        })
-      })
-    );
-
-    (prismaService.customerAccount.findUnique as jest.Mock).mockResolvedValue(
-      buildCustomerAccount({
-        status: AccountLifecycleStatus.restricted,
-        restrictedAt: new Date("2026-04-01T01:10:00.000Z"),
-        restrictedFromStatus: AccountLifecycleStatus.active,
-        restrictionReasonCode: "oversight_risk_hold",
-        restrictedByOperatorId: "ops_1",
-        restrictedByOversightIncidentId: "incident_1",
-        restrictionReleasedAt: null,
-        restrictionReleasedByOperatorId: null
-      })
-    );
-
-    (prismaService.customerAccountRestriction.findFirst as jest.Mock).mockResolvedValue(
-      {
-        id: "restriction_1"
-      }
-    );
-
-    const transaction = {
-      customerAccount: {
-        update: jest.fn().mockResolvedValue(
-          buildCustomerAccount({
-            status: AccountLifecycleStatus.active,
-            restrictedAt: new Date("2026-04-01T01:10:00.000Z"),
-            restrictedFromStatus: AccountLifecycleStatus.active,
-            restrictionReasonCode: "oversight_risk_hold",
-            restrictedByOperatorId: "ops_1",
-            restrictedByOversightIncidentId: "incident_1",
-            restrictionReleasedAt: new Date("2026-04-01T01:20:00.000Z"),
-            restrictionReleasedByOperatorId: "ops_1"
-          })
-        )
-      },
-      customerAccountRestriction: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: "restriction_1"
-        }),
-        updateMany: jest.fn().mockResolvedValue({
-          count: 1
-        })
-      },
-      oversightIncident: {
-        update: jest.fn().mockResolvedValue(
-          buildOversightIncident({
-            status: OversightIncidentStatus.in_progress,
-            assignedOperatorId: "ops_1",
-            startedAt: new Date("2026-04-01T01:10:00.000Z")
-          })
-        )
-      },
-      oversightIncidentEvent: {
-        create: jest.fn().mockResolvedValue(undefined)
-      },
-      auditEvent: {
-        create: jest.fn().mockResolvedValue(undefined)
-      }
-    };
-
-    (prismaService.$transaction as jest.Mock).mockImplementation(
-      async (callback: (tx: any) => Promise<unknown>) => callback(transaction)
-    );
-
-    const result = await service.releaseAccountRestriction(
-      "incident_1",
-      "ops_1",
-      "compliance_lead",
-      {
-        note: "Releasing hold after investigation."
-      }
-    );
-
-    expect(result.stateReused).toBe(false);
-    expect(result.accountRestriction.active).toBe(false);
-    expect(result.accountRestriction.accountStatus).toBe(
-      AccountLifecycleStatus.active
-    );
-    expect(transaction.customerAccountRestriction.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          id: "restriction_1",
-          status: CustomerAccountRestrictionStatus.active
-        },
-        data: expect.objectContaining({
-          status: CustomerAccountRestrictionStatus.released,
-          releasedByOperatorId: "ops_1",
-          releasedByOperatorRole: "compliance_lead",
-          restoredStatus: AccountLifecycleStatus.active
-        })
-      })
-    );
+    expect(reviewCasesService.openOrReuseReviewCase).not.toHaveBeenCalled();
   });
 
   it("rejects restriction placement when the account is already restricted by another hold", async () => {
@@ -394,37 +296,6 @@ describe("OversightIncidentsService account restriction workflow", () => {
         "junior_operator",
         {
           restrictionReasonCode: "oversight_risk_hold"
-        }
-      )
-    ).rejects.toBeInstanceOf(ForbiddenException);
-  });
-
-  it("rejects account hold release when the operator role is not authorized", async () => {
-    const { service, prismaService } = createService();
-
-    (prismaService.oversightIncident.findUnique as jest.Mock).mockResolvedValue(
-      buildOversightIncident({
-        status: OversightIncidentStatus.in_progress,
-        subjectCustomerAccount: buildCustomerAccount({
-          status: AccountLifecycleStatus.restricted,
-          restrictedAt: new Date("2026-04-01T01:10:00.000Z"),
-          restrictedFromStatus: AccountLifecycleStatus.active,
-          restrictionReasonCode: "oversight_risk_hold",
-          restrictedByOperatorId: "ops_1",
-          restrictedByOversightIncidentId: "incident_1",
-          restrictionReleasedAt: null,
-          restrictionReleasedByOperatorId: null
-        })
-      })
-    );
-
-    await expect(
-      service.releaseAccountRestriction(
-        "incident_1",
-        "ops_1",
-        "junior_operator",
-        {
-          note: "Attempting release without authority."
         }
       )
     ).rejects.toBeInstanceOf(ForbiddenException);

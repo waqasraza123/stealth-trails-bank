@@ -2,22 +2,27 @@
 
 ## Purpose
 
-This runbook covers the first risk-hold and restricted-customer escalation slice driven by oversight incidents.
+This runbook covers the restricted-account hold lifecycle driven by oversight incidents and the linked release-review workflow.
 
 This slice lets operators:
 
 - place a temporary risk hold on a customer account from an oversight incident
-- release that hold later
-- inspect current account restriction state from the oversight workspace
+- automatically link that hold to an `account_review` review case
+- request release from the linked review case
+- review pending release requests in a queue
+- approve or deny release with a privileged operator role
+- report active holds, released holds, and hold summaries
 
-It also blocks new sensitive transaction-intent requests while the hold is active.
+It still blocks new deposit and withdrawal requests while a hold is active.
 
 ## Authentication
 
 These endpoints require:
 
-- x-operator-api-key
-- x-operator-id
+- `x-operator-api-key`
+- `x-operator-id`
+
+Release-approval decisions also require an operator role that is allowed by the account-hold release runtime policy.
 
 ## Place an account hold from an oversight incident
 
@@ -41,62 +46,146 @@ Expected behavior:
   - targets a customer account
 - allowed only when the target account is not already restricted by another active hold
 - updates the customer account:
-  - status = restricted
-  - restrictedAt
-  - restrictedFromStatus
-  - restrictionReasonCode
-  - restrictedByOperatorId
-  - restrictedByOversightIncidentId
+  - `status = restricted`
+  - `restrictedAt`
+  - `restrictedFromStatus`
+  - `restrictionReasonCode`
+  - `restrictedByOperatorId`
+  - `restrictedByOversightIncidentId`
+- creates a durable `CustomerAccountRestriction` record
+- opens or reuses a linked `ReviewCase` of type `account_review`
+- stores the linked review case id on `CustomerAccountRestriction.releaseReviewCaseId`
 - writes:
-  - OversightIncidentEvent.eventType = account_restriction_applied
-  - AuditEvent.action = customer_account.restricted
+  - `OversightIncidentEvent.eventType = account_restriction_applied`
+  - `AuditEvent.action = customer_account.restricted`
 
-## Release an account hold from an oversight incident
+## Request account release from the linked review case
 
 Endpoint:
 
-    POST /oversight-incidents/internal/:oversightIncidentId/release-account-hold
+    POST /review-cases/internal/:reviewCaseId/request-account-release
 
 Example body:
 
     {
-      "note": "Investigation completed. Hold is no longer required."
+      "note": "Investigation is complete. Requesting release approval."
     }
 
 Expected behavior:
 
-- allowed only when the account is actively restricted by that same oversight incident
-- restores the customer account back to:
-  - restrictedFromStatus
-  - or registered if no previous status was stored
-- updates:
-  - restrictionReleasedAt
-  - restrictionReleasedByOperatorId
+- allowed only for a linked `account_review` review case
+- allowed only while the linked restriction record is still active
+- updates the restriction record:
+  - `releaseDecisionStatus = pending`
+  - `releaseRequestedAt`
+  - `releaseRequestedByOperatorId`
+  - `releaseRequestNote`
 - writes:
-  - OversightIncidentEvent.eventType = account_restriction_released
-  - AuditEvent.action = customer_account.restriction_released
+  - `ReviewCaseEvent.eventType = account_release_requested`
+  - `AuditEvent.action = customer_account.release_review_requested`
 
-## Oversight workspace visibility
+## Pending account release queue
 
 Endpoint:
 
-    GET /oversight-incidents/internal/:oversightIncidentId/workspace?recentLimit=20
+    GET /review-cases/internal/account-release-requests/pending
 
 Expected behavior:
 
-- returns:
-  - oversight incident details
-  - current account restriction state
-  - oversight event timeline
-  - recent manually resolved intents
-  - recent related review cases
+- returns pending account release reviews
+- includes:
+  - linked review case summary
+  - customer identity
+  - oversight incident summary
+  - hold metadata
+  - release request metadata
+
+## Decide an account release request
+
+Endpoint:
+
+    POST /review-cases/internal/account-release-requests/:reviewCaseId/decision
+
+Example body:
+
+    {
+      "decision": "approved",
+      "note": "Release approved after oversight review."
+    }
+
+Decision behavior:
+
+- role-gated by the account-hold release runtime policy
+- requires a pending release request on the linked active restriction record
+
+When `decision = approved`:
+
+- releases the active restriction record
+- restores the customer account back to `previousStatus`, or `registered` if absent
+- resolves the linked review case
+- writes:
+  - `ReviewCaseEvent.eventType = account_release_approved`
+  - `ReviewCaseEvent.eventType = resolved`
+  - `OversightIncidentEvent.eventType = account_restriction_released`
+  - `AuditEvent.action = customer_account.restriction_released`
+  - `AuditEvent.action = review_case.resolved`
+
+When `decision = denied`:
+
+- keeps the restriction active
+- sets the release decision state to denied
+- keeps the linked review case open or in progress
+- writes:
+  - `ReviewCaseEvent.eventType = account_release_denied`
+  - `AuditEvent.action = customer_account.release_review_denied`
+
+## Hold reporting APIs
+
+Active holds:
+
+    GET /oversight-incidents/internal/account-holds/active
+
+Released holds:
+
+    GET /oversight-incidents/internal/account-holds/released
+
+Summary:
+
+    GET /oversight-incidents/internal/account-holds/summary
+
+Active reporting returns:
+
+- customer identity
+- current account status
+- oversight incident summary
+- applied operator accountability
+- release review state
+- linked review case id
+
+Released reporting returns:
+
+- customer identity
+- oversight incident summary
+- applied and released operator accountability
+- release review decision metadata
+- hold duration
+
+Summary returns:
+
+- `totalHolds`
+- `activeHolds`
+- `releasedHolds`
+- `byIncidentType`
+- `byReasonCode`
+- `byAppliedOperator`
+- `byReleasedOperator`
 
 ## Sensitive request blocking
 
 While a customer account is under an active risk hold:
 
-- POST /transaction-intents/deposit-requests is rejected
-- POST /transaction-intents/withdrawal-requests is rejected
+- `POST /transaction-intents/deposit-requests` is rejected
+- `POST /transaction-intents/withdrawal-requests` is rejected
 
 Expected behavior:
 
@@ -105,9 +194,11 @@ Expected behavior:
 
 ## Success condition
 
-A successful risk-hold slice should produce:
+A successful restricted-account release-review slice should produce:
 
-- explicit oversight-driven account containment
-- clear linkage between the active hold and the oversight incident
-- reversible hold release with audit trail
-- prevention of new sensitive intent creation while risk containment is active
+- durable hold history across multiple hold and release cycles
+- explicit release-review workflow instead of direct hold release
+- privileged approval and denial controls
+- durable active and released hold reporting
+- summary reporting across incident type, reason code, applier, and releaser
+- continued prevention of new sensitive transaction-intent requests while a hold is active

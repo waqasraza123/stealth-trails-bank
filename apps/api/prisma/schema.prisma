@@ -186,6 +186,7 @@ model ReviewCase {
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   events              ReviewCaseEvent[]
+  restrictionReleaseReviews CustomerAccountRestriction[] @relation("RestrictionReleaseReviewCase")
 
   @@index([customerId])
   @@index([customerAccountId])
@@ -463,6 +464,9 @@ enum ReviewCaseEventType {
   note_added
   handed_off
   manual_resolution_applied
+  account_release_requested
+  account_release_approved
+  account_release_denied
   resolved
   dismissed
 }
@@ -512,25 +516,34 @@ model OversightIncidentEvent {
 }
 
 model CustomerAccountRestriction {
-  id                     String                           @id @default(cuid())
-  customerAccountId      String
-  customerAccount        CustomerAccount                  @relation(fields: [customerAccountId], references: [id])
-  oversightIncidentId    String
-  oversightIncident      OversightIncident                @relation(fields: [oversightIncidentId], references: [id])
-  status                 CustomerAccountRestrictionStatus @default(active)
-  restrictionReasonCode  String
-  appliedByOperatorId    String
-  appliedByOperatorRole  String?
-  appliedNote            String?
-  previousStatus         AccountLifecycleStatus
-  appliedAt              DateTime                         @default(now())
-  releasedAt             DateTime?
-  releasedByOperatorId   String?
-  releasedByOperatorRole String?
-  releaseNote            String?
-  restoredStatus         AccountLifecycleStatus?
-  createdAt              DateTime                         @default(now())
-  updatedAt              DateTime                         @updatedAt
+  id                            String                                          @id @default(cuid())
+  customerAccountId             String
+  customerAccount               CustomerAccount                                 @relation(fields: [customerAccountId], references: [id])
+  oversightIncidentId           String
+  oversightIncident             OversightIncident                               @relation(fields: [oversightIncidentId], references: [id])
+  status                        CustomerAccountRestrictionStatus                @default(active)
+  restrictionReasonCode         String
+  appliedByOperatorId           String
+  appliedByOperatorRole         String?
+  appliedNote                   String?
+  previousStatus                AccountLifecycleStatus
+  appliedAt                     DateTime                                        @default(now())
+  releasedAt                    DateTime?
+  releasedByOperatorId          String?
+  releasedByOperatorRole        String?
+  releaseNote                   String?
+  restoredStatus                AccountLifecycleStatus?
+  releaseDecisionStatus         CustomerAccountRestrictionReleaseDecisionStatus @default(not_requested)
+  releaseRequestedAt            DateTime?
+  releaseRequestedByOperatorId  String?
+  releaseRequestNote            String?
+  releaseDecidedAt              DateTime?
+  releaseDecidedByOperatorId    String?
+  releaseDecisionNote           String?
+  releaseReviewCaseId           String?
+  releaseReviewCase             ReviewCase?                                     @relation("RestrictionReleaseReviewCase", fields: [releaseReviewCaseId], references: [id])
+  createdAt                     DateTime                                        @default(now())
+  updatedAt                     DateTime                                        @updatedAt
 
   @@index([customerAccountId, status])
   @@index([customerAccountId, oversightIncidentId, status], map: "CustomerAccountRestriction_customerAccountId_oversightIncidentI")
@@ -538,6 +551,8 @@ model CustomerAccountRestriction {
   @@index([restrictionReasonCode, status])
   @@index([appliedByOperatorId, appliedAt])
   @@index([releasedByOperatorId, releasedAt])
+  @@index([releaseDecisionStatus, releaseRequestedAt], map: "CustomerAccountRestriction_releaseDecisionStatus_releaseRequest")
+  @@index([releaseReviewCaseId])
   @@index([appliedAt])
   @@index([releasedAt])
 }
@@ -567,4 +582,11 @@ enum OversightIncidentEventType {
 enum CustomerAccountRestrictionStatus {
   active
   released
+}
+
+enum CustomerAccountRestrictionReleaseDecisionStatus {
+  not_requested
+  pending
+  approved
+  denied
 }

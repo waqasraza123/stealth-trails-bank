@@ -6,6 +6,7 @@ import {
   OversightIncidentStatus,
   OversightIncidentType,
   Prisma,
+  ReviewCaseType,
   TransactionIntentType
 } from "@prisma/client";
 import {
@@ -19,6 +20,7 @@ import {
   loadProductChainRuntimeConfig
 } from "@stealth-trails-bank/config/api";
 import { PrismaService } from "../prisma/prisma.service";
+import { ReviewCasesService } from "../review-cases/review-cases.service";
 import { AddOversightIncidentNoteDto } from "./dto/add-oversight-incident-note.dto";
 import { ApplyAccountRestrictionDto } from "./dto/apply-account-restriction.dto";
 import { DismissOversightIncidentDto } from "./dto/dismiss-oversight-incident.dto";
@@ -27,7 +29,6 @@ import { ListOversightAlertsDto } from "./dto/list-oversight-alerts.dto";
 import { ListOversightIncidentsDto } from "./dto/list-oversight-incidents.dto";
 import { OpenCustomerOversightIncidentDto } from "./dto/open-customer-oversight-incident.dto";
 import { OpenOperatorOversightIncidentDto } from "./dto/open-operator-oversight-incident.dto";
-import { ReleaseAccountRestrictionDto } from "./dto/release-account-restriction.dto";
 import { ResolveOversightIncidentDto } from "./dto/resolve-oversight-incident.dto";
 import { StartOversightIncidentDto } from "./dto/start-oversight-incident.dto";
 
@@ -333,7 +334,10 @@ export class OversightIncidentsService {
   private readonly accountHoldApplyAllowedOperatorRoles: string[];
   private readonly accountHoldReleaseAllowedOperatorRoles: string[];
 
-  constructor(private readonly prismaService: PrismaService) {
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly reviewCasesService: ReviewCasesService
+  ) {
     this.productChainId = loadProductChainRuntimeConfig().productChainId;
     const accountHoldPolicy = loadAccountHoldPolicyRuntimeConfig();
     this.accountHoldApplyAllowedOperatorRoles = [
@@ -584,23 +588,6 @@ export class OversightIncidentsService {
     return normalizedOperatorRole;
   }
 
-  private assertCanReleaseAccountHold(operatorRole?: string): string | null {
-    const normalizedOperatorRole = this.normalizeOperatorRole(operatorRole);
-
-    if (
-      !this.isOperatorRoleAuthorized(
-        normalizedOperatorRole,
-        this.accountHoldReleaseAllowedOperatorRoles
-      )
-    ) {
-      throw new ForbiddenException(
-        "Operator role is not authorized to release account holds."
-      );
-    }
-
-    return normalizedOperatorRole;
-  }
-
   private mapReviewCaseSummaryProjection(
     reviewCase: ReviewCaseSummaryRecord
   ): ReviewCaseSummaryProjection {
@@ -614,6 +601,37 @@ export class OversightIncidentsService {
       customerAccountId: reviewCase.customerAccountId,
       updatedAt: reviewCase.updatedAt.toISOString(),
       resolvedAt: reviewCase.resolvedAt?.toISOString() ?? null
+    };
+  }
+
+  private async openOrReuseRestrictionReleaseReviewCase(
+    transaction: Prisma.TransactionClient,
+    incident: OversightIncidentRecord,
+    customerAccountId: string,
+    operatorId: string,
+    note: string | null
+  ): Promise<{ reviewCaseId: string }> {
+    const result = await this.reviewCasesService.openOrReuseReviewCase(
+      transaction,
+      {
+        customerId: incident.subjectCustomerId,
+        customerAccountId,
+        transactionIntentId: null,
+        type: ReviewCaseType.account_review,
+        reasonCode: null,
+        notes: note,
+        actorType: "operator",
+        actorId: operatorId,
+        auditAction: "review_case.account_review.opened",
+        auditMetadata: {
+          oversightIncidentId: incident.id,
+          oversightIncidentType: incident.incidentType
+        }
+      }
+    );
+
+    return {
+      reviewCaseId: result.reviewCase.id
     };
   }
 
@@ -637,16 +655,6 @@ export class OversightIncidentsService {
 
     if (incident.status === OversightIncidentStatus.dismissed) {
       throw new ConflictException("Oversight incident is already dismissed.");
-    }
-  }
-
-  private ensureOversightIncidentSupportsRestrictionRelease(
-    incident: OversightIncidentRecord
-  ): void {
-    if (incident.status === OversightIncidentStatus.dismissed) {
-      throw new ConflictException(
-        "Dismissed oversight incidents do not support restriction release."
-      );
     }
   }
 
@@ -1562,6 +1570,15 @@ export class OversightIncidentsService {
 
     try {
       const result = await this.prismaService.$transaction(async (transaction) => {
+        const { reviewCaseId } =
+          await this.openOrReuseRestrictionReleaseReviewCase(
+            transaction,
+            incident,
+            customerAccount.id,
+            operatorId,
+            note
+          );
+
         const createdRestrictionRecord =
           await transaction.customerAccountRestriction.create({
             data: {
@@ -1578,7 +1595,15 @@ export class OversightIncidentsService {
               releasedByOperatorId: null,
               releasedByOperatorRole: null,
               releaseNote: null,
-              restoredStatus: null
+              restoredStatus: null,
+              releaseDecisionStatus: "not_requested",
+              releaseRequestedAt: null,
+              releaseRequestedByOperatorId: null,
+              releaseRequestNote: null,
+              releaseDecidedAt: null,
+              releaseDecidedByOperatorId: null,
+              releaseDecisionNote: null,
+              releaseReviewCaseId: reviewCaseId
             },
             select: {
               id: true
@@ -1712,192 +1737,6 @@ export class OversightIncidentsService {
 
       throw error;
     }
-  }
-
-  async releaseAccountRestriction(
-    oversightIncidentId: string,
-    operatorId: string,
-    operatorRole: string | undefined,
-    dto: ReleaseAccountRestrictionDto
-  ): Promise<UpdateOversightAccountRestrictionResult> {
-    const incident = await this.findOversightIncidentById(oversightIncidentId);
-
-    if (!incident) {
-      throw new NotFoundException("Oversight incident not found.");
-    }
-
-    const normalizedOperatorRole = this.assertCanReleaseAccountHold(operatorRole);
-
-    this.ensureOversightIncidentSupportsRestrictionRelease(incident);
-    this.ensureOperatorCanMutateOversightIncident(incident, operatorId);
-
-    if (!incident.subjectCustomerAccountId) {
-      throw new ConflictException(
-        "Oversight incident does not target a customer account."
-      );
-    }
-
-    const customerAccount = await this.prismaService.customerAccount.findUnique({
-      where: {
-        id: incident.subjectCustomerAccountId
-      },
-      select: customerAccountRestrictionSnapshotSelect
-    });
-
-    if (!customerAccount) {
-      throw new NotFoundException("Customer account not found.");
-    }
-
-    if (
-      customerAccount.status !== AccountLifecycleStatus.restricted &&
-      customerAccount.restrictionReleasedAt &&
-      customerAccount.restrictedByOversightIncidentId === incident.id
-    ) {
-      return {
-        oversightIncident: this.mapOversightIncidentProjection(incident),
-        accountRestriction: this.mapAccountRestrictionProjection(customerAccount),
-        stateReused: true
-      };
-    }
-
-    if (customerAccount.status !== AccountLifecycleStatus.restricted) {
-      throw new ConflictException(
-        "Customer account is not currently under an active restriction."
-      );
-    }
-
-    if (customerAccount.restrictedByOversightIncidentId !== incident.id) {
-      throw new ConflictException(
-        "Customer account is restricted by a different oversight hold."
-      );
-    }
-
-    const restoredStatus =
-      customerAccount.restrictedFromStatus ?? AccountLifecycleStatus.registered;
-    const note = dto.note?.trim() ?? null;
-    const restrictionReleasedAt = new Date();
-
-    const result = await this.prismaService.$transaction(async (transaction) => {
-      const activeRestrictionRecord =
-        await transaction.customerAccountRestriction.findFirst({
-          where: {
-            customerAccountId: customerAccount.id,
-            oversightIncidentId: incident.id,
-            status: CustomerAccountRestrictionStatus.active
-          },
-          select: {
-            id: true
-          }
-        });
-
-      if (!activeRestrictionRecord) {
-        throw new ConflictException(
-          "Active account hold record not found for this oversight incident."
-        );
-      }
-
-      const releaseUpdateResult =
-        await transaction.customerAccountRestriction.updateMany({
-          where: {
-            id: activeRestrictionRecord.id,
-            status: CustomerAccountRestrictionStatus.active
-          },
-          data: {
-            status: CustomerAccountRestrictionStatus.released,
-            releasedAt: restrictionReleasedAt,
-            releasedByOperatorId: operatorId,
-            releasedByOperatorRole: normalizedOperatorRole,
-            releaseNote: note,
-            restoredStatus
-          }
-        });
-
-      if (releaseUpdateResult.count !== 1) {
-        throw new ConflictException("Account hold was already released.");
-      }
-
-      const updatedAccount = await transaction.customerAccount.update({
-        where: {
-          id: customerAccount.id
-        },
-        data: {
-          status: restoredStatus,
-          restrictionReleasedAt,
-          restrictionReleasedByOperatorId: operatorId
-        },
-        select: customerAccountRestrictionSnapshotSelect
-      });
-
-      const updatedIncident = await transaction.oversightIncident.update({
-        where: {
-          id: incident.id
-        },
-        data: {
-          assignedOperatorId: incident.assignedOperatorId ?? operatorId,
-          startedAt: incident.startedAt ?? restrictionReleasedAt,
-          summaryNote: note ?? incident.summaryNote
-        },
-        include: oversightIncidentInclude
-      });
-
-      await this.appendOversightIncidentEvent(
-        transaction,
-        incident.id,
-        "operator",
-        operatorId,
-        OversightIncidentEventType.account_restriction_released,
-        note,
-        {
-          restrictionRecordId: activeRestrictionRecord.id,
-          previousAccountStatus: customerAccount.status,
-          newAccountStatus: restoredStatus,
-          restrictionReasonCode: customerAccount.restrictionReasonCode,
-          releasedByOperatorId: operatorId,
-          releasedByOperatorRole: normalizedOperatorRole,
-          releasedAt: restrictionReleasedAt.toISOString(),
-          restoredStatus
-        } as Prisma.InputJsonValue
-      );
-
-      await transaction.auditEvent.create({
-        data: {
-          customerId: incident.subjectCustomerId,
-          actorType: "operator",
-          actorId: operatorId,
-          action: "customer_account.restriction_released",
-          targetType: "CustomerAccount",
-          targetId: customerAccount.id,
-          metadata: {
-            previousStatus: customerAccount.status,
-            newStatus: restoredStatus,
-            restrictionReasonCode: customerAccount.restrictionReasonCode,
-            note,
-            restrictionRecordId: activeRestrictionRecord.id,
-            releasedByOperatorId: operatorId,
-            releasedByOperatorRole: normalizedOperatorRole,
-            releasedAt: restrictionReleasedAt.toISOString(),
-            restoredStatus,
-            oversightIncidentId: incident.id,
-            oversightIncidentType: incident.incidentType
-          }
-        }
-      });
-
-      return {
-        updatedIncident,
-        updatedAccount
-      };
-    });
-
-    return {
-      oversightIncident: this.mapOversightIncidentProjection(
-        result.updatedIncident
-      ),
-      accountRestriction: this.mapAccountRestrictionProjection(
-        result.updatedAccount
-      ),
-      stateReused: false
-    };
   }
 
   async resolveOversightIncident(

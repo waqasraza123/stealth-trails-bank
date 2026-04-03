@@ -36,4 +36,8 @@ export class GetAccountHoldSummaryDto {
   @IsOptional()
   @IsString()
   releasedByOperatorId?: string;
+
+  @IsOptional()
+  @IsIn(["not_requested", "pending", "approved", "denied"])
+  releaseDecisionStatus?: "not_requested" | "pending" | "approved" | "denied";
 }

@@ -7,6 +7,7 @@ import {
   TransactionIntentType
 } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { ReviewCasesService } from "../review-cases/review-cases.service";
 import { OversightIncidentsService } from "./oversight-incidents.service";
 
 function buildManuallyResolvedIntent(
@@ -123,7 +124,11 @@ function createService() {
     $transaction: jest.fn()
   } as unknown as PrismaService;
 
-  const service = new OversightIncidentsService(prismaService);
+  const reviewCasesService = {
+    openOrReuseReviewCase: jest.fn()
+  } as unknown as ReviewCasesService;
+
+  const service = new OversightIncidentsService(prismaService, reviewCasesService);
 
   return {
     service,

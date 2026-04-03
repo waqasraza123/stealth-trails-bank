@@ -1,10 +1,12 @@
 import { Injectable } from "@nestjs/common";
 import {
   AccountLifecycleStatus,
+  CustomerAccountRestrictionReleaseDecisionStatus,
   CustomerAccountRestrictionStatus,
   OversightIncidentStatus,
   OversightIncidentType,
-  Prisma
+  Prisma,
+  ReviewCaseStatus
 } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { GetAccountHoldSummaryDto } from "./dto/get-account-hold-summary.dto";
@@ -15,15 +17,7 @@ const accountHoldInclude = {
   customerAccount: {
     select: {
       id: true,
-      customerId: true,
       status: true,
-      restrictedAt: true,
-      restrictedFromStatus: true,
-      restrictionReasonCode: true,
-      restrictedByOperatorId: true,
-      restrictedByOversightIncidentId: true,
-      restrictionReleasedAt: true,
-      restrictionReleasedByOperatorId: true,
       customer: {
         select: {
           id: true,
@@ -45,6 +39,13 @@ const accountHoldInclude = {
       assignedOperatorId: true,
       openedAt: true,
       updatedAt: true
+    }
+  },
+  releaseReviewCase: {
+    select: {
+      id: true,
+      status: true,
+      assignedOperatorId: true
     }
   }
 } satisfies Prisma.CustomerAccountRestrictionInclude;
@@ -68,18 +69,12 @@ type AccountHoldProjection = {
     releasedByOperatorRole: string | null;
     releaseNote: string | null;
     restoredStatus: AccountLifecycleStatus | null;
+    holdDurationMs: number | null;
   };
   customer: {
     customerId: string;
     customerAccountId: string;
     status: AccountLifecycleStatus;
-    restrictedAt: string | null;
-    restrictedFromStatus: AccountLifecycleStatus | null;
-    restrictionReasonCode: string | null;
-    restrictedByOperatorId: string | null;
-    restrictedByOversightIncidentId: string | null;
-    restrictionReleasedAt: string | null;
-    restrictionReleasedByOperatorId: string | null;
     supabaseUserId: string;
     email: string;
     firstName: string;
@@ -94,6 +89,18 @@ type AccountHoldProjection = {
     assignedOperatorId: string | null;
     openedAt: string;
     updatedAt: string;
+  };
+  releaseReview: {
+    reviewCaseId: string | null;
+    reviewCaseStatus: ReviewCaseStatus | null;
+    reviewCaseAssignedOperatorId: string | null;
+    decisionStatus: CustomerAccountRestrictionReleaseDecisionStatus;
+    requestedAt: string | null;
+    requestedByOperatorId: string | null;
+    requestNote: string | null;
+    decidedAt: string | null;
+    decidedByOperatorId: string | null;
+    decisionNote: string | null;
   };
 };
 
@@ -154,22 +161,15 @@ export class AccountHoldReportingService {
         releasedByOperatorId: restriction.releasedByOperatorId,
         releasedByOperatorRole: restriction.releasedByOperatorRole,
         releaseNote: restriction.releaseNote,
-        restoredStatus: restriction.restoredStatus
+        restoredStatus: restriction.restoredStatus,
+        holdDurationMs: restriction.releasedAt
+          ? restriction.releasedAt.getTime() - restriction.appliedAt.getTime()
+          : null
       },
       customer: {
         customerId: restriction.customerAccount.customer.id,
         customerAccountId: restriction.customerAccount.id,
         status: restriction.customerAccount.status,
-        restrictedAt: restriction.customerAccount.restrictedAt?.toISOString() ?? null,
-        restrictedFromStatus: restriction.customerAccount.restrictedFromStatus,
-        restrictionReasonCode: restriction.customerAccount.restrictionReasonCode,
-        restrictedByOperatorId: restriction.customerAccount.restrictedByOperatorId,
-        restrictedByOversightIncidentId:
-          restriction.customerAccount.restrictedByOversightIncidentId,
-        restrictionReleasedAt:
-          restriction.customerAccount.restrictionReleasedAt?.toISOString() ?? null,
-        restrictionReleasedByOperatorId:
-          restriction.customerAccount.restrictionReleasedByOperatorId,
         supabaseUserId: restriction.customerAccount.customer.supabaseUserId,
         email: restriction.customerAccount.customer.email,
         firstName: restriction.customerAccount.customer.firstName ?? "",
@@ -184,6 +184,19 @@ export class AccountHoldReportingService {
         assignedOperatorId: restriction.oversightIncident.assignedOperatorId,
         openedAt: restriction.oversightIncident.openedAt.toISOString(),
         updatedAt: restriction.oversightIncident.updatedAt.toISOString()
+      },
+      releaseReview: {
+        reviewCaseId: restriction.releaseReviewCaseId,
+        reviewCaseStatus: restriction.releaseReviewCase?.status ?? null,
+        reviewCaseAssignedOperatorId:
+          restriction.releaseReviewCase?.assignedOperatorId ?? null,
+        decisionStatus: restriction.releaseDecisionStatus,
+        requestedAt: restriction.releaseRequestedAt?.toISOString() ?? null,
+        requestedByOperatorId: restriction.releaseRequestedByOperatorId,
+        requestNote: restriction.releaseRequestNote,
+        decidedAt: restriction.releaseDecidedAt?.toISOString() ?? null,
+        decidedByOperatorId: restriction.releaseDecidedByOperatorId,
+        decisionNote: restriction.releaseDecisionNote
       }
     };
   }
@@ -196,6 +209,11 @@ export class AccountHoldReportingService {
     restrictionReasonCode?: string;
     appliedByOperatorId?: string;
     releasedByOperatorId?: string;
+    releaseDecisionStatus?:
+      | "not_requested"
+      | "pending"
+      | "approved"
+      | "denied";
     email?: string;
     sinceDays?: number;
     sinceField?: "appliedAt" | "releasedAt";
@@ -216,6 +234,11 @@ export class AccountHoldReportingService {
 
     if (query.releasedByOperatorId?.trim()) {
       where.releasedByOperatorId = query.releasedByOperatorId.trim();
+    }
+
+    if (query.releaseDecisionStatus) {
+      where.releaseDecisionStatus =
+        query.releaseDecisionStatus as CustomerAccountRestrictionReleaseDecisionStatus;
     }
 
     if (query.incidentType) {
@@ -254,7 +277,8 @@ export class AccountHoldReportingService {
       incidentType: query.incidentType,
       restrictionReasonCode: query.restrictionReasonCode,
       appliedByOperatorId: query.appliedByOperatorId,
-      releasedByOperatorId: query.releasedByOperatorId
+      releasedByOperatorId: query.releasedByOperatorId,
+      releaseDecisionStatus: query.releaseDecisionStatus
     });
 
     if (!query.sinceDays) {
@@ -295,6 +319,7 @@ export class AccountHoldReportingService {
         incidentType: query.incidentType,
         restrictionReasonCode: query.restrictionReasonCode,
         appliedByOperatorId: query.appliedByOperatorId,
+        releaseDecisionStatus: query.releaseDecisionStatus,
         email: query.email
       }),
       orderBy: {
@@ -324,6 +349,7 @@ export class AccountHoldReportingService {
         restrictionReasonCode: query.restrictionReasonCode,
         appliedByOperatorId: query.appliedByOperatorId,
         releasedByOperatorId: query.releasedByOperatorId,
+        releaseDecisionStatus: query.releaseDecisionStatus,
         email: query.email,
         sinceDays: query.sinceDays,
         sinceField: "releasedAt"
@@ -386,10 +412,9 @@ export class AccountHoldReportingService {
         releasedHolds += 1;
       }
 
-      const incidentTypeKey = hold.oversightIncident.incidentType;
       byIncidentType.set(
-        incidentTypeKey,
-        (byIncidentType.get(incidentTypeKey) ?? 0) + 1
+        hold.oversightIncident.incidentType,
+        (byIncidentType.get(hold.oversightIncident.incidentType) ?? 0) + 1
       );
 
       byReasonCode.set(
@@ -397,21 +422,21 @@ export class AccountHoldReportingService {
         (byReasonCode.get(hold.restrictionReasonCode) ?? 0) + 1
       );
 
-      const existingAppliedOperatorAggregate = byAppliedOperator.get(
+      const appliedOperatorAggregate = byAppliedOperator.get(
         hold.appliedByOperatorId
       );
       byAppliedOperator.set(hold.appliedByOperatorId, {
         appliedByOperatorRole: hold.appliedByOperatorRole,
-        count: (existingAppliedOperatorAggregate?.count ?? 0) + 1
+        count: (appliedOperatorAggregate?.count ?? 0) + 1
       });
 
       if (hold.releasedByOperatorId) {
-        const existingReleasedOperatorAggregate = byReleasedOperator.get(
+        const releasedOperatorAggregate = byReleasedOperator.get(
           hold.releasedByOperatorId
         );
         byReleasedOperator.set(hold.releasedByOperatorId, {
           releasedByOperatorRole: hold.releasedByOperatorRole,
-          count: (existingReleasedOperatorAggregate?.count ?? 0) + 1
+          count: (releasedOperatorAggregate?.count ?? 0) + 1
         });
       }
     }

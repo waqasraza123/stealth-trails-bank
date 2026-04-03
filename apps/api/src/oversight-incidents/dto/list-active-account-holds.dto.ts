@@ -34,6 +34,10 @@ export class ListActiveAccountHoldsDto {
   appliedByOperatorId?: string;
 
   @IsOptional()
+  @IsIn(["not_requested", "pending", "denied"])
+  releaseDecisionStatus?: "not_requested" | "pending" | "denied";
+
+  @IsOptional()
   @IsString()
   email?: string;
 }
