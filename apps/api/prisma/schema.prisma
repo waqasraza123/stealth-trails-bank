@@ -36,31 +36,32 @@ model Customer {
 }
 
 model CustomerAccount {
-  id                             String                 @id @default(cuid())
-  customerId                     String                 @unique
-  customer                       Customer               @relation(fields: [customerId], references: [id])
-  status                         AccountLifecycleStatus @default(registered)
-  activatedAt                    DateTime?
-  restrictedAt                   DateTime?
-  restrictedFromStatus           AccountLifecycleStatus?
-  restrictionReasonCode          String?
-  restrictedByOperatorId         String?
+  id                              String                       @id @default(cuid())
+  customerId                      String                       @unique
+  customer                        Customer                     @relation(fields: [customerId], references: [id])
+  status                          AccountLifecycleStatus       @default(registered)
+  activatedAt                     DateTime?
+  restrictedAt                    DateTime?
+  restrictedFromStatus            AccountLifecycleStatus?
+  restrictionReasonCode           String?
+  restrictedByOperatorId          String?
   restrictedByOversightIncidentId String?
-  restrictionReleasedAt          DateTime?
+  restrictionReleasedAt           DateTime?
   restrictionReleasedByOperatorId String?
-  frozenAt                       DateTime?
-  closedAt                       DateTime?
-  createdAt                      DateTime               @default(now())
-  updatedAt                      DateTime               @updatedAt
-  wallets                        Wallet[]
-  transactionIntents             TransactionIntent[]
-  reviewCases                    ReviewCase[]
-  oversightIncidents             OversightIncident[]    @relation("OversightIncidentCustomerAccount")
+  frozenAt                        DateTime?
+  closedAt                        DateTime?
+  createdAt                       DateTime                     @default(now())
+  updatedAt                       DateTime                     @updatedAt
+  wallets                         Wallet[]
+  transactionIntents              TransactionIntent[]
+  reviewCases                     ReviewCase[]
+  oversightIncidents              OversightIncident[]          @relation("OversightIncidentCustomerAccount")
+  restrictionRecords              CustomerAccountRestriction[]
 
   @@index([status])
   @@index([restrictedByOversightIncidentId])
-  ledgerAccounts                 LedgerAccount[]
-  assetBalances                  CustomerAssetBalance[]
+  ledgerAccounts                  LedgerAccount[]
+  assetBalances                   CustomerAssetBalance[]
 }
 
 model Wallet {
@@ -486,6 +487,7 @@ model OversightIncident {
   createdAt                DateTime                @default(now())
   updatedAt                DateTime                @updatedAt
   events                   OversightIncidentEvent[]
+  restrictionRecords       CustomerAccountRestriction[]
 
   @@index([incidentType, status])
   @@index([subjectCustomerAccountId])
@@ -509,6 +511,37 @@ model OversightIncidentEvent {
   @@index([eventType, createdAt])
 }
 
+model CustomerAccountRestriction {
+  id                     String                           @id @default(cuid())
+  customerAccountId      String
+  customerAccount        CustomerAccount                  @relation(fields: [customerAccountId], references: [id])
+  oversightIncidentId    String
+  oversightIncident      OversightIncident                @relation(fields: [oversightIncidentId], references: [id])
+  status                 CustomerAccountRestrictionStatus @default(active)
+  restrictionReasonCode  String
+  appliedByOperatorId    String
+  appliedByOperatorRole  String?
+  appliedNote            String?
+  previousStatus         AccountLifecycleStatus
+  appliedAt              DateTime                         @default(now())
+  releasedAt             DateTime?
+  releasedByOperatorId   String?
+  releasedByOperatorRole String?
+  releaseNote            String?
+  restoredStatus         AccountLifecycleStatus?
+  createdAt              DateTime                         @default(now())
+  updatedAt              DateTime                         @updatedAt
+
+  @@index([customerAccountId, status])
+  @@index([customerAccountId, oversightIncidentId, status], map: "CustomerAccountRestriction_customerAccountId_oversightIncidentI")
+  @@index([oversightIncidentId, status])
+  @@index([restrictionReasonCode, status])
+  @@index([appliedByOperatorId, appliedAt])
+  @@index([releasedByOperatorId, releasedAt])
+  @@index([appliedAt])
+  @@index([releasedAt])
+}
+
 enum OversightIncidentType {
   customer_manual_resolution_spike
   operator_manual_resolution_spike
@@ -529,4 +562,9 @@ enum OversightIncidentEventType {
   account_restriction_released
   resolved
   dismissed
+}
+
+enum CustomerAccountRestrictionStatus {
+  active
+  released
 }

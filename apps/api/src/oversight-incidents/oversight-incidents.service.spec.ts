@@ -1,5 +1,6 @@
 import { ConflictException } from "@nestjs/common";
 import {
+  AccountLifecycleStatus,
   OversightIncidentStatus,
   OversightIncidentType,
   Prisma,
@@ -83,7 +84,15 @@ function buildOversightIncident(
     },
     subjectCustomerAccount: {
       id: "account_1",
-      customerId: "customer_1"
+      customerId: "customer_1",
+      status: AccountLifecycleStatus.active,
+      restrictedAt: null,
+      restrictedFromStatus: null,
+      restrictionReasonCode: null,
+      restrictedByOperatorId: null,
+      restrictedByOversightIncidentId: null,
+      restrictionReleasedAt: null,
+      restrictionReleasedByOperatorId: null
     },
     ...overrides
   };
@@ -255,13 +264,28 @@ describe("OversightIncidentsService", () => {
       }
     ]);
 
-    const result = await service.getOversightIncidentWorkspace("incident_1", {
-      recentLimit: 10
-    });
+    const result = await service.getOversightIncidentWorkspace(
+      "incident_1",
+      {
+        recentLimit: 10
+      },
+      "risk_manager"
+    );
 
     expect(result.events).toHaveLength(1);
     expect(result.recentManuallyResolvedIntents).toHaveLength(1);
     expect(result.recentReviewCases).toHaveLength(1);
+    expect(result.accountHoldGovernance).toEqual({
+      operatorRole: "risk_manager",
+      canApplyAccountHold: true,
+      canReleaseAccountHold: false,
+      allowedApplyOperatorRoles: ["operations_admin", "risk_manager"],
+      allowedReleaseOperatorRoles: [
+        "operations_admin",
+        "risk_manager",
+        "compliance_lead"
+      ]
+    });
   });
 
   it("starts an oversight incident and assigns the operator", async () => {

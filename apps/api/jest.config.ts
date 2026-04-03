@@ -13,6 +13,10 @@ const config: Config = {
       }
     ]
   },
+  moduleNameMapper: {
+    "^@stealth-trails-bank/config/api$":
+      "<rootDir>/../../packages/config/api.ts"
+  },
   clearMocks: true,
   modulePathIgnorePatterns: ["<rootDir>/dist"]
 };

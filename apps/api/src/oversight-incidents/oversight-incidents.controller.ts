@@ -163,12 +163,14 @@ export class OversightIncidentsController {
         forbidNonWhitelisted: true
       })
     )
-    query: GetOversightIncidentWorkspaceDto
+    query: GetOversightIncidentWorkspaceDto,
+    @Request() request: InternalOperatorRequest
   ): Promise<CustomJsonResponse> {
     const result =
       await this.oversightIncidentsService.getOversightIncidentWorkspace(
         oversightIncidentId,
-        query
+        query,
+        request.internalOperator.operatorRole
       );
 
     return {
@@ -246,6 +248,7 @@ export class OversightIncidentsController {
     const result = await this.oversightIncidentsService.applyAccountRestriction(
       oversightIncidentId,
       request.internalOperator.operatorId,
+      request.internalOperator.operatorRole,
       dto
     );
 
@@ -273,6 +276,7 @@ export class OversightIncidentsController {
     const result = await this.oversightIncidentsService.releaseAccountRestriction(
       oversightIncidentId,
       request.internalOperator.operatorId,
+      request.internalOperator.operatorRole,
       dto
     );
 

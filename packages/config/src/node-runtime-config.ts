@@ -11,6 +11,15 @@ const DEFAULT_MANUAL_RESOLUTION_ALLOWED_OPERATOR_ROLES = [
   "risk_manager",
   "senior_operator"
 ] as const;
+const DEFAULT_ACCOUNT_HOLD_APPLY_ALLOWED_OPERATOR_ROLES = [
+  "operations_admin",
+  "risk_manager"
+] as const;
+const DEFAULT_ACCOUNT_HOLD_RELEASE_ALLOWED_OPERATOR_ROLES = [
+  "operations_admin",
+  "risk_manager",
+  "compliance_lead"
+] as const;
 
 let nodeRuntimeEnvInitialized = false;
 
@@ -94,6 +103,11 @@ export type InternalWorkerRuntimeConfig = {
 
 export type ManualResolutionPolicyRuntimeConfig = {
   readonly manualResolutionAllowedOperatorRoles: readonly string[];
+};
+
+export type AccountHoldPolicyRuntimeConfig = {
+  readonly accountHoldApplyAllowedOperatorRoles: readonly string[];
+  readonly accountHoldReleaseAllowedOperatorRoles: readonly string[];
 };
 
 export function loadDatabaseRuntimeConfig(
@@ -212,5 +226,33 @@ export function loadManualResolutionPolicyRuntimeConfig(
       configuredRoles,
       "MANUAL_RESOLUTION_ALLOWED_OPERATOR_ROLES"
     )
+  };
+}
+
+export function loadAccountHoldPolicyRuntimeConfig(
+  env: RuntimeEnvShape = getNodeRuntimeEnv()
+): AccountHoldPolicyRuntimeConfig {
+  const configuredApplyRoles = readOptionalRuntimeEnv(
+    env,
+    "ACCOUNT_HOLD_APPLY_ALLOWED_OPERATOR_ROLES"
+  );
+  const configuredReleaseRoles = readOptionalRuntimeEnv(
+    env,
+    "ACCOUNT_HOLD_RELEASE_ALLOWED_OPERATOR_ROLES"
+  );
+
+  return {
+    accountHoldApplyAllowedOperatorRoles: configuredApplyRoles
+      ? parseCommaSeparatedValues(
+          configuredApplyRoles,
+          "ACCOUNT_HOLD_APPLY_ALLOWED_OPERATOR_ROLES"
+        )
+      : [...DEFAULT_ACCOUNT_HOLD_APPLY_ALLOWED_OPERATOR_ROLES],
+    accountHoldReleaseAllowedOperatorRoles: configuredReleaseRoles
+      ? parseCommaSeparatedValues(
+          configuredReleaseRoles,
+          "ACCOUNT_HOLD_RELEASE_ALLOWED_OPERATOR_ROLES"
+        )
+      : [...DEFAULT_ACCOUNT_HOLD_RELEASE_ALLOWED_OPERATOR_ROLES]
   };
 }

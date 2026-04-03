@@ -1,4 +1,5 @@
 export {
+  loadAccountHoldPolicyRuntimeConfig,
   loadBlockchainContractReadRuntimeConfig,
   loadBlockchainContractWriteRuntimeConfig,
   loadBlockchainWalletRuntimeConfig,
@@ -8,6 +9,7 @@ export {
   loadJwtRuntimeConfig,
   loadManualResolutionPolicyRuntimeConfig,
   loadProductChainRuntimeConfig,
+  type AccountHoldPolicyRuntimeConfig,
   type BlockchainContractReadRuntimeConfig,
   type BlockchainContractWriteRuntimeConfig,
   type BlockchainWalletRuntimeConfig,

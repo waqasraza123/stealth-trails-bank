@@ -1,6 +1,7 @@
 import {
   AccountLifecycleStatus,
   BlockchainTransactionStatus,
+  CustomerAccountRestrictionStatus,
   OversightIncidentEventType,
   OversightIncidentStatus,
   OversightIncidentType,
@@ -9,10 +10,14 @@ import {
 } from "@prisma/client";
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException
 } from "@nestjs/common";
-import { loadProductChainRuntimeConfig } from "@stealth-trails-bank/config/api";
+import {
+  loadAccountHoldPolicyRuntimeConfig,
+  loadProductChainRuntimeConfig
+} from "@stealth-trails-bank/config/api";
 import { PrismaService } from "../prisma/prisma.service";
 import { AddOversightIncidentNoteDto } from "./dto/add-oversight-incident-note.dto";
 import { ApplyAccountRestrictionDto } from "./dto/apply-account-restriction.dto";
@@ -81,6 +86,19 @@ const manuallyResolvedIntentInclude = {
   }
 } satisfies Prisma.TransactionIntentInclude;
 
+const customerAccountRestrictionSnapshotSelect = {
+  id: true,
+  customerId: true,
+  status: true,
+  restrictedAt: true,
+  restrictedFromStatus: true,
+  restrictionReasonCode: true,
+  restrictedByOperatorId: true,
+  restrictedByOversightIncidentId: true,
+  restrictionReleasedAt: true,
+  restrictionReleasedByOperatorId: true
+} satisfies Prisma.CustomerAccountSelect;
+
 const oversightIncidentInclude = {
   subjectCustomer: {
     select: {
@@ -92,18 +110,7 @@ const oversightIncidentInclude = {
     }
   },
   subjectCustomerAccount: {
-    select: {
-      id: true,
-      customerId: true,
-      status: true,
-      restrictedAt: true,
-      restrictedFromStatus: true,
-      restrictionReasonCode: true,
-      restrictedByOperatorId: true,
-      restrictedByOversightIncidentId: true,
-      restrictionReleasedAt: true,
-      restrictionReleasedByOperatorId: true
-    }
+    select: customerAccountRestrictionSnapshotSelect
   }
 } satisfies Prisma.OversightIncidentInclude;
 
@@ -132,18 +139,7 @@ type ReviewCaseSummaryRecord = Prisma.ReviewCaseGetPayload<{
 }>;
 
 type SubjectCustomerAccountRecord = Prisma.CustomerAccountGetPayload<{
-  select: {
-    id: true;
-    customerId: true;
-    status: true;
-    restrictedAt: true;
-    restrictedFromStatus: true;
-    restrictionReasonCode: true;
-    restrictedByOperatorId: true;
-    restrictedByOversightIncidentId: true;
-    restrictionReleasedAt: true;
-    restrictionReleasedByOperatorId: true;
-  };
+  select: typeof customerAccountRestrictionSnapshotSelect;
 }>;
 
 type LatestBlockchainTransactionProjection = {
@@ -202,6 +198,14 @@ type OversightAccountRestrictionProjection = {
   restrictedByOversightIncidentId: string | null;
   restrictionReleasedAt: string | null;
   restrictionReleasedByOperatorId: string | null;
+};
+
+type OversightAccountHoldGovernanceProjection = {
+  operatorRole: string | null;
+  canApplyAccountHold: boolean;
+  canReleaseAccountHold: boolean;
+  allowedApplyOperatorRoles: string[];
+  allowedReleaseOperatorRoles: string[];
 };
 
 type OversightIncidentProjection = {
@@ -300,6 +304,7 @@ type GetOversightIncidentResult = {
 type OversightIncidentWorkspaceResult = {
   oversightIncident: OversightIncidentProjection;
   accountRestriction: OversightAccountRestrictionProjection;
+  accountHoldGovernance: OversightAccountHoldGovernanceProjection;
   events: OversightIncidentEventProjection[];
   recentManuallyResolvedIntents: ManuallyResolvedIntentProjection[];
   recentReviewCases: ReviewCaseSummaryProjection[];
@@ -325,9 +330,18 @@ type UpdateOversightAccountRestrictionResult = {
 @Injectable()
 export class OversightIncidentsService {
   private readonly productChainId: number;
+  private readonly accountHoldApplyAllowedOperatorRoles: string[];
+  private readonly accountHoldReleaseAllowedOperatorRoles: string[];
 
   constructor(private readonly prismaService: PrismaService) {
     this.productChainId = loadProductChainRuntimeConfig().productChainId;
+    const accountHoldPolicy = loadAccountHoldPolicyRuntimeConfig();
+    this.accountHoldApplyAllowedOperatorRoles = [
+      ...accountHoldPolicy.accountHoldApplyAllowedOperatorRoles
+    ];
+    this.accountHoldReleaseAllowedOperatorRoles = [
+      ...accountHoldPolicy.accountHoldReleaseAllowedOperatorRoles
+    ];
   }
 
   private buildSinceDate(sinceDays: number): Date {
@@ -459,6 +473,134 @@ export class OversightIncidentsService {
     };
   }
 
+  private normalizeOperatorRole(operatorRole?: string): string | null {
+    const normalizedOperatorRole = operatorRole?.trim().toLowerCase() ?? null;
+    return normalizedOperatorRole && normalizedOperatorRole.length > 0
+      ? normalizedOperatorRole
+      : null;
+  }
+
+  private isOperatorRoleAuthorized(
+    operatorRole: string | null,
+    allowedRoles: readonly string[]
+  ): boolean {
+    return operatorRole !== null && allowedRoles.includes(operatorRole);
+  }
+
+  private canApplyAccountHoldForIncident(
+    incident: OversightIncidentRecord,
+    operatorRole: string | null
+  ): boolean {
+    const subjectCustomerAccount = incident.subjectCustomerAccount;
+
+    if (
+      !subjectCustomerAccount ||
+      incident.status === OversightIncidentStatus.resolved ||
+      incident.status === OversightIncidentStatus.dismissed
+    ) {
+      return false;
+    }
+
+    if (
+      !this.isOperatorRoleAuthorized(
+        operatorRole,
+        this.accountHoldApplyAllowedOperatorRoles
+      )
+    ) {
+      return false;
+    }
+
+    return (
+      subjectCustomerAccount.status !== AccountLifecycleStatus.restricted &&
+      subjectCustomerAccount.status !== AccountLifecycleStatus.frozen &&
+      subjectCustomerAccount.status !== AccountLifecycleStatus.closed
+    );
+  }
+
+  private canReleaseAccountHoldForIncident(
+    incident: OversightIncidentRecord,
+    operatorRole: string | null
+  ): boolean {
+    const subjectCustomerAccount = incident.subjectCustomerAccount;
+
+    if (
+      !subjectCustomerAccount ||
+      incident.status === OversightIncidentStatus.dismissed
+    ) {
+      return false;
+    }
+
+    if (
+      !this.isOperatorRoleAuthorized(
+        operatorRole,
+        this.accountHoldReleaseAllowedOperatorRoles
+      )
+    ) {
+      return false;
+    }
+
+    return (
+      subjectCustomerAccount.status === AccountLifecycleStatus.restricted &&
+      subjectCustomerAccount.restrictedByOversightIncidentId === incident.id &&
+      subjectCustomerAccount.restrictionReleasedAt === null
+    );
+  }
+
+  private buildAccountHoldGovernanceProjection(
+    incident: OversightIncidentRecord,
+    operatorRole?: string
+  ): OversightAccountHoldGovernanceProjection {
+    const normalizedOperatorRole = this.normalizeOperatorRole(operatorRole);
+
+    return {
+      operatorRole: normalizedOperatorRole,
+      canApplyAccountHold: this.canApplyAccountHoldForIncident(
+        incident,
+        normalizedOperatorRole
+      ),
+      canReleaseAccountHold: this.canReleaseAccountHoldForIncident(
+        incident,
+        normalizedOperatorRole
+      ),
+      allowedApplyOperatorRoles: [...this.accountHoldApplyAllowedOperatorRoles],
+      allowedReleaseOperatorRoles: [...this.accountHoldReleaseAllowedOperatorRoles]
+    };
+  }
+
+  private assertCanApplyAccountHold(operatorRole?: string): string | null {
+    const normalizedOperatorRole = this.normalizeOperatorRole(operatorRole);
+
+    if (
+      !this.isOperatorRoleAuthorized(
+        normalizedOperatorRole,
+        this.accountHoldApplyAllowedOperatorRoles
+      )
+    ) {
+      throw new ForbiddenException(
+        "Operator role is not authorized to place account holds."
+      );
+    }
+
+    return normalizedOperatorRole;
+  }
+
+  private assertCanReleaseAccountHold(operatorRole?: string): string | null {
+    const normalizedOperatorRole = this.normalizeOperatorRole(operatorRole);
+
+    if (
+      !this.isOperatorRoleAuthorized(
+        normalizedOperatorRole,
+        this.accountHoldReleaseAllowedOperatorRoles
+      )
+    ) {
+      throw new ForbiddenException(
+        "Operator role is not authorized to release account holds."
+      );
+    }
+
+    return normalizedOperatorRole;
+  }
+
   private mapReviewCaseSummaryProjection(
     reviewCase: ReviewCaseSummaryRecord
   ): ReviewCaseSummaryProjection {
@@ -502,7 +644,9 @@ export class OversightIncidentsService {
     incident: OversightIncidentRecord
   ): void {
     if (incident.status === OversightIncidentStatus.dismissed) {
-      throw new ConflictException("Dismissed oversight incidents do not support restriction release.");
+      throw new ConflictException(
+        "Dismissed oversight incidents do not support restriction release."
+      );
     }
   }
 
@@ -1102,7 +1246,8 @@ export class OversightIncidentsService {
 
   async getOversightIncidentWorkspace(
     oversightIncidentId: string,
-    query: GetOversightIncidentWorkspaceDto
+    query: GetOversightIncidentWorkspaceDto,
+    operatorRole?: string
   ): Promise<OversightIncidentWorkspaceResult> {
     const recentLimit = query.recentLimit ?? 20;
     const incident = await this.findOversightIncidentById(oversightIncidentId);
@@ -1178,6 +1323,10 @@ export class OversightIncidentsService {
       oversightIncident: this.mapOversightIncidentProjection(incident),
       accountRestriction: this.mapAccountRestrictionProjection(
         incident.subjectCustomerAccount
+      ),
+      accountHoldGovernance: this.buildAccountHoldGovernanceProjection(
+        incident,
+        operatorRole
       ),
       events: events.map((event) =>
         this.mapOversightIncidentEventProjection(event)
@@ -1349,6 +1498,7 @@ export class OversightIncidentsService {
   async applyAccountRestriction(
     oversightIncidentId: string,
     operatorId: string,
+    operatorRole: string | undefined,
     dto: ApplyAccountRestrictionDto
   ): Promise<UpdateOversightAccountRestrictionResult> {
     const incident = await this.findOversightIncidentById(oversightIncidentId);
@@ -1356,6 +1506,8 @@ export class OversightIncidentsService {
     if (!incident) {
       throw new NotFoundException("Oversight incident not found.");
     }
+
+    const normalizedOperatorRole = this.assertCanApplyAccountHold(operatorRole);
 
     this.ensureOversightIncidentIsActionable(incident);
     this.ensureOperatorCanMutateOversightIncident(incident, operatorId);
@@ -1370,18 +1522,7 @@ export class OversightIncidentsService {
       where: {
         id: incident.subjectCustomerAccountId
       },
-      select: {
-        id: true,
-        customerId: true,
-        status: true,
-        restrictedAt: true,
-        restrictedFromStatus: true,
-        restrictionReasonCode: true,
-        restrictedByOperatorId: true,
-        restrictedByOversightIncidentId: true,
-        restrictionReleasedAt: true,
-        restrictionReleasedByOperatorId: true
-      }
+      select: customerAccountRestrictionSnapshotSelect
     });
 
     if (!customerAccount) {
@@ -1417,105 +1558,166 @@ export class OversightIncidentsService {
 
     const restrictionReasonCode = dto.restrictionReasonCode.trim();
     const note = dto.note?.trim() ?? null;
+    const restrictionAppliedAt = new Date();
 
-    const result = await this.prismaService.$transaction(async (transaction) => {
-      const updatedAccount = await transaction.customerAccount.update({
-        where: {
-          id: customerAccount.id
-        },
-        data: {
-          status: AccountLifecycleStatus.restricted,
-          restrictedAt: new Date(),
-          restrictedFromStatus: customerAccount.status,
-          restrictionReasonCode,
-          restrictedByOperatorId: operatorId,
-          restrictedByOversightIncidentId: incident.id,
-          restrictionReleasedAt: null,
-          restrictionReleasedByOperatorId: null
-        },
-        select: {
-          id: true,
-          customerId: true,
-          status: true,
-          restrictedAt: true,
-          restrictedFromStatus: true,
-          restrictionReasonCode: true,
-          restrictedByOperatorId: true,
-          restrictedByOversightIncidentId: true,
-          restrictionReleasedAt: true,
-          restrictionReleasedByOperatorId: true
-        }
-      });
+    try {
+      const result = await this.prismaService.$transaction(async (transaction) => {
+        const createdRestrictionRecord =
+          await transaction.customerAccountRestriction.create({
+            data: {
+              customerAccountId: customerAccount.id,
+              oversightIncidentId: incident.id,
+              status: CustomerAccountRestrictionStatus.active,
+              restrictionReasonCode,
+              appliedByOperatorId: operatorId,
+              appliedByOperatorRole: normalizedOperatorRole,
+              appliedNote: note,
+              previousStatus: customerAccount.status,
+              appliedAt: restrictionAppliedAt,
+              releasedAt: null,
+              releasedByOperatorId: null,
+              releasedByOperatorRole: null,
+              releaseNote: null,
+              restoredStatus: null
+            },
+            select: {
+              id: true
+            }
+          });
 
-      const updatedIncident = await transaction.oversightIncident.update({
-        where: {
-          id: incident.id
-        },
-        data: {
-          status:
-            incident.status === OversightIncidentStatus.open
-              ? OversightIncidentStatus.in_progress
-              : incident.status,
-          assignedOperatorId: incident.assignedOperatorId ?? operatorId,
-          startedAt: incident.startedAt ?? new Date(),
-          summaryNote: note ?? incident.summaryNote
-        },
-        include: oversightIncidentInclude
-      });
-
-      await this.appendOversightIncidentEvent(
-        transaction,
-        incident.id,
-        "operator",
-        operatorId,
-        OversightIncidentEventType.account_restriction_applied,
-        note,
-        {
-          previousAccountStatus: customerAccount.status,
-          newAccountStatus: AccountLifecycleStatus.restricted,
-          restrictionReasonCode
-        } as Prisma.InputJsonValue
-      );
-
-      await transaction.auditEvent.create({
-        data: {
-          customerId: incident.subjectCustomerId,
-          actorType: "operator",
-          actorId: operatorId,
-          action: "customer_account.restricted",
-          targetType: "CustomerAccount",
-          targetId: customerAccount.id,
-          metadata: {
-            previousStatus: customerAccount.status,
-            newStatus: AccountLifecycleStatus.restricted,
+        const updatedAccount = await transaction.customerAccount.update({
+          where: {
+            id: customerAccount.id
+          },
+          data: {
+            status: AccountLifecycleStatus.restricted,
+            restrictedAt: restrictionAppliedAt,
+            restrictedFromStatus: customerAccount.status,
             restrictionReasonCode,
-            note,
-            oversightIncidentId: incident.id,
-            oversightIncidentType: incident.incidentType
+            restrictedByOperatorId: operatorId,
+            restrictedByOversightIncidentId: incident.id,
+            restrictionReleasedAt: null,
+            restrictionReleasedByOperatorId: null
+          },
+          select: customerAccountRestrictionSnapshotSelect
+        });
+
+        const updatedIncident = await transaction.oversightIncident.update({
+          where: {
+            id: incident.id
+          },
+          data: {
+            status:
+              incident.status === OversightIncidentStatus.open
+                ? OversightIncidentStatus.in_progress
+                : incident.status,
+            assignedOperatorId: incident.assignedOperatorId ?? operatorId,
+            startedAt: incident.startedAt ?? restrictionAppliedAt,
+            summaryNote: note ?? incident.summaryNote
+          },
+          include: oversightIncidentInclude
+        });
+
+        await this.appendOversightIncidentEvent(
+          transaction,
+          incident.id,
+          "operator",
+          operatorId,
+          OversightIncidentEventType.account_restriction_applied,
+          note,
+          {
+            restrictionRecordId: createdRestrictionRecord.id,
+            previousAccountStatus: customerAccount.status,
+            newAccountStatus: AccountLifecycleStatus.restricted,
+            restrictionReasonCode,
+            appliedByOperatorId: operatorId,
+            appliedByOperatorRole: normalizedOperatorRole,
+            appliedAt: restrictionAppliedAt.toISOString()
+          } as Prisma.InputJsonValue
+        );
+
+        await transaction.auditEvent.create({
+          data: {
+            customerId: incident.subjectCustomerId,
+            actorType: "operator",
+            actorId: operatorId,
+            action: "customer_account.restricted",
+            targetType: "CustomerAccount",
+            targetId: customerAccount.id,
+            metadata: {
+              restrictionRecordId: createdRestrictionRecord.id,
+              previousStatus: customerAccount.status,
+              newStatus: AccountLifecycleStatus.restricted,
+              restrictionReasonCode,
+              note,
+              appliedByOperatorId: operatorId,
+              appliedByOperatorRole: normalizedOperatorRole,
+              appliedAt: restrictionAppliedAt.toISOString(),
+              oversightIncidentId: incident.id,
+              oversightIncidentType: incident.incidentType
+            }
           }
-        }
+        });
+
+        return {
+          updatedIncident,
+          updatedAccount
+        };
       });
 
       return {
-        updatedIncident,
-        updatedAccount
+        oversightIncident: this.mapOversightIncidentProjection(
+          result.updatedIncident
+        ),
+        accountRestriction: this.mapAccountRestrictionProjection(
+          result.updatedAccount
+        ),
+        stateReused: false
       };
-    });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        const [latestIncident, latestCustomerAccount] = await Promise.all([
+          this.findOversightIncidentById(oversightIncidentId),
+          this.prismaService.customerAccount.findUnique({
+            where: {
+              id: customerAccount.id
+            },
+            select: customerAccountRestrictionSnapshotSelect
+          })
+        ]);
 
-    return {
-      oversightIncident: this.mapOversightIncidentProjection(
-        result.updatedIncident
-      ),
-      accountRestriction: this.mapAccountRestrictionProjection(
-        result.updatedAccount
-      ),
-      stateReused: false
-    };
+        if (
+          latestIncident &&
+          latestCustomerAccount &&
+          latestCustomerAccount.status === AccountLifecycleStatus.restricted &&
+          latestCustomerAccount.restrictedByOversightIncidentId === incident.id &&
+          latestCustomerAccount.restrictionReleasedAt === null
+        ) {
+          return {
+            oversightIncident: this.mapOversightIncidentProjection(latestIncident),
+            accountRestriction: this.mapAccountRestrictionProjection(
+              latestCustomerAccount
+            ),
+            stateReused: true
+          };
+        }
+
+        throw new ConflictException(
+          "Customer account is already restricted by another active hold."
+        );
+      }
+
+      throw error;
+    }
   }
 
   async releaseAccountRestriction(
     oversightIncidentId: string,
     operatorId: string,
+    operatorRole: string | undefined,
     dto: ReleaseAccountRestrictionDto
   ): Promise<UpdateOversightAccountRestrictionResult> {
     const incident = await this.findOversightIncidentById(oversightIncidentId);
@@ -1523,6 +1725,8 @@ export class OversightIncidentsService {
     if (!incident) {
       throw new NotFoundException("Oversight incident not found.");
     }
+
+    const normalizedOperatorRole = this.assertCanReleaseAccountHold(operatorRole);
 
     this.ensureOversightIncidentSupportsRestrictionRelease(incident);
     this.ensureOperatorCanMutateOversightIncident(incident, operatorId);
@@ -1537,18 +1741,7 @@ export class OversightIncidentsService {
       where: {
         id: incident.subjectCustomerAccountId
       },
-      select: {
-        id: true,
-        customerId: true,
-        status: true,
-        restrictedAt: true,
-        restrictedFromStatus: true,
-        restrictionReasonCode: true,
-        restrictedByOperatorId: true,
-        restrictedByOversightIncidentId: true,
-        restrictionReleasedAt: true,
-        restrictionReleasedByOperatorId: true
-      }
+      select: customerAccountRestrictionSnapshotSelect
     });
 
     if (!customerAccount) {
@@ -1582,29 +1775,57 @@ export class OversightIncidentsService {
     const restoredStatus =
       customerAccount.restrictedFromStatus ?? AccountLifecycleStatus.registered;
     const note = dto.note?.trim() ?? null;
+    const restrictionReleasedAt = new Date();
 
     const result = await this.prismaService.$transaction(async (transaction) => {
+      const activeRestrictionRecord =
+        await transaction.customerAccountRestriction.findFirst({
+          where: {
+            customerAccountId: customerAccount.id,
+            oversightIncidentId: incident.id,
+            status: CustomerAccountRestrictionStatus.active
+          },
+          select: {
+            id: true
+          }
+        });
+
+      if (!activeRestrictionRecord) {
+        throw new ConflictException(
+          "Active account hold record not found for this oversight incident."
+        );
+      }
+
+      const releaseUpdateResult =
+        await transaction.customerAccountRestriction.updateMany({
+          where: {
+            id: activeRestrictionRecord.id,
+            status: CustomerAccountRestrictionStatus.active
+          },
+          data: {
+            status: CustomerAccountRestrictionStatus.released,
+            releasedAt: restrictionReleasedAt,
+            releasedByOperatorId: operatorId,
+            releasedByOperatorRole: normalizedOperatorRole,
+            releaseNote: note,
+            restoredStatus
+          }
+        });
+
+      if (releaseUpdateResult.count !== 1) {
+        throw new ConflictException("Account hold was already released.");
+      }
+
       const updatedAccount = await transaction.customerAccount.update({
         where: {
           id: customerAccount.id
         },
         data: {
           status: restoredStatus,
-          restrictionReleasedAt: new Date(),
+          restrictionReleasedAt,
           restrictionReleasedByOperatorId: operatorId
         },
-        select: {
-          id: true,
-          customerId: true,
-          status: true,
-          restrictedAt: true,
-          restrictedFromStatus: true,
-          restrictionReasonCode: true,
-          restrictedByOperatorId: true,
-          restrictedByOversightIncidentId: true,
-          restrictionReleasedAt: true,
-          restrictionReleasedByOperatorId: true
-        }
+        select: customerAccountRestrictionSnapshotSelect
       });
 
       const updatedIncident = await transaction.oversightIncident.update({
@@ -1613,7 +1834,7 @@ export class OversightIncidentsService {
         },
         data: {
           assignedOperatorId: incident.assignedOperatorId ?? operatorId,
-          startedAt: incident.startedAt ?? new Date(),
+          startedAt: incident.startedAt ?? restrictionReleasedAt,
           summaryNote: note ?? incident.summaryNote
         },
         include: oversightIncidentInclude
@@ -1627,9 +1848,14 @@ export class OversightIncidentsService {
         OversightIncidentEventType.account_restriction_released,
         note,
         {
+          restrictionRecordId: activeRestrictionRecord.id,
           previousAccountStatus: customerAccount.status,
           newAccountStatus: restoredStatus,
-          restrictionReasonCode: customerAccount.restrictionReasonCode
+          restrictionReasonCode: customerAccount.restrictionReasonCode,
+          releasedByOperatorId: operatorId,
+          releasedByOperatorRole: normalizedOperatorRole,
+          releasedAt: restrictionReleasedAt.toISOString(),
+          restoredStatus
         } as Prisma.InputJsonValue
       );
 
@@ -1646,6 +1872,11 @@ export class OversightIncidentsService {
             newStatus: restoredStatus,
             restrictionReasonCode: customerAccount.restrictionReasonCode,
             note,
+            restrictionRecordId: activeRestrictionRecord.id,
+            releasedByOperatorId: operatorId,
+            releasedByOperatorRole: normalizedOperatorRole,
+            releasedAt: restrictionReleasedAt.toISOString(),
+            restoredStatus,
             oversightIncidentId: incident.id,
             oversightIncidentType: incident.incidentType
           }
