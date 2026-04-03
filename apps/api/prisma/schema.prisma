@@ -21,17 +21,18 @@ model User {
 }
 
 model Customer {
-  id             String            @id @default(cuid())
-  supabaseUserId String            @unique
-  email          String            @unique
-  firstName      String?
-  lastName       String?
-  passwordHash   String?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  accounts       CustomerAccount[]
-  reviewCases    ReviewCase[]
-  auditEvents    AuditEvent[]
+  id                 String              @id @default(cuid())
+  supabaseUserId     String              @unique
+  email              String              @unique
+  firstName          String?
+  lastName           String?
+  passwordHash       String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  accounts           CustomerAccount[]
+  reviewCases        ReviewCase[]
+  auditEvents        AuditEvent[]
+  oversightIncidents OversightIncident[] @relation("OversightIncidentCustomer")
 }
 
 model CustomerAccount {
@@ -48,6 +49,7 @@ model CustomerAccount {
   wallets            Wallet[]
   transactionIntents TransactionIntent[]
   reviewCases        ReviewCase[]
+  oversightIncidents OversightIncident[]    @relation("OversightIncidentCustomerAccount")
 
   @@index([status])
   ledgerAccounts     LedgerAccount[]
@@ -453,6 +455,69 @@ enum ReviewCaseEventType {
   note_added
   handed_off
   manual_resolution_applied
+  resolved
+  dismissed
+}
+
+model OversightIncident {
+  id                       String                  @id @default(cuid())
+  incidentType             OversightIncidentType
+  status                   OversightIncidentStatus @default(open)
+  reasonCode               String?
+  summaryNote              String?
+  subjectCustomerId        String?
+  subjectCustomer          Customer?               @relation("OversightIncidentCustomer", fields: [subjectCustomerId], references: [id])
+  subjectCustomerAccountId String?
+  subjectCustomerAccount   CustomerAccount?        @relation("OversightIncidentCustomerAccount", fields: [subjectCustomerAccountId], references: [id])
+  subjectOperatorId        String?
+  subjectOperatorRole      String?
+  assignedOperatorId       String?
+  openedAt                 DateTime                @default(now())
+  startedAt                DateTime?
+  resolvedAt               DateTime?
+  dismissedAt              DateTime?
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  events                   OversightIncidentEvent[]
+
+  @@index([incidentType, status])
+  @@index([subjectCustomerAccountId])
+  @@index([subjectOperatorId])
+  @@index([assignedOperatorId, status])
+  @@index([reasonCode])
+}
+
+model OversightIncidentEvent {
+  id                  String                    @id @default(cuid())
+  oversightIncidentId String
+  oversightIncident   OversightIncident         @relation(fields: [oversightIncidentId], references: [id])
+  actorType           String
+  actorId             String?
+  eventType           OversightIncidentEventType
+  note                String?
+  metadata            Json?
+  createdAt           DateTime                  @default(now())
+
+  @@index([oversightIncidentId, createdAt])
+  @@index([eventType, createdAt])
+}
+
+enum OversightIncidentType {
+  customer_manual_resolution_spike
+  operator_manual_resolution_spike
+}
+
+enum OversightIncidentStatus {
+  open
+  in_progress
+  resolved
+  dismissed
+}
+
+enum OversightIncidentEventType {
+  opened
+  started
+  note_added
   resolved
   dismissed
 }
