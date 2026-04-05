@@ -2,19 +2,19 @@ import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
 import { loadWebRuntimeConfig } from "@stealth-trails-bank/config/web";
 import type { UserProfileProjection } from "@stealth-trails-bank/types";
+import type { User } from "@/stores/userStore";
 import { useUserStore } from "@/stores/userStore";
 
 const webRuntimeConfig = loadWebRuntimeConfig(
   import.meta.env as Record<string, string | boolean | undefined>
 );
 
-function mapUserProfileToStoreUser(profile: UserProfileProjection) {
+function mapUserProfileToStoreUser(profile: UserProfileProjection): User {
   return {
     id: profile.id ?? 0,
     firstName: profile.firstName,
     lastName: profile.lastName,
     email: profile.email,
-    privateKey: "",
     supabaseUserId: profile.supabaseUserId,
     ethereumAddress: profile.ethereumAddress
   };

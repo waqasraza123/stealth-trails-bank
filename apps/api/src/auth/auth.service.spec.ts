@@ -8,22 +8,55 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
   })
 }));
 
+jest.mock("./auth.util", () => ({
+  generateEthereumAddress: () => ({
+    address: "0xgenerated"
+  })
+}));
+
+import * as bcrypt from "bcryptjs";
 import { NotFoundException } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 
-describe("AuthService.getCustomerWalletProjectionBySupabaseUserId", () => {
+describe("AuthService", () => {
   function createService() {
+    const transaction = {
+      customer: {
+        upsert: jest.fn()
+      },
+      customerAccount: {
+        upsert: jest.fn()
+      },
+      wallet: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+        create: jest.fn()
+      }
+    };
+
     const prismaService = {
+      user: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        findFirst: jest.fn()
+      },
+      customer: {
+        findUnique: jest.fn()
+      },
       customerAccount: {
         findFirst: jest.fn()
-      }
+      },
+      $transaction: jest.fn(async (callback: (tx: typeof transaction) => unknown) =>
+        callback(transaction)
+      )
     };
 
     const service = new AuthService(prismaService as never);
 
     return {
       service,
-      prismaService
+      prismaService,
+      transaction
     };
   }
 
@@ -105,5 +138,71 @@ describe("AuthService.getCustomerWalletProjectionBySupabaseUserId", () => {
     await expect(
       service.getCustomerWalletProjectionBySupabaseUserId("supabase_1")
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("signs up without returning a private key", async () => {
+    const { service, prismaService, transaction } = createService();
+
+    prismaService.user.findUnique.mockResolvedValue(null);
+    prismaService.user.create.mockResolvedValue(undefined);
+    transaction.customer.upsert.mockResolvedValue({
+      id: "customer_1"
+    });
+    transaction.customerAccount.upsert.mockResolvedValue({
+      id: "account_1"
+    });
+    transaction.wallet.findUnique.mockResolvedValue(null);
+    transaction.wallet.create.mockResolvedValue(undefined);
+
+    const result = await service.signUp(
+      "Ada",
+      "Lovelace",
+      "ada@example.com",
+      "correct horse battery staple"
+    );
+
+    expect(result.status).toBe("success");
+    expect(result.data?.user).toEqual({
+      id: expect.any(String),
+      email: "ada@example.com",
+      firstName: "Ada",
+      lastName: "Lovelace",
+      ethereumAddress: "0xgenerated"
+    });
+    expect(result.data?.user).not.toHaveProperty("privateKey");
+  });
+
+  it("logs in without returning a private key", async () => {
+    const { service, prismaService } = createService();
+    const passwordHash = await bcrypt.hash("s3cret-pass", 4);
+
+    prismaService.customer.findUnique.mockResolvedValue({
+      id: "customer_1",
+      supabaseUserId: "supabase_1",
+      email: "ada@example.com",
+      passwordHash
+    });
+    prismaService.user.findFirst.mockResolvedValue({
+      id: 42,
+      firstName: "Ada",
+      lastName: "Lovelace",
+      email: "ada@example.com",
+      supabaseUserId: "supabase_1",
+      ethereumAddress: "0xgenerated"
+    });
+
+    const result = await service.login("ada@example.com", "s3cret-pass");
+
+    expect(result.status).toBe("success");
+    expect(result.data?.token).toEqual(expect.any(String));
+    expect(result.data?.user).toEqual({
+      id: 42,
+      supabaseUserId: "supabase_1",
+      email: "ada@example.com",
+      ethereumAddress: "0xgenerated",
+      firstName: "Ada",
+      lastName: "Lovelace"
+    });
+    expect(result.data?.user).not.toHaveProperty("privateKey");
   });
 });

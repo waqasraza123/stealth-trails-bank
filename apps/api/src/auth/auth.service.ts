@@ -68,6 +68,32 @@ export type CustomerWalletProjection = {
   };
 };
 
+type PublicSignedUpUser = {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  ethereumAddress: string;
+};
+
+type PublicLoggedInUser = {
+  id: number;
+  supabaseUserId: string;
+  email: string;
+  ethereumAddress: string;
+  firstName: string;
+  lastName: string;
+};
+
+type SignUpResponseData = {
+  user: PublicSignedUpUser;
+};
+
+type LoginResponseData = {
+  token: string;
+  user: PublicLoggedInUser;
+};
+
 @Injectable()
 export class AuthService {
   private readonly productChainId: number;
@@ -336,7 +362,7 @@ export class AuthService {
     lastName: string,
     email: string,
     password: string
-  ): Promise<CustomJsonResponse> {
+  ): Promise<CustomJsonResponse<SignUpResponseData>> {
     await this.checkEmailAvailability(email);
 
     const authUserId = randomUUID();
@@ -367,11 +393,9 @@ export class AuthService {
         user: {
           id: authUserId,
           email,
-          created_at: new Date().toISOString(),
           firstName,
           lastName,
-          address: generatedEthereumAddress.address,
-          privateKey: generatedEthereumAddress.privateKey
+          ethereumAddress: generatedEthereumAddress.address
         }
       }
     };
@@ -380,7 +404,7 @@ export class AuthService {
   async login(
     email: string,
     password: string
-  ): Promise<CustomJsonResponse> {
+  ): Promise<CustomJsonResponse<LoginResponseData>> {
     const customer = await this.prismaService.customer.findUnique({
       where: { email },
       select: {

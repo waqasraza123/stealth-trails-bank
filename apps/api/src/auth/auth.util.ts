@@ -1,7 +1,6 @@
+import { ethers } from "ethers";
 
-import { ethers } from 'ethers';
-
-export function generateEthereumAddress(): {address: string, privateKey: string} {
+export function generateEthereumAddress(): { address: string } {
   const wallet = ethers.Wallet.createRandom();
-  return {address: wallet.address, privateKey: wallet.privateKey};
+  return { address: wallet.address };
 }

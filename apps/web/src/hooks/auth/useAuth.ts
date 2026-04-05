@@ -31,8 +31,7 @@ type SignUpResponseUser = {
   email: string;
   firstName: string;
   lastName: string;
-  address: string;
-  privateKey: string;
+  ethereumAddress: string;
 };
 
 type SignUpResponseData = {
@@ -46,7 +45,6 @@ type LoginResponseUser = {
   ethereumAddress: string;
   firstName: string;
   lastName: string;
-  privateKey?: string;
 };
 
 type LoginResponseData = {
@@ -117,7 +115,6 @@ function mapLoginUser(user: LoginResponseUser) {
     firstName: user.firstName,
     lastName: user.lastName,
     email: user.email,
-    privateKey: user.privateKey ?? "",
     supabaseUserId: user.supabaseUserId,
     ethereumAddress: user.ethereumAddress
   };
@@ -186,7 +183,10 @@ export default function useAuth() {
       setToken(token);
       setUser(mapLoginUser(user));
 
-      return user;
+      return {
+        token,
+        user
+      };
     } catch (requestError) {
       const message = readErrorMessage(requestError);
       setError(message);

@@ -14,7 +14,7 @@ const SignIn = () => {
     password: "",
   });
   const navigate = useNavigate();
-  const { setUser, setToken, token } = useUserStore();
+  const token = useUserStore((state) => state.token);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -23,34 +23,19 @@ const SignIn = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const data = await login(formData);
-      if (data.data?.token && data.data?.user) {
-        setToken(data.data.token);
-        setUser({
-          id: data.data.user.id,
-          firstName: data.data.user.firstName,
-          lastName: data.data.user.lastName,
-          email: data.data.user.email,
-          privateKey: data.data.user.privateKey,
-          supabaseUserId: data.data.user.supabaseUserId,
-          ethereumAddress: data.data.user.ethereumAddress,
-        });
-
-        toast({
-          title: "Login successful!",
-          description: "Welcome back to your account!",
-        });
-
-        navigate("/home");
-      }
-    } catch (err) {
+      await login(formData);
+      toast({
+        title: "Login successful!",
+        description: "Welcome back to your account!",
+      });
+      navigate("/");
+    } catch {
       toast({
         title: "Login failed",
         description: error || "An error occurred during login. Please try again.",
       });
     }
   };
-
 
   useEffect(() => {
     if (token) {

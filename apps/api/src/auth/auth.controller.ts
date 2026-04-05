@@ -25,7 +25,7 @@ type AuthenticatedRequest = {
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post("signUp")
+  @Post(["signup", "signUp"])
   async signUp(
     @Body(new ValidationPipe()) signUpDto: SignUpDto
   ): Promise<CustomJsonResponse> {

@@ -13,7 +13,7 @@ export const productionWorkspaceBoundaries = [
   {
     name: "worker",
     kind: "app",
-    status: "scaffolded",
+    status: "active",
     purpose: "asynchronous worker runtime boundary"
   },
   {

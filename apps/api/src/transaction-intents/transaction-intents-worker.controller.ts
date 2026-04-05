@@ -9,6 +9,7 @@ import {
   UseGuards,
   ValidationPipe
 } from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service";
 import { InternalWorkerApiKeyGuard } from "../auth/guards/internal-worker-api-key.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { ConfirmDepositIntentDto } from "./dto/confirm-deposit-intent.dto";
@@ -29,16 +30,80 @@ type InternalWorkerRequest = {
 @Controller("transaction-intents/internal/worker")
 export class TransactionIntentsWorkerController {
   constructor(
-    private readonly transactionIntentsService: TransactionIntentsService
+    private readonly transactionIntentsService: TransactionIntentsService,
+    private readonly prismaService: PrismaService
   ) {}
+
+  private async attachAssetExecutionMetadata<
+    T extends {
+      intents: Array<{
+        asset: {
+          id: string;
+          symbol: string;
+          displayName: string;
+          decimals: number;
+          chainId: number;
+        };
+      }>;
+      limit: number;
+    }
+  >(result: T): Promise<T> {
+    const assetIds = Array.from(
+      new Set(result.intents.map((intent) => intent.asset.id))
+    );
+
+    if (assetIds.length === 0) {
+      return result;
+    }
+
+    const assets = await this.prismaService.asset.findMany({
+      where: {
+        id: {
+          in: assetIds
+        }
+      },
+      select: {
+        id: true,
+        assetType: true,
+        contractAddress: true
+      }
+    });
+
+    const assetMap = new Map(
+      assets.map((asset) => [
+        asset.id,
+        {
+          assetType: asset.assetType,
+          contractAddress: asset.contractAddress
+        }
+      ])
+    );
+
+    return {
+      ...result,
+      intents: result.intents.map((intent) => {
+        const metadata = assetMap.get(intent.asset.id);
+
+        return {
+          ...intent,
+          asset: {
+            ...intent.asset,
+            assetType: metadata?.assetType ?? "unknown",
+            contractAddress: metadata?.contractAddress ?? null
+          }
+        };
+      })
+    };
+  }
 
   @Get("deposit-requests/queued")
   async listQueuedDepositIntents(
     @Query(new ValidationPipe({ transform: true }))
     query: ListQueuedDepositIntentsDto
   ): Promise<CustomJsonResponse> {
-    const result =
-      await this.transactionIntentsService.listQueuedDepositIntents(query);
+    const result = await this.attachAssetExecutionMetadata(
+      await this.transactionIntentsService.listQueuedDepositIntents(query)
+    );
 
     return {
       status: "success",
@@ -52,8 +117,9 @@ export class TransactionIntentsWorkerController {
     @Query(new ValidationPipe({ transform: true }))
     query: ListBroadcastDepositIntentsDto
   ): Promise<CustomJsonResponse> {
-    const result =
-      await this.transactionIntentsService.listBroadcastDepositIntents(query);
+    const result = await this.attachAssetExecutionMetadata(
+      await this.transactionIntentsService.listBroadcastDepositIntents(query)
+    );
 
     return {
       status: "success",

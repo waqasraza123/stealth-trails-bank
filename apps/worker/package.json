@@ -10,13 +10,20 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "tsx --test src/**/*.spec.ts"
   },
   "dependencies": {
     "@stealth-trails-bank/config": "workspace:*",
-    "@stealth-trails-bank/types": "workspace:*"
+    "@stealth-trails-bank/types": "workspace:*",
+    "axios": "^1.7.9",
+    "ethers": "^5.7.2"
   },
   "devDependencies": {
+    "@types/node": "^22.5.5",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }
 }
