@@ -4,6 +4,8 @@ import { Home, History, Wallet, User, CoinsIcon, CreditCard, Menu } from "lucide
 import { Logo } from "@/components/ui/logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useUserStore } from "@/stores/userStore";
+import { formatShortAddress } from "@/lib/customer-finance";
 
 const navItems = [
   { icon: Home, label: "Dashboard", path: "/" },
@@ -17,6 +19,7 @@ const navItems = [
 export const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = React.useState(false);
+  const user = useUserStore((state) => state.user);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-defi-light-purple/5">
@@ -63,8 +66,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 <div className="p-4 space-y-2">
                   {!isCollapsed && (
                     <>
-                      <p className="text-sm text-muted-foreground">Connected Wallet</p>
-                      <p className="text-xs font-mono truncate">0x1234...5678</p>
+                      <p className="text-sm text-muted-foreground">Managed Wallet</p>
+                      <p className="text-xs font-mono truncate">
+                        {formatShortAddress(user?.ethereumAddress)}
+                      </p>
                     </>
                   )}
                   <div className={cn(

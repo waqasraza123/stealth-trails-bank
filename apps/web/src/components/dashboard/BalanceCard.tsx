@@ -7,8 +7,8 @@ interface BalanceCardProps {
   amount: string;
   subAmount?: string;
   icon: LucideIcon;
-  change: string;
-  positive: boolean;
+  footer?: string;
+  tone?: "positive" | "warning" | "neutral";
 }
 
 export const BalanceCard = ({
@@ -16,8 +16,8 @@ export const BalanceCard = ({
   amount,
   subAmount,
   icon: Icon,
-  change,
-  positive,
+  footer,
+  tone = "neutral"
 }: BalanceCardProps) => {
   return (
     <Card className="gradient-border overflow-hidden group hover:scale-[1.02] transition-all duration-300">
@@ -34,18 +34,18 @@ export const BalanceCard = ({
           </div>
           <div className={cn(
             "rounded-full p-3 transition-colors",
-            positive ? "bg-defi-purple/10 text-defi-purple" : "bg-destructive/10 text-destructive"
+            tone === "positive" && "bg-mint-100 text-mint-700",
+            tone === "warning" && "bg-orange-100 text-orange-700",
+            tone === "neutral" && "bg-slate-100 text-slate-700"
           )}>
             <Icon className="h-5 w-5" />
           </div>
         </div>
-        <div className={cn(
-          "flex items-center space-x-2 text-sm",
-          positive ? "text-defi-purple" : "text-destructive"
-        )}>
-          <span className="font-medium">{change}</span>
-          <span className="text-muted-foreground">from last week</span>
-        </div>
+        {footer ? (
+          <div className="border-t border-border/70 pt-3 text-sm text-muted-foreground">
+            {footer}
+          </div>
+        ) : null}
       </div>
     </Card>
   );

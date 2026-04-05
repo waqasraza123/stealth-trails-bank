@@ -2,6 +2,7 @@ import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
 import { loadWebRuntimeConfig } from "@stealth-trails-bank/config/web";
 import type { UserProfileProjection } from "@stealth-trails-bank/types";
+import { ApiResponse, readApiErrorMessage } from "@/lib/api";
 import type { User } from "@/stores/userStore";
 import { useUserStore } from "@/stores/userStore";
 
@@ -25,7 +26,7 @@ export function useGetUser(userId: string | undefined) {
   const setUser = useUserStore((state) => state.setUser);
 
   return useQuery({
-    queryKey: ["user", userId],
+    queryKey: ["user-profile", userId],
     enabled: Boolean(userId && token),
     queryFn: async () => {
       if (!userId) {
@@ -36,18 +37,30 @@ export function useGetUser(userId: string | undefined) {
         throw new Error("Auth token is required.");
       }
 
-      const response = await axios.get<UserProfileProjection>(
+      try {
+        const response = await axios.get<ApiResponse<UserProfileProjection>>(
         `${webRuntimeConfig.serverUrl}/user/${userId}`,
         {
           headers: {
             Authorization: `Bearer ${token}`
           }
         }
-      );
+        );
 
-      setUser(mapUserProfileToStoreUser(response.data));
+        if (response.data.status !== "success" || !response.data.data) {
+          throw new Error(
+            response.data.message || "Failed to load user profile."
+          );
+        }
 
-      return response.data;
+        setUser(mapUserProfileToStoreUser(response.data.data));
+
+        return response.data.data;
+      } catch (error) {
+        throw new Error(
+          readApiErrorMessage(error, "Failed to load user profile.")
+        );
+      }
     }
   });
 }

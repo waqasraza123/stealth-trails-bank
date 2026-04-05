@@ -3,28 +3,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Timer, AlertCircle, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-type PoolStatus = 'active' | 'disabled' | 'paused' | 'closed' | 'completed';
-
-interface StakingPool {
-  id: number;
-  blockchainPoolId: number | null;
-  rewardRate: number;
-  totalStakedAmount: bigint;
-  totalRewardsPaid: bigint;
-  poolStatus: PoolStatus;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { formatTokenAmount } from "@/lib/customer-finance";
+import {
+  CustomerStakingPoolSnapshot
+} from "@/hooks/staking/useMyStakingSnapshot";
 
 interface PoolCardProps {
-  pool: StakingPool;
-  onSelect: (pool: StakingPool) => void;
+  pool: CustomerStakingPoolSnapshot;
+  onSelect: (pool: CustomerStakingPoolSnapshot) => void;
   isSelected: boolean;
 }
 
 export const PoolCard = ({ pool, onSelect, isSelected }: PoolCardProps) => {
-  const getStatusIcon = (status: PoolStatus) => {
+  const getStatusIcon = (status: CustomerStakingPoolSnapshot["poolStatus"]) => {
     switch (status) {
       case 'active':
         return <CheckCircle2 className="h-4 w-4 text-green-500" />;
@@ -38,7 +29,9 @@ export const PoolCard = ({ pool, onSelect, isSelected }: PoolCardProps) => {
     }
   };
 
-  const getStatusColor = (status: PoolStatus) => {
+  const getStatusColor = (
+    status: CustomerStakingPoolSnapshot["poolStatus"]
+  ) => {
     switch (status) {
       case 'active':
         return 'bg-green-500/10 text-green-500';
@@ -73,19 +66,21 @@ export const PoolCard = ({ pool, onSelect, isSelected }: PoolCardProps) => {
           </div>
           <div className="text-sm text-muted-foreground">
             <p>Validator Reward Rate: {pool.rewardRate}% APR</p>
-            <p>Total ETH Staked: {Number(pool.totalStakedAmount) / 1e18} ETH</p>
+            <p>Total ETH Staked: {formatTokenAmount(pool.totalStakedAmount, 4)} ETH</p>
+            <p>Total Rewards Paid: {formatTokenAmount(pool.totalRewardsPaid, 4)} ETH</p>
+            <p>Your Stake: {formatTokenAmount(pool.position.stakedBalance, 4)} ETH</p>
+            <p>Pending Rewards: {formatTokenAmount(pool.position.pendingReward, 4)} ETH</p>
           </div>
         </div>
         <Button
           variant="outline"
           className="ml-4"
-          disabled={pool.poolStatus !== 'active'}
           onClick={(e) => {
             e.stopPropagation();
             onSelect(pool);
           }}
         >
-          Select Pool
+          View Pool
         </Button>
       </div>
     </Card>

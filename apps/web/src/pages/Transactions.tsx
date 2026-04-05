@@ -6,6 +6,13 @@ import {
   useMyTransactionHistory,
   type TransactionHistoryIntent,
 } from "@/hooks/transactions/useMyTransactionHistory";
+import {
+  formatDateLabel,
+  formatIntentAmount,
+  getIntentStatusBadgeTone,
+  normalizeIntentTypeLabel,
+  resolveIntentAddress
+} from "@/lib/customer-finance";
 
 type TransactionFilters = {
   search: string;
@@ -35,67 +42,6 @@ const emptyFilters: TransactionFilters = {
   },
 };
 
-function formatAmount(
-  amount: string,
-  assetSymbol: string,
-  intentType: "deposit" | "withdrawal"
-): string {
-  const prefix = intentType === "deposit" ? "+" : "-";
-  return `${prefix}${amount} ${assetSymbol}`;
-}
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function normalizeTypeLabel(intentType: "deposit" | "withdrawal"): string {
-  return intentType === "deposit" ? "Deposit" : "Withdrawal";
-}
-
-function resolveAddress(input: {
-  intentType: "deposit" | "withdrawal";
-  externalAddress: string | null;
-  destinationWalletAddress: string | null;
-  sourceWalletAddress: string | null;
-  latestBlockchainTransaction:
-    | {
-        fromAddress: string | null;
-        toAddress: string | null;
-      }
-    | null;
-}): string {
-  if (input.intentType === "withdrawal") {
-    return (
-      input.externalAddress ??
-      input.latestBlockchainTransaction?.toAddress ??
-      input.sourceWalletAddress ??
-      "N/A"
-    );
-  }
-
-  return (
-    input.destinationWalletAddress ??
-    input.latestBlockchainTransaction?.toAddress ??
-    "N/A"
-  );
-}
-
-function getStatusTone(status: string): string {
-  if (status === "settled" || status === "confirmed") {
-    return "bg-mint-100 text-mint-700";
-  }
-
-  if (status === "failed" || status === "cancelled") {
-    return "bg-red-100 text-red-700";
-  }
-
-  return "bg-orange-100 text-orange-700";
-}
-
 function mapHistoryToRows(
   intents: TransactionHistoryIntent[] | undefined
 ): TransactionRow[] {
@@ -105,16 +51,16 @@ function mapHistoryToRows(
 
   return intents.map((intent) => ({
     id: intent.id,
-    type: normalizeTypeLabel(intent.intentType),
-    amount: formatAmount(
+    type: normalizeIntentTypeLabel(intent.intentType),
+    amount: formatIntentAmount(
       intent.settledAmount ?? intent.requestedAmount,
       intent.asset.symbol,
       intent.intentType
     ),
-    date: formatDate(intent.createdAt),
+    date: formatDateLabel(intent.createdAt),
     rawDate: new Date(intent.createdAt),
     status: intent.status,
-    address: resolveAddress(intent),
+    address: resolveIntentAddress(intent),
     assetSymbol: intent.asset.symbol,
   }));
 }
@@ -234,7 +180,7 @@ const Transactions = () => {
                       <td className="px-6 py-4 font-mono text-sm">{tx.address}</td>
                       <td className="px-6 py-4">
                         <span
-                          className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getStatusTone(
+                          className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getIntentStatusBadgeTone(
                             tx.status
                           )}`}
                         >

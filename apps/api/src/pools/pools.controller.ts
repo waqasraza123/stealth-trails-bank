@@ -1,9 +1,18 @@
-import { Controller, Get, Param, Query, Post, Body, UseGuards } from '@nestjs/common';
-import { PoolsService } from './pools.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CustomJsonResponse } from '../types/CustomJsonResponse';
-import { PoolStatus } from '@prisma/client';
-import { ParseIntPipe } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    Get,
+    Param,
+    ParseIntPipe,
+    Post,
+    Query,
+    UseGuards
+} from "@nestjs/common";
+import { PoolStatus } from "@prisma/client";
+import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { CustomJsonResponse } from "../types/CustomJsonResponse";
+import { PoolsService } from "./pools.service";
 
 @Controller('pools')
 export class PoolsController {
@@ -28,6 +37,7 @@ export class PoolsController {
         }
     }
 
+    @UseGuards(JwtAuthGuard)
     @Get(':poolId')
     async getPoolById(@Param('poolId', ParseIntPipe) poolId: number): Promise<CustomJsonResponse> {
         try {
@@ -52,6 +62,7 @@ export class PoolsController {
         }
     }
 
+    @UseGuards(InternalOperatorApiKeyGuard)
     @Post('create')
     async createPool(@Body() body: { rewardRate: number }): Promise<CustomJsonResponse> {
         try {
@@ -72,7 +83,7 @@ export class PoolsController {
     }
 
     @Post(':poolId/update-status')
-    @UseGuards(JwtAuthGuard)
+    @UseGuards(InternalOperatorApiKeyGuard)
     async updatePoolStatus(
         @Param('poolId', ParseIntPipe) poolId: number,
         @Body() body: { status: PoolStatus }

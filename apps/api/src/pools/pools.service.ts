@@ -1,10 +1,15 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { StakingPool, PoolStatus } from '@prisma/client';
+import { Injectable } from "@nestjs/common";
+import { PoolStatus, StakingPool } from "@prisma/client";
+import { ethers } from "ethers";
+import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
 export class PoolsService {
     constructor(private readonly prismaService: PrismaService) { }
+
+    private formatStoredAmountToEth(value: bigint): string {
+        return ethers.utils.formatEther(value.toString());
+    }
 
     async getPools(status?: string): Promise<any[]> {
         const filters: { poolStatus?: PoolStatus } = {};
@@ -21,17 +26,27 @@ export class PoolsService {
 
         return pools.map(pool => ({
             ...pool,
-            totalStakedAmount: pool.totalStakedAmount.toString(),
-            totalRewardsPaid: pool.totalRewardsPaid.toString(),
+            totalStakedAmount: this.formatStoredAmountToEth(pool.totalStakedAmount),
+            totalRewardsPaid: this.formatStoredAmountToEth(pool.totalRewardsPaid),
         }));
     }
 
-    async getPoolById(poolId: number): Promise<StakingPool | null> {
-        return this.prismaService.stakingPool.findUnique({
+    async getPoolById(poolId: number): Promise<Record<string, unknown> | null> {
+        const pool = await this.prismaService.stakingPool.findUnique({
             where: {
                 id: poolId,
             },
         });
+
+        if (!pool) {
+            return null;
+        }
+
+        return {
+            ...pool,
+            totalStakedAmount: this.formatStoredAmountToEth(pool.totalStakedAmount),
+            totalRewardsPaid: this.formatStoredAmountToEth(pool.totalRewardsPaid),
+        };
     }
 
     async createPool(rewardRate: number): Promise<StakingPool> {

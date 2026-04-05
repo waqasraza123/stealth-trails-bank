@@ -8,6 +8,7 @@ import { OversightIncidentsModule } from "./oversight-incidents/oversight-incide
 import { PoolsModule } from "./pools/pools.module";
 import { ReviewCasesModule } from "./review-cases/review-cases.module";
 import { StakingPoolModule } from "./staking/staking.module";
+import { SupportedAssetsModule } from "./supported-assets/supported-assets.module";
 import { TransactionIntentsModule } from "./transaction-intents/transaction-intents.module";
 import { UserModule } from "./user/user.module";
 
@@ -18,6 +19,7 @@ import { UserModule } from "./user/user.module";
     PoolsModule,
     StakingPoolModule,
     EthereumModule,
+    SupportedAssetsModule,
     TransactionIntentsModule,
     CustomerBalancesModule,
     ReviewCasesModule,

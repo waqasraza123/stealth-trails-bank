@@ -1,33 +1,165 @@
 import { Layout } from "@/components/Layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Wallet, PiggyBank, Calculator } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useMyBalances } from "@/hooks/balances/useMyBalances";
+import { useMyTransactionHistory } from "@/hooks/transactions/useMyTransactionHistory";
+import { useGetUser } from "@/hooks/user/useGetUser";
+import {
+  formatAccountStatusLabel,
+  getAccountStatusBadgeTone,
+  getAccountStatusSummary
+} from "@/lib/customer-account";
+import {
+  formatDateLabel,
+  formatIntentAmount,
+  formatTokenAmount,
+  isPositiveDecimalString,
+  normalizeIntentTypeLabel
+} from "@/lib/customer-finance";
+import { useUserStore } from "@/stores/userStore";
+import {
+  ArrowRight,
+  Landmark,
+  PiggyBank,
+  ShieldAlert,
+  Wallet
+} from "lucide-react";
+import { Link } from "react-router-dom";
 
 const Loans = () => {
+  const user = useUserStore((state) => state.user);
+  const profileQuery = useGetUser(user?.supabaseUserId);
+  const balancesQuery = useMyBalances();
+  const historyQuery = useMyTransactionHistory(10);
+
+  const profile = profileQuery.data;
+  const balances = balancesQuery.data?.balances ?? [];
+  const fundedBalances = balances.filter(
+    (balance) =>
+      isPositiveDecimalString(balance.availableBalance) ||
+      isPositiveDecimalString(balance.pendingBalance)
+  );
+  const latestIntent = historyQuery.data?.intents[0] ?? null;
+
   return (
     <Layout>
       <div className="space-y-8">
-        <h1 className="text-3xl font-semibold text-foreground">Loans & Savings</h1>
+        <div className="space-y-2">
+          <h1 className="text-3xl font-semibold text-foreground">
+            Loans & Savings
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Truthful availability surface for capital products in the managed
+            customer portal.
+          </p>
+        </div>
 
-        <div className="grid gap-6 md:grid-cols-2">
+        <Alert className="border-orange-200 bg-orange-50">
+          <ShieldAlert className="h-4 w-4" />
+          <AlertTitle>Customer self-service lending is not enabled</AlertTitle>
+          <AlertDescription>
+            The current customer API exposes balances, account lifecycle, wallet
+            linkage, and ledger history. It does not expose loan origination,
+            repayment schedules, savings products, APYs, or customer application
+            workflows, so the old mocked forms were removed.
+          </AlertDescription>
+        </Alert>
+
+        <div className="grid gap-6 xl:grid-cols-3">
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Landmark className="h-5 w-5 text-mint-600" />
+                Account Readiness
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-3">
+                <Badge
+                  variant="outline"
+                  className={getAccountStatusBadgeTone(profile?.accountStatus)}
+                >
+                  {formatAccountStatusLabel(profile?.accountStatus)}
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {profileQuery.isError
+                  ? profileQuery.error instanceof Error
+                    ? profileQuery.error.message
+                    : "Failed to load customer account status."
+                  : getAccountStatusSummary(profile?.accountStatus)}
+              </p>
+              <div className="rounded-xl border p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Customer account reference
+                </p>
+                <p className="mt-2 font-medium text-foreground">
+                  {profile?.customerId ?? "Not exposed"}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <PiggyBank className="h-5 w-5 text-mint-600" />
-                Savings Overview
+                Managed Asset Coverage
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="rounded-lg bg-mint-50 p-4">
-                  <div className="text-sm text-muted-foreground">Total Savings</div>
-                  <div className="text-2xl font-semibold">$12,345.67</div>
-                  <div className="mt-1 text-sm text-mint-600">+2.5% APY</div>
-                </div>
-                <Button className="w-full">Add to Savings</Button>
-              </div>
+            <CardContent className="space-y-4">
+              {balancesQuery.isError ? (
+                <p className="text-sm text-red-700">
+                  {balancesQuery.error instanceof Error
+                    ? balancesQuery.error.message
+                    : "Failed to load managed balances."}
+                </p>
+              ) : (
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="rounded-xl border p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Assets tracked
+                      </p>
+                      <p className="mt-2 text-2xl font-semibold text-foreground">
+                        {balancesQuery.isLoading ? "..." : balances.length}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Funded assets
+                      </p>
+                      <p className="mt-2 text-2xl font-semibold text-foreground">
+                        {balancesQuery.isLoading ? "..." : fundedBalances.length}
+                      </p>
+                    </div>
+                  </div>
+                  {fundedBalances.length > 0 ? (
+                    <div className="space-y-3">
+                      {fundedBalances.slice(0, 3).map((balance) => (
+                        <div
+                          key={balance.asset.id}
+                          className="rounded-xl border border-border/70 bg-white/70 p-4"
+                        >
+                          <p className="text-sm font-medium text-foreground">
+                            {balance.asset.displayName}
+                          </p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {formatTokenAmount(balance.availableBalance)} {balance.asset.symbol} available
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      No funded customer balances are currently available to
+                      support a capital-products view.
+                    </p>
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -35,74 +167,100 @@ const Loans = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Wallet className="h-5 w-5 text-mint-600" />
-                Active Loans
+                Recent Ledger Activity
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="rounded-lg border p-4">
-                  <div className="text-sm text-muted-foreground">Current Balance</div>
-                  <div className="text-2xl font-semibold">$5,000.00</div>
-                  <div className="mt-1 text-sm text-muted-foreground">12% APR</div>
-                </div>
-                <Button variant="outline" className="w-full">View Details</Button>
-              </div>
+            <CardContent className="space-y-4">
+              {historyQuery.isError ? (
+                <p className="text-sm text-red-700">
+                  {historyQuery.error instanceof Error
+                    ? historyQuery.error.message
+                    : "Failed to load customer ledger activity."}
+                </p>
+              ) : latestIntent ? (
+                <>
+                  <div className="rounded-xl border p-4">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Latest recorded activity
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-foreground">
+                      {normalizeIntentTypeLabel(latestIntent.intentType)}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {formatIntentAmount(
+                        latestIntent.settledAmount ?? latestIntent.requestedAmount,
+                        latestIntent.asset.symbol,
+                        latestIntent.intentType
+                      )}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {latestIntent.status} on {formatDateLabel(latestIntent.createdAt)}
+                    </p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {historyQuery.data?.intents.length ?? 0} recent ledger
+                    events are available for the customer portal.
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No customer ledger activity has been recorded yet.
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
 
         <Card className="glass-card">
-          <Tabs defaultValue="loan" className="p-6">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="loan">Apply for Loan</TabsTrigger>
-              <TabsTrigger value="savings">New Savings</TabsTrigger>
-            </TabsList>
-            <TabsContent value="loan" className="space-y-4 pt-4">
-              <div className="grid gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Loan Type</label>
-                  <select className="w-full rounded-md border bg-transparent px-3 py-2">
-                    <option>Personal Loan</option>
-                    <option>Business Loan</option>
-                    <option>Crypto-backed Loan</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Amount</label>
-                  <Input type="number" placeholder="0.00" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Term (months)</label>
-                  <Input type="number" placeholder="12" />
-                </div>
-                <div className="rounded-lg bg-mint-50 p-4">
-                  <div className="flex items-center gap-2">
-                    <Calculator className="h-4 w-4 text-mint-600" />
-                    <span className="text-sm font-medium">Estimated Payment</span>
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold">$450.00/mo</div>
-                </div>
-                <Button>Apply Now</Button>
+          <CardHeader>
+            <CardTitle>Why the old product forms were removed</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="rounded-xl border p-4">
+                <p className="text-sm font-medium text-foreground">
+                  No lending origination API
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  The backend does not currently expose customer loan
+                  applications, underwriting decisions, or repayment schedules.
+                </p>
               </div>
-            </TabsContent>
-            <TabsContent value="savings" className="space-y-4 pt-4">
-              <div className="grid gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Initial Deposit</label>
-                  <Input type="number" placeholder="0.00" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Term</label>
-                  <select className="w-full rounded-md border bg-transparent px-3 py-2">
-                    <option>3 months (2.5% APY)</option>
-                    <option>6 months (3.0% APY)</option>
-                    <option>12 months (3.5% APY)</option>
-                  </select>
-                </div>
-                <Button>Open Savings Account</Button>
+              <div className="rounded-xl border p-4">
+                <p className="text-sm font-medium text-foreground">
+                  No savings product ledger
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Savings balances, APYs, term products, and maturity logic are
+                  not available from the customer API today.
+                </p>
               </div>
-            </TabsContent>
-          </Tabs>
+              <div className="rounded-xl border p-4">
+                <p className="text-sm font-medium text-foreground">
+                  No customer-safe approvals flow
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Exposing fake application buttons would imply operational
+                  controls that do not yet exist in production.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <Button asChild className="bg-apple-blue hover:bg-apple-blue/90">
+                <Link to="/wallet">
+                  Review Wallet Activity
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/transactions">Inspect Ledger History</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/profile">Review Account Status</Link>
+              </Button>
+            </div>
+          </CardContent>
         </Card>
       </div>
     </Layout>
