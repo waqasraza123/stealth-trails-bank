@@ -14,6 +14,7 @@ export {
   loadJwtRuntimeConfig,
   loadManualResolutionPolicyRuntimeConfig,
   loadProductChainRuntimeConfig,
+  loadSharedLoginBootstrapRuntimeConfig,
   loadWorkerRuntimeConfig,
   type ApiRuntimeEnvironment,
   type ApiServerRuntimeConfig,
@@ -31,6 +32,7 @@ export {
   type JwtRuntimeConfig,
   type ManualResolutionPolicyRuntimeConfig,
   type ProductChainRuntimeConfig,
+  type SharedLoginBootstrapRuntimeConfig,
   type WorkerExecutionMode,
   type WorkerRuntimeConfig
 } from "./src/node-runtime-config";

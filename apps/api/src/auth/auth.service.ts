@@ -17,7 +17,8 @@ import { randomUUID } from "crypto";
 import * as jwt from "jsonwebtoken";
 import {
   loadJwtRuntimeConfig,
-  loadProductChainRuntimeConfig
+  loadProductChainRuntimeConfig,
+  loadSharedLoginBootstrapRuntimeConfig
 } from "@stealth-trails-bank/config/api";
 import { PrismaService } from "../prisma/prisma.service";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
@@ -94,6 +95,17 @@ type LoginResponseData = {
   user: PublicLoggedInUser;
 };
 
+type SharedLoginBootstrapResult = {
+  customerId: string;
+  customerAccountId: string;
+  supabaseUserId: string;
+  email: string;
+  ethereumAddress: string;
+  createdLegacyUser: boolean;
+  createdCustomer: boolean;
+  createdCustomerAccount: boolean;
+};
+
 @Injectable()
 export class AuthService {
   private readonly productChainId: number;
@@ -105,6 +117,16 @@ export class AuthService {
   private signToken(sub: string, email: string): string {
     const { jwtSecret, jwtExpirySeconds } = loadJwtRuntimeConfig();
     return jwt.sign({ sub, email }, jwtSecret, { expiresIn: jwtExpirySeconds });
+  }
+
+  private normalizeEmail(email: string): string {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      throw new BadRequestException("Email is required.");
+    }
+
+    return normalizedEmail;
   }
 
   private async checkEmailAvailability(email: string): Promise<void> {
@@ -245,6 +267,132 @@ export class AuthService {
     }
   }
 
+  async ensureSharedLoginAccount(): Promise<SharedLoginBootstrapResult | null> {
+    const sharedLoginConfig = loadSharedLoginBootstrapRuntimeConfig();
+
+    if (!sharedLoginConfig.enabled) {
+      return null;
+    }
+
+    const email = this.normalizeEmail(sharedLoginConfig.email);
+    const passwordHash = await bcrypt.hash(sharedLoginConfig.password, 12);
+
+    return this.prismaService.$transaction(async (transaction) => {
+      const existingCustomer = await transaction.customer.findUnique({
+        where: { email },
+        include: {
+          accounts: {
+            include: {
+              wallets: {
+                where: { chainId: this.productChainId },
+                orderBy: { createdAt: "asc" },
+                take: 1
+              }
+            },
+            orderBy: { createdAt: "asc" },
+            take: 1
+          }
+        }
+      });
+      const legacyUserByEmail = await transaction.user.findUnique({
+        where: { email }
+      });
+
+      if (
+        existingCustomer &&
+        existingCustomer.supabaseUserId !== sharedLoginConfig.supabaseUserId
+      ) {
+        const conflictingCustomer = await transaction.customer.findUnique({
+          where: { supabaseUserId: sharedLoginConfig.supabaseUserId },
+          select: {
+            id: true,
+            email: true
+          }
+        });
+
+        if (conflictingCustomer && conflictingCustomer.email !== email) {
+          throw new InternalServerErrorException(
+            "Configured shared login supabase user id is already assigned to another customer."
+          );
+        }
+      }
+
+      const supabaseUserId =
+        existingCustomer?.supabaseUserId ??
+        legacyUserByEmail?.supabaseUserId ??
+        sharedLoginConfig.supabaseUserId;
+      const existingCustomerAccount = existingCustomer?.accounts[0] ?? null;
+      const existingWallet = existingCustomerAccount?.wallets[0] ?? null;
+      const generatedEthereumAddress = generateEthereumAddress();
+      const ethereumAddress =
+        legacyUserByEmail?.ethereumAddress?.trim() ||
+        existingWallet?.address?.trim() ||
+        generatedEthereumAddress.address;
+
+      const customer = await transaction.customer.upsert({
+        where: { email },
+        update: {
+          supabaseUserId,
+          email,
+          firstName: sharedLoginConfig.firstName,
+          lastName: sharedLoginConfig.lastName,
+          passwordHash
+        },
+        create: {
+          supabaseUserId,
+          email,
+          firstName: sharedLoginConfig.firstName,
+          lastName: sharedLoginConfig.lastName,
+          passwordHash
+        }
+      });
+
+      const customerAccount = await transaction.customerAccount.upsert({
+        where: { customerId: customer.id },
+        update: {},
+        create: {
+          customerId: customer.id,
+          status: AccountLifecycleStatus.registered
+        }
+      });
+
+      await this.syncCustomerWalletProjection(
+        transaction,
+        customerAccount.id,
+        ethereumAddress
+      );
+
+      const legacyUser = await transaction.user.upsert({
+        where: { email },
+        update: {
+          firstName: sharedLoginConfig.firstName,
+          lastName: sharedLoginConfig.lastName,
+          email,
+          supabaseUserId,
+          ethereumAddress
+        },
+        create: {
+          firstName: sharedLoginConfig.firstName,
+          lastName: sharedLoginConfig.lastName,
+          email,
+          supabaseUserId,
+          ethereumAddress
+        }
+      });
+
+      return {
+        customerId: customer.id,
+        customerAccountId: customerAccount.id,
+        supabaseUserId,
+        email,
+        ethereumAddress,
+        createdLegacyUser: legacyUserByEmail === null,
+        createdCustomer: existingCustomer === null,
+        createdCustomerAccount: existingCustomerAccount === null
+      };
+    });
+  }
+
   async getCustomerWalletProjectionBySupabaseUserId(
     supabaseUserId: string
   ): Promise<CustomerWalletProjection> {
@@ -363,7 +511,9 @@ export class AuthService {
     email: string,
     password: string
   ): Promise<CustomJsonResponse<SignUpResponseData>> {
-    await this.checkEmailAvailability(email);
+    const normalizedEmail = this.normalizeEmail(email);
+
+    await this.checkEmailAvailability(normalizedEmail);
 
     const authUserId = randomUUID();
     const passwordHash = await bcrypt.hash(password, 12);
@@ -372,7 +522,7 @@ export class AuthService {
     await this.saveUserToDatabase(
       firstName,
       lastName,
-      email,
+      normalizedEmail,
       authUserId,
       generatedEthereumAddress.address
     );
@@ -380,7 +530,7 @@ export class AuthService {
     await this.syncCustomerAccountProjection(
       firstName,
       lastName,
-      email,
+      normalizedEmail,
       authUserId,
       generatedEthereumAddress.address,
       passwordHash
@@ -392,7 +542,7 @@ export class AuthService {
       data: {
         user: {
           id: authUserId,
-          email,
+          email: normalizedEmail,
           firstName,
           lastName,
           ethereumAddress: generatedEthereumAddress.address
@@ -405,8 +555,9 @@ export class AuthService {
     email: string,
     password: string
   ): Promise<CustomJsonResponse<LoginResponseData>> {
+    const normalizedEmail = this.normalizeEmail(email);
     const customer = await this.prismaService.customer.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
       select: {
         id: true,
         supabaseUserId: true,

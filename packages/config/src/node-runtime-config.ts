@@ -45,6 +45,12 @@ const DEFAULT_LOCAL_WORKER_ID = "worker-local-1";
 const DEFAULT_LOCAL_INTERNAL_API_BASE_URL = "http://localhost:9001";
 const DEFAULT_LOCAL_INTERNAL_WORKER_API_KEY = "local-dev-worker-key";
 const DEFAULT_LOCAL_INTERNAL_OPERATOR_API_KEY = "local-dev-operator-key";
+const DEFAULT_SHARED_LOGIN_ENABLED = true;
+const DEFAULT_SHARED_LOGIN_EMAIL = "admin@gmail.com";
+const DEFAULT_SHARED_LOGIN_PASSWORD = "P@ssw0rd";
+const DEFAULT_SHARED_LOGIN_FIRST_NAME = "Shared";
+const DEFAULT_SHARED_LOGIN_LAST_NAME = "Admin";
+const DEFAULT_SHARED_LOGIN_SUPABASE_USER_ID = "shared-login-admin";
 
 let nodeRuntimeEnvInitialized = false;
 
@@ -186,6 +192,30 @@ function parseWorkerExecutionMode(
   );
 }
 
+function parseBoolean(value: string, name: string): boolean {
+  const normalizedValue = value.trim().toLowerCase();
+
+  if (
+    normalizedValue === "true" ||
+    normalizedValue === "1" ||
+    normalizedValue === "yes" ||
+    normalizedValue === "on"
+  ) {
+    return true;
+  }
+
+  if (
+    normalizedValue === "false" ||
+    normalizedValue === "0" ||
+    normalizedValue === "no" ||
+    normalizedValue === "off"
+  ) {
+    return false;
+  }
+
+  throw new Error(`${name} must be a boolean value.`);
+}
+
 function resolveWorkerExecutionMode(
   environment: ApiRuntimeEnvironment,
   configuredExecutionMode: string | undefined,
@@ -286,6 +316,15 @@ export type WorkerRuntimeConfig = {
   readonly confirmationBlocks: number;
   readonly rpcUrl: string | null;
   readonly depositSignerPrivateKey: string | null;
+};
+
+export type SharedLoginBootstrapRuntimeConfig = {
+  readonly enabled: boolean;
+  readonly email: string;
+  readonly password: string;
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly supabaseUserId: string;
 };
 
 export type InternalOperatorRuntimeConfig = {
@@ -542,6 +581,54 @@ export function loadWorkerRuntimeConfig(
     ),
     rpcUrl: rpcUrl ?? null,
     depositSignerPrivateKey: depositSignerPrivateKey ?? null
+  };
+}
+
+export function loadSharedLoginBootstrapRuntimeConfig(
+  env: RuntimeEnvShape = getNodeRuntimeEnv()
+): SharedLoginBootstrapRuntimeConfig {
+  const configuredEnabled = readOptionalRuntimeEnv(env, "SHARED_LOGIN_ENABLED");
+  const enabled = configuredEnabled
+    ? parseBoolean(configuredEnabled, "SHARED_LOGIN_ENABLED")
+    : DEFAULT_SHARED_LOGIN_ENABLED;
+
+  const email =
+    readOptionalRuntimeEnv(env, "SHARED_LOGIN_EMAIL") ?? DEFAULT_SHARED_LOGIN_EMAIL;
+  const password =
+    readOptionalRuntimeEnv(env, "SHARED_LOGIN_PASSWORD") ??
+    DEFAULT_SHARED_LOGIN_PASSWORD;
+  const firstName =
+    readOptionalRuntimeEnv(env, "SHARED_LOGIN_FIRST_NAME") ??
+    DEFAULT_SHARED_LOGIN_FIRST_NAME;
+  const lastName =
+    readOptionalRuntimeEnv(env, "SHARED_LOGIN_LAST_NAME") ??
+    DEFAULT_SHARED_LOGIN_LAST_NAME;
+  const supabaseUserId =
+    readOptionalRuntimeEnv(env, "SHARED_LOGIN_SUPABASE_USER_ID") ??
+    DEFAULT_SHARED_LOGIN_SUPABASE_USER_ID;
+
+  if (!enabled) {
+    return {
+      enabled,
+      email,
+      password,
+      firstName,
+      lastName,
+      supabaseUserId
+    };
+  }
+
+  if (password.length < 8) {
+    throw new Error("SHARED_LOGIN_PASSWORD must be at least 8 characters long.");
+  }
+
+  return {
+    enabled,
+    email,
+    password,
+    firstName,
+    lastName,
+    supabaseUserId
   };
 }
 

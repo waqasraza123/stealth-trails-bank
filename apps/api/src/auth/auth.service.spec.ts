@@ -5,6 +5,14 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
   loadJwtRuntimeConfig: () => ({
     jwtSecret: "test-secret",
     jwtExpirySeconds: 86400
+  }),
+  loadSharedLoginBootstrapRuntimeConfig: () => ({
+    enabled: true,
+    email: "admin@gmail.com",
+    password: "P@ssw0rd",
+    firstName: "Shared",
+    lastName: "Admin",
+    supabaseUserId: "shared-login-admin"
   })
 }));
 
@@ -22,9 +30,14 @@ describe("AuthService", () => {
   function createService() {
     const transaction = {
       customer: {
+        findUnique: jest.fn(),
         upsert: jest.fn()
       },
       customerAccount: {
+        upsert: jest.fn()
+      },
+      user: {
+        findUnique: jest.fn(),
         upsert: jest.fn()
       },
       wallet: {
@@ -204,5 +217,70 @@ describe("AuthService", () => {
       lastName: "Lovelace"
     });
     expect(result.data?.user).not.toHaveProperty("privateKey");
+  });
+
+  it("bootstraps a shared login account idempotently", async () => {
+    const { service, transaction } = createService();
+
+    transaction.customer.findUnique.mockResolvedValue(null);
+    transaction.customer.upsert.mockResolvedValue({
+      id: "customer_shared"
+    });
+    transaction.customerAccount.upsert.mockResolvedValue({
+      id: "account_shared"
+    });
+    transaction.user.findUnique.mockResolvedValue(null);
+    transaction.user.upsert.mockResolvedValue({
+      id: 7
+    });
+    transaction.wallet.findUnique.mockResolvedValue(null);
+    transaction.wallet.create.mockResolvedValue(undefined);
+
+    const result = await service.ensureSharedLoginAccount();
+
+    expect(transaction.customer.upsert).toHaveBeenCalledWith({
+      where: { email: "admin@gmail.com" },
+      update: {
+        supabaseUserId: "shared-login-admin",
+        email: "admin@gmail.com",
+        firstName: "Shared",
+        lastName: "Admin",
+        passwordHash: expect.any(String)
+      },
+      create: {
+        supabaseUserId: "shared-login-admin",
+        email: "admin@gmail.com",
+        firstName: "Shared",
+        lastName: "Admin",
+        passwordHash: expect.any(String)
+      }
+    });
+    expect(transaction.user.upsert).toHaveBeenCalledWith({
+      where: { email: "admin@gmail.com" },
+      update: {
+        firstName: "Shared",
+        lastName: "Admin",
+        email: "admin@gmail.com",
+        supabaseUserId: "shared-login-admin",
+        ethereumAddress: "0xgenerated"
+      },
+      create: {
+        firstName: "Shared",
+        lastName: "Admin",
+        email: "admin@gmail.com",
+        supabaseUserId: "shared-login-admin",
+        ethereumAddress: "0xgenerated"
+      }
+    });
+    expect(result).toEqual({
+      customerId: "customer_shared",
+      customerAccountId: "account_shared",
+      supabaseUserId: "shared-login-admin",
+      email: "admin@gmail.com",
+      ethereumAddress: "0xgenerated",
+      createdLegacyUser: true,
+      createdCustomer: true,
+      createdCustomerAccount: true
+    });
   });
 });
