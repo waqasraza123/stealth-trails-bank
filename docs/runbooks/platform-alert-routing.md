@@ -7,6 +7,8 @@ It now also includes the governance controls used after routing:
 - operator acknowledgement
 - temporary suppression windows
 - external delivery targets with durable retryable delivery records
+- category-specific automation policies that can auto-route eligible alerts
+- failover delivery targets that preserve escalation ancestry
 
 ## Endpoints
 
@@ -99,10 +101,12 @@ Content-Type: application/json
 - only open platform alerts can be routed
 - routing creates or reuses a `manual_intervention` review case using a reason code derived from the alert dedupe key
 - each routing action writes an audit event against the `PlatformAlert`
+- matching automation policies can route eligible alert classes with `actorType=system` and a policy-derived routing note
 - routed state is persisted on the alert so operators can see whether triage already happened
 - owner assignment, acknowledgement, and suppression state are also persisted on the alert
 - suppression only mutes the operator handling state; it does not resolve the alert
 - matching external delivery targets are enqueued durably and attempted asynchronously
+- failed primary deliveries can enqueue failover-only targets that keep escalation level and source-delivery ancestry
 - failed deliveries remain replayable through the retry endpoint instead of disappearing into logs
 - if a resolved alert later reopens, routing state is reset so the new incident window must be triaged again
 - if a resolved alert later reopens, ownership, acknowledgement, and suppression state are reset too
@@ -117,9 +121,10 @@ Use routed platform alerts to:
 - make one operator visibly responsible for an active alert
 - reduce repeated noise during maintenance or known incidents without losing the durable alert record
 - route critical alert classes to external webhook targets by category, severity, and event type
+- auto-open investigation work for alert classes that should never wait for a human to click the first routing button
 
 ## Next step
 
-After this routing baseline:
-1. attach secondary and failover escalation policy to governed alert delivery targets
-2. expand category-specific downstream incident automation on top of the routed and delivered alert surface
+After this routing-and-automation baseline:
+1. add time-based re-escalation for critical alerts that remain unacknowledged or unowned
+2. expose delivery-target health and escalation latency in the operations metrics surface

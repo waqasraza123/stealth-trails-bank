@@ -20,6 +20,17 @@ import { OperationsMonitoringService } from "./operations-monitoring.service";
 jest.mock("@stealth-trails-bank/config/api", () => ({
   loadProductChainRuntimeConfig: () => ({
     productChainId: 8453
+  }),
+  loadPlatformAlertAutomationRuntimeConfig: () => ({
+    policies: [
+      {
+        name: "critical-worker-auto-route",
+        categories: ["worker"],
+        minimumSeverity: "critical",
+        autoRouteToReviewCase: true,
+        routeNote: "Escalate worker outages immediately."
+      }
+    ]
   })
 }));
 
@@ -673,6 +684,129 @@ describe("OperationsMonitoringService", () => {
     expect(result.routingStateReused).toBe(false);
   });
 
+  it("auto-routes critical worker alerts that match automation policy", async () => {
+    const { service, prismaService, reviewCasesService, transactionClient } =
+      createService();
+    const createdAlert = buildPlatformAlertRecord({
+      id: "alert_auto_1",
+      severity: PlatformAlertSeverity.critical
+    });
+    const routedAlert = buildPlatformAlertRecord({
+      id: "alert_auto_1",
+      severity: PlatformAlertSeverity.critical,
+      routingStatus: PlatformAlertRoutingStatus.routed,
+      routingTargetType: PlatformAlertRoutingTargetType.review_case,
+      routingTargetId: "review_case_auto_1",
+      routedAt: new Date("2026-04-06T10:05:00.000Z"),
+      routedByOperatorId: null,
+      routingNote:
+        'Automatically routed by platform alert automation policy "critical-worker-auto-route". Escalate worker outages immediately.'
+    });
+
+    jest.spyOn(Date, "now").mockReturnValue(
+      new Date("2026-04-06T10:00:30.000Z").getTime()
+    );
+    (prismaService.workerRuntimeHeartbeat.findMany as jest.Mock).mockResolvedValue([
+      buildHeartbeatRecord({
+        lastIterationStatus: WorkerRuntimeIterationStatus.failed,
+        consecutiveFailureCount: 3,
+        lastErrorMessage: "RPC timeout"
+      })
+    ]);
+    (prismaService.transactionIntent.count as jest.Mock)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0);
+    (prismaService.transactionIntent.findFirst as jest.Mock).mockResolvedValue({
+      createdAt: new Date("2026-04-06T09:59:00.000Z")
+    });
+    (prismaService.blockchainTransaction.count as jest.Mock)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0);
+    (prismaService.blockchainTransaction.findFirst as jest.Mock).mockResolvedValue(
+      null
+    );
+    (prismaService.ledgerReconciliationMismatch.count as jest.Mock)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0);
+    (prismaService.ledgerReconciliationScanRun.count as jest.Mock).mockResolvedValue(
+      0
+    );
+    (prismaService.ledgerReconciliationScanRun.findFirst as jest.Mock).mockResolvedValue(
+      {
+        status: LedgerReconciliationScanRunStatus.succeeded,
+        startedAt: new Date("2026-04-06T09:55:00.000Z")
+      }
+    );
+    (prismaService.wallet.count as jest.Mock)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1);
+    (prismaService.reviewCase.count as jest.Mock).mockResolvedValue(1);
+    (prismaService.oversightIncident.count as jest.Mock).mockResolvedValue(0);
+    (prismaService.customerAccount.count as jest.Mock).mockResolvedValue(0);
+    (prismaService.platformAlert.create as jest.Mock).mockResolvedValue(createdAlert);
+    (prismaService.platformAlert.findMany as jest.Mock)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([routedAlert]);
+    (prismaService.platformAlert.count as jest.Mock)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(0);
+    (transactionClient.platformAlert.findUnique as jest.Mock).mockResolvedValue(
+      createdAlert
+    );
+    (reviewCasesService.openOrReuseReviewCase as jest.Mock).mockResolvedValue({
+      reviewCase: {
+        id: "review_case_auto_1",
+        status: ReviewCaseStatus.open,
+        type: ReviewCaseType.manual_intervention,
+        reasonCode: "platform_alert:worker:degraded:worker_1",
+        assignedOperatorId: null
+      },
+      reviewCaseReused: false
+    });
+    (transactionClient.platformAlert.update as jest.Mock).mockResolvedValue(
+      routedAlert
+    );
+
+    const result = await service.getOperationsStatus({
+      staleAfterSeconds: 180,
+      recentAlertLimit: 4
+    });
+
+    expect(reviewCasesService.openOrReuseReviewCase).toHaveBeenCalledWith(
+      transactionClient,
+      expect.objectContaining({
+        actorType: "system",
+        actorId: "platform-alert-automation"
+      })
+    );
+    expect(transactionClient.platformAlert.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          routingStatus: PlatformAlertRoutingStatus.routed,
+          routedByOperatorId: null
+        })
+      })
+    );
+    expect(prismaService.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "platform_alert.automation_policy_applied",
+          actorType: "system",
+          actorId: "platform-alert-automation",
+          targetId: "alert_auto_1"
+        })
+      })
+    );
+    expect(result.recentAlerts[0]?.routingStatus).toBe("routed");
+    expect(result.recentAlerts[0]?.routingNote).toContain(
+      "critical-worker-auto-route"
+    );
+  });
+
   it("routes only unrouted critical alerts in batch", async () => {
     const { service, prismaService } = createService();
 
@@ -730,9 +864,12 @@ describe("OperationsMonitoringService", () => {
             totalCount: 0,
             pendingCount: 0,
             failedCount: 0,
+            escalatedCount: 0,
+            highestEscalationLevel: 0,
             lastAttemptedAt: null,
             lastStatus: null,
             lastTargetName: null,
+            lastEscalatedFromTargetName: null,
             lastErrorMessage: null
           },
           code: "worker_runtime_degraded",

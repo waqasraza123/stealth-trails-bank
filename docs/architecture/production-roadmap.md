@@ -14,14 +14,14 @@ It is intentionally phase-based so each step can be implemented, verified, and c
 - Phase 7 is partially implemented through ledger journals/postings, balance materialization, and reconciliation services.
 - Phase 8 and Phase 9 are materially advanced through the current API and truthful customer web surfaces.
 - Phase 10 is materially complete at the operator-visibility level through the console for review, oversight, hold-release, reconciliation mismatch, governed export, audit-log, and treasury visibility workflows.
-- Phase 11 is materially advanced through worker heartbeat reporting, scheduled reconciliation scan history, durable platform alerts, operator-visible runtime health, structured API request logging with request correlation IDs, an internal Prometheus-style metrics surface spanning API requests and worker execution, alert-routing automation that opens manual-intervention review cases from platform alerts, durable alert ownership, acknowledgement, and suppression controls, and runtime-configured external alert delivery targets with durable delivery attempts and retry support.
+- Phase 11 is materially advanced through worker heartbeat reporting, scheduled reconciliation scan history, durable platform alerts, operator-visible runtime health, structured API request logging with request correlation IDs, an internal Prometheus-style metrics surface spanning API requests and worker execution, alert-routing automation that opens manual-intervention review cases from platform alerts, durable alert ownership, acknowledgement, and suppression controls, runtime-configured external alert delivery targets with durable delivery attempts and retry support, category-specific automation policies that auto-route eligible alert classes into review work, and failover-only delivery targets with durable escalation ancestry.
 - Phase 12 has begun through the repo-specific threat model, secret handling review, role review, restore and rollback drills, and launch checklist, but release proof remains outstanding.
 
 Current active execution frontier:
 - Phase 11 hardening
 
 Immediate next execution step:
-- deepen category-specific incident automation and secondary/failover escalation policy on top of governed alert delivery
+- add time-based re-escalation and delivery-target health reporting for unacknowledged critical alerts
 
 ## Phase Order
 

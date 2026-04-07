@@ -358,9 +358,12 @@ export type PlatformAlert = {
     totalCount: number;
     pendingCount: number;
     failedCount: number;
+    escalatedCount: number;
+    highestEscalationLevel: number;
     lastAttemptedAt: string | null;
     lastStatus: "pending" | "succeeded" | "failed" | null;
     lastTargetName: string | null;
+    lastEscalatedFromTargetName: string | null;
     lastErrorMessage: string | null;
   };
   code: string;

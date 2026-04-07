@@ -1584,7 +1584,11 @@ function AdminConsole() {
                           alert.routedAt
                             ? ` ${formatDateTime(alert.routedAt)}`
                             : ""
-                        }${alert.routedByOperatorId ? ` by ${alert.routedByOperatorId}` : ""}`
+                        }${
+                          alert.routedByOperatorId
+                            ? ` by ${alert.routedByOperatorId}`
+                            : " automatically"
+                        }`
                       : "pending"}
                     {alert.routingTargetId ? ` | Review case ${alert.routingTargetId}` : ""}
                   </p>
@@ -1630,9 +1634,17 @@ function AdminConsole() {
                             : ""
                         } | failed ${alert.deliverySummary.failedCount} | pending ${
                           alert.deliverySummary.pendingCount
+                        } | escalated ${alert.deliverySummary.escalatedCount} | highest level ${
+                          alert.deliverySummary.highestEscalationLevel
                         }`
                       : "no matching targets configured"}
                   </p>
+                  {alert.deliverySummary.lastEscalatedFromTargetName ? (
+                    <p className="muted">
+                      Latest failover came from{" "}
+                      {alert.deliverySummary.lastEscalatedFromTargetName}
+                    </p>
+                  ) : null}
                   {alert.deliverySummary.lastErrorMessage ? (
                     <p className="muted">
                       Delivery error {alert.deliverySummary.lastErrorMessage}

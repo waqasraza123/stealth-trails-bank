@@ -4,7 +4,11 @@ import {
   Injectable,
   NotFoundException
 } from "@nestjs/common";
-import { loadProductChainRuntimeConfig } from "@stealth-trails-bank/config/api";
+import {
+  loadPlatformAlertAutomationRuntimeConfig,
+  loadProductChainRuntimeConfig,
+  type PlatformAlertAutomationPolicyRuntimeConfig
+} from "@stealth-trails-bank/config/api";
 import {
   AccountLifecycleStatus,
   BlockchainTransactionStatus,
@@ -107,9 +111,12 @@ type PlatformAlertProjection = {
     totalCount: number;
     pendingCount: number;
     failedCount: number;
+    escalatedCount: number;
+    highestEscalationLevel: number;
     lastAttemptedAt: string | null;
     lastStatus: PlatformAlertDeliveryStatus | null;
     lastTargetName: string | null;
+    lastEscalatedFromTargetName: string | null;
     lastErrorMessage: string | null;
   };
   code: string;
@@ -142,6 +149,11 @@ type RoutePlatformAlertResult = {
   reviewCase: RoutedPlatformAlertReviewCaseProjection;
   reviewCaseReused: boolean;
   routingStateReused: boolean;
+};
+
+type RoutePlatformAlertActor = {
+  actorType: "operator" | "system";
+  actorId: string;
 };
 
 type RouteCriticalPlatformAlertsResult = {
@@ -277,7 +289,7 @@ function buildPastDateSeconds(seconds: number): Date {
 }
 
 function isJsonObject(
-  value: Prisma.JsonValue | null
+  value: unknown
 ): value is Prisma.JsonObject {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -319,6 +331,7 @@ function formatPrometheusLine(
 @Injectable()
 export class OperationsMonitoringService {
   private readonly productChainId: number;
+  private readonly platformAlertAutomationPolicies: readonly PlatformAlertAutomationPolicyRuntimeConfig[];
 
   constructor(
     private readonly prismaService: PrismaService,
@@ -326,6 +339,8 @@ export class OperationsMonitoringService {
     private readonly platformAlertDeliveryService: PlatformAlertDeliveryService
   ) {
     this.productChainId = loadProductChainRuntimeConfig().productChainId;
+    this.platformAlertAutomationPolicies =
+      loadPlatformAlertAutomationRuntimeConfig().policies;
   }
 
   private resolveHealthStatus(
@@ -417,9 +432,12 @@ export class OperationsMonitoringService {
         totalCount: 0,
         pendingCount: 0,
         failedCount: 0,
+        escalatedCount: 0,
+        highestEscalationLevel: 0,
         lastAttemptedAt: null,
         lastStatus: null,
         lastTargetName: null,
+        lastEscalatedFromTargetName: null,
         lastErrorMessage: null
       },
       code: record.code,
@@ -468,9 +486,28 @@ export class OperationsMonitoringService {
       failedCount: deliveries.filter(
         (delivery) => delivery.status === PlatformAlertDeliveryStatus.failed
       ).length,
+      escalatedCount: deliveries.filter(
+        (delivery) => delivery.escalationLevel > 0
+      ).length,
+      highestEscalationLevel: deliveries.reduce(
+        (highestLevel, delivery) =>
+          Math.max(highestLevel, delivery.escalationLevel),
+        0
+      ),
       lastAttemptedAt: latestDelivery?.lastAttemptedAt?.toISOString() ?? null,
       lastStatus: latestDelivery?.status ?? null,
       lastTargetName: latestDelivery?.targetName ?? null,
+      lastEscalatedFromTargetName:
+        latestDelivery?.escalatedFromDeliveryId !== null &&
+        latestDelivery?.requestPayload &&
+        isJsonObject(latestDelivery.requestPayload) &&
+        isJsonObject(latestDelivery.requestPayload["delivery"]) &&
+        typeof latestDelivery.requestPayload["delivery"]["escalatedFromTargetName"] ===
+          "string"
+          ? latestDelivery.requestPayload["delivery"][
+              "escalatedFromTargetName"
+            ]
+          : null,
       lastErrorMessage: latestDelivery?.errorMessage ?? null
     };
   }
@@ -568,6 +605,75 @@ export class OperationsMonitoringService {
       alert: this.buildPlatformAlertDeliveryPayload(alert),
       eventType,
       metadata
+    });
+  }
+
+  private severityRank(severity: PlatformAlertSeverity): number {
+    return severity === PlatformAlertSeverity.critical ? 2 : 1;
+  }
+
+  private resolveMatchingAutomationPolicy(
+    alert: Pick<PlatformAlertRecord, "category" | "severity">
+  ): PlatformAlertAutomationPolicyRuntimeConfig | null {
+    return (
+      this.platformAlertAutomationPolicies.find(
+        (policy) =>
+          policy.autoRouteToReviewCase &&
+          policy.categories.includes(alert.category) &&
+          this.severityRank(alert.severity) >=
+            this.severityRank(policy.minimumSeverity)
+      ) ?? null
+    );
+  }
+
+  private async maybeAutoRoutePlatformAlert(
+    alert: PlatformAlertRecord,
+    trigger: "created" | "reopened" | "eligible_update",
+    previousSeverity?: PlatformAlertSeverity
+  ): Promise<void> {
+    if (
+      alert.status !== PlatformAlertStatus.open ||
+      alert.routingStatus === PlatformAlertRoutingStatus.routed
+    ) {
+      return;
+    }
+
+    const policy = this.resolveMatchingAutomationPolicy(alert);
+
+    if (!policy) {
+      return;
+    }
+
+    const routeNote = [
+      `Automatically routed by platform alert automation policy "${policy.name}".`,
+      policy.routeNote
+    ]
+      .filter((value): value is string => Boolean(value && value.trim().length > 0))
+      .join(" ");
+
+    await this.routePlatformAlertToReviewCaseInternal(alert.id, {
+      actorType: "system",
+      actorId: "platform-alert-automation"
+    }, {
+      note: routeNote
+    });
+
+    await this.prismaService.auditEvent.create({
+      data: {
+        customerId: null,
+        actorType: "system",
+        actorId: "platform-alert-automation",
+        action: "platform_alert.automation_policy_applied",
+        targetType: "PlatformAlert",
+        targetId: alert.id,
+        metadata: {
+          policyName: policy.name,
+          trigger,
+          previousSeverity: previousSeverity ?? null,
+          currentSeverity: alert.severity,
+          routeNote
+        } as Prisma.InputJsonValue
+      }
     });
   }
 
@@ -851,10 +957,15 @@ export class OperationsMonitoringService {
           alert: this.buildPlatformAlertDeliveryPayload(createdAlert),
           eventType: PlatformAlertDeliveryEventType.opened
         });
+        await this.maybeAutoRoutePlatformAlert(createdAlert, "created");
         continue;
       }
 
       const reopened = existingAlert.status === PlatformAlertStatus.resolved;
+      const previousSeverity = existingAlert.severity;
+      const eligibleBeforeUpdate =
+        existingAlert.routingStatus === PlatformAlertRoutingStatus.unrouted &&
+        this.resolveMatchingAutomationPolicy(existingAlert) !== null;
 
       const updatedAlert = await this.prismaService.platformAlert.update({
         where: {
@@ -897,6 +1008,24 @@ export class OperationsMonitoringService {
           alert: this.buildPlatformAlertDeliveryPayload(updatedAlert),
           eventType: PlatformAlertDeliveryEventType.reopened
         });
+        await this.maybeAutoRoutePlatformAlert(
+          updatedAlert,
+          "reopened",
+          previousSeverity
+        );
+        continue;
+      }
+
+      const eligibleAfterUpdate =
+        updatedAlert.routingStatus === PlatformAlertRoutingStatus.unrouted &&
+        this.resolveMatchingAutomationPolicy(updatedAlert) !== null;
+
+      if (!eligibleBeforeUpdate && eligibleAfterUpdate) {
+        await this.maybeAutoRoutePlatformAlert(
+          updatedAlert,
+          "eligible_update",
+          previousSeverity
+        );
       }
     }
 
@@ -1841,13 +1970,12 @@ export class OperationsMonitoringService {
     };
   }
 
-  async routePlatformAlertToReviewCase(
+  private async routePlatformAlertToReviewCaseInternal(
     alertId: string,
-    operatorId: string,
+    actor: RoutePlatformAlertActor,
     dto: RoutePlatformAlertToReviewCaseDto
   ): Promise<RoutePlatformAlertResult> {
     const routeNote = dto.note?.trim() ? dto.note.trim() : null;
-
     const result = await this.prismaService.$transaction(async (transaction) => {
       const alert = this.ensureOpenPlatformAlert(
         await transaction.platformAlert.findUnique({
@@ -1866,8 +1994,8 @@ export class OperationsMonitoringService {
           type: ReviewCaseType.manual_intervention,
           reasonCode: this.buildPlatformAlertReviewCaseReasonCode(alert),
           notes: this.buildPlatformAlertReviewCaseNotes(alert, routeNote),
-          actorType: "operator",
-          actorId: operatorId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
           auditAction: "review_case.platform_alert.opened",
           auditMetadata: {
             platformAlertId: alert.id,
@@ -1886,9 +2014,12 @@ export class OperationsMonitoringService {
         alert.routingTargetType === PlatformAlertRoutingTargetType.review_case &&
         alert.routingTargetId === reviewCaseResult.reviewCase.id;
       const routedAt = routingStateReused ? alert.routedAt ?? new Date() : new Date();
-      const routedByOperatorId = routingStateReused
-        ? alert.routedByOperatorId ?? operatorId
-        : operatorId;
+      const routedByOperatorId =
+        actor.actorType === "operator"
+          ? routingStateReused
+            ? alert.routedByOperatorId ?? actor.actorId
+            : actor.actorId
+          : null;
       const updatedAlert = await transaction.platformAlert.update({
         where: {
           id: alert.id
@@ -1906,8 +2037,8 @@ export class OperationsMonitoringService {
       await transaction.auditEvent.create({
         data: {
           customerId: null,
-          actorType: "operator",
-          actorId: operatorId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
           action: "platform_alert.routed_to_review_case",
           targetType: "PlatformAlert",
           targetId: alert.id,
@@ -1921,7 +2052,8 @@ export class OperationsMonitoringService {
             reviewCaseStatus: reviewCaseResult.reviewCase.status,
             reviewCaseReused: reviewCaseResult.reviewCaseReused,
             routingStateReused,
-            routeNote
+            routeNote,
+            initiatedBy: actor.actorType
           } as Prisma.InputJsonValue
         }
       });
@@ -1976,11 +2108,27 @@ export class OperationsMonitoringService {
       PlatformAlertDeliveryEventType.routed_to_review_case,
       {
         reviewCaseId: result.reviewCase.id,
-        routingStateReused: result.routingStateReused
+        routingStateReused: result.routingStateReused,
+        initiatedBy: actor.actorType
       }
     );
 
     return result;
+  }
+
+  async routePlatformAlertToReviewCase(
+    alertId: string,
+    operatorId: string,
+    dto: RoutePlatformAlertToReviewCaseDto
+  ): Promise<RoutePlatformAlertResult> {
+    return this.routePlatformAlertToReviewCaseInternal(
+      alertId,
+      {
+        actorType: "operator",
+        actorId: operatorId
+      },
+      dto
+    );
   }
 
   async routeCriticalPlatformAlerts(

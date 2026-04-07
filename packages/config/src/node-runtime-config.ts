@@ -232,6 +232,21 @@ function parsePlatformAlertDeliverySeverity(
   throw new Error(`${name} must be "warning" or "critical".`);
 }
 
+function parsePlatformAlertDeliveryMode(
+  value: unknown,
+  name: string
+): PlatformAlertDeliveryMode {
+  if (value === undefined) {
+    return "direct";
+  }
+
+  if (value === "direct" || value === "failover_only") {
+    return value;
+  }
+
+  throw new Error(`${name} must be "direct" or "failover_only".`);
+}
+
 function parsePlatformAlertDeliveryCategories(
   value: unknown,
   name: string
@@ -302,7 +317,7 @@ function parsePlatformAlertDeliveryTargets(
     throw new Error(`${name} must be a JSON array.`);
   }
 
-  return parsedValue.map((entry, index) => {
+  const targets = parsedValue.map((entry, index) => {
     if (!isRecord(entry)) {
       throw new Error(`${name}[${index}] must be an object.`);
     }
@@ -322,6 +337,10 @@ function parsePlatformAlertDeliveryTargets(
         typeof entry.bearerToken === "string" && entry.bearerToken.trim().length > 0
           ? entry.bearerToken.trim()
           : null,
+      deliveryMode: parsePlatformAlertDeliveryMode(
+        entry.deliveryMode,
+        `${name}[${index}].deliveryMode`
+      ),
       categories: parsePlatformAlertDeliveryCategories(
         entry.categories,
         `${name}[${index}].categories`
@@ -333,9 +352,145 @@ function parsePlatformAlertDeliveryTargets(
       eventTypes: parsePlatformAlertDeliveryEventTypes(
         entry.eventTypes,
         `${name}[${index}].eventTypes`
-      )
+      ),
+      failoverTargetNames: Array.isArray(entry.failoverTargetNames)
+        ? entry.failoverTargetNames.map((targetName, failoverIndex) => {
+            if (
+              typeof targetName !== "string" ||
+              targetName.trim().length === 0
+            ) {
+              throw new Error(
+                `${name}[${index}].failoverTargetNames[${failoverIndex}] must be a non-empty string.`
+              );
+            }
+
+            return targetName.trim().toLowerCase();
+          })
+        : []
     };
   });
+
+  const targetsByName = new Map<string, PlatformAlertDeliveryTargetRuntimeConfig>();
+
+  for (const target of targets) {
+    if (targetsByName.has(target.name)) {
+      throw new Error(`${name} contains duplicate target name "${target.name}".`);
+    }
+
+    targetsByName.set(target.name, target);
+  }
+
+  for (const target of targets) {
+    for (const failoverTargetName of target.failoverTargetNames) {
+      if (failoverTargetName === target.name) {
+        throw new Error(
+          `${name} target "${target.name}" cannot fail over to itself.`
+        );
+      }
+
+      if (!targetsByName.has(failoverTargetName)) {
+        throw new Error(
+          `${name} target "${target.name}" references unknown failover target "${failoverTargetName}".`
+        );
+      }
+    }
+  }
+
+  const visitedTargetNames = new Set<string>();
+  const visitingTargetNames = new Set<string>();
+
+  function validateNoFailoverCycles(
+    targetName: string,
+    path: string[]
+  ): void {
+    if (visitingTargetNames.has(targetName)) {
+      throw new Error(
+        `${name} contains a failover cycle: ${[...path, targetName].join(" -> ")}.`
+      );
+    }
+
+    if (visitedTargetNames.has(targetName)) {
+      return;
+    }
+
+    visitingTargetNames.add(targetName);
+
+    for (const failoverTargetName of targetsByName.get(targetName)?.failoverTargetNames ??
+      []) {
+      validateNoFailoverCycles(failoverTargetName, [...path, targetName]);
+    }
+
+    visitingTargetNames.delete(targetName);
+    visitedTargetNames.add(targetName);
+  }
+
+  for (const target of targets) {
+    validateNoFailoverCycles(target.name, []);
+  }
+
+  return targets;
+}
+
+function parsePlatformAlertAutomationPolicies(
+  value: string,
+  name: string
+): PlatformAlertAutomationPolicyRuntimeConfig[] {
+  let parsedValue: unknown;
+
+  try {
+    parsedValue = JSON.parse(value);
+  } catch {
+    throw new Error(`${name} must be valid JSON.`);
+  }
+
+  if (!Array.isArray(parsedValue)) {
+    throw new Error(`${name} must be a JSON array.`);
+  }
+
+  const policies = parsedValue.map((entry, index) => {
+    if (!isRecord(entry)) {
+      throw new Error(`${name}[${index}] must be an object.`);
+    }
+
+    if (typeof entry.name !== "string" || entry.name.trim().length === 0) {
+      throw new Error(`${name}[${index}].name must be a non-empty string.`);
+    }
+
+    if (typeof entry.autoRouteToReviewCase !== "boolean") {
+      throw new Error(
+        `${name}[${index}].autoRouteToReviewCase must be a boolean.`
+      );
+    }
+
+    return {
+      name: entry.name.trim().toLowerCase(),
+      categories: parsePlatformAlertDeliveryCategories(
+        entry.categories,
+        `${name}[${index}].categories`
+      ),
+      minimumSeverity: parsePlatformAlertDeliverySeverity(
+        entry.minimumSeverity,
+        `${name}[${index}].minimumSeverity`
+      ),
+      autoRouteToReviewCase: entry.autoRouteToReviewCase,
+      routeNote:
+        typeof entry.routeNote === "string" && entry.routeNote.trim().length > 0
+          ? entry.routeNote.trim()
+          : null
+    };
+  });
+
+  const policyNames = new Set<string>();
+
+  for (const policy of policies) {
+    if (policyNames.has(policy.name)) {
+      throw new Error(`${name} contains duplicate policy name "${policy.name}".`);
+    }
+
+    policyNames.add(policy.name);
+  }
+
+  return policies;
 }
 
 function resolveWorkerExecutionMode(
@@ -500,14 +655,30 @@ export type PlatformAlertDeliveryTargetRuntimeConfig = {
   readonly name: string;
   readonly url: string;
   readonly bearerToken: string | null;
+  readonly deliveryMode: PlatformAlertDeliveryMode;
   readonly categories: readonly PlatformAlertDeliveryCategory[];
   readonly minimumSeverity: PlatformAlertDeliverySeverity;
   readonly eventTypes: readonly PlatformAlertDeliveryEventType[];
+  readonly failoverTargetNames: readonly string[];
 };
 
 export type PlatformAlertDeliveryRuntimeConfig = {
   readonly requestTimeoutMs: number;
   readonly targets: readonly PlatformAlertDeliveryTargetRuntimeConfig[];
+};
+
+export type PlatformAlertDeliveryMode = "direct" | "failover_only";
+
+export type PlatformAlertAutomationPolicyRuntimeConfig = {
+  readonly name: string;
+  readonly categories: readonly PlatformAlertDeliveryCategory[];
+  readonly minimumSeverity: PlatformAlertDeliverySeverity;
+  readonly autoRouteToReviewCase: boolean;
+  readonly routeNote: string | null;
+};
+
+export type PlatformAlertAutomationRuntimeConfig = {
+  readonly policies: readonly PlatformAlertAutomationPolicyRuntimeConfig[];
 };
 
 export function loadDatabaseRuntimeConfig(
@@ -986,6 +1157,24 @@ export function loadPlatformAlertDeliveryRuntimeConfig(
       ? parsePlatformAlertDeliveryTargets(
           configuredTargets,
           "PLATFORM_ALERT_DELIVERY_TARGETS_JSON"
+        )
+      : []
+  };
+}
+
+export function loadPlatformAlertAutomationRuntimeConfig(
+  env: RuntimeEnvShape = getNodeRuntimeEnv()
+): PlatformAlertAutomationRuntimeConfig {
+  const configuredPolicies = readOptionalRuntimeEnv(
+    env,
+    "PLATFORM_ALERT_AUTOMATION_POLICIES_JSON"
+  );
+
+  return {
+    policies: configuredPolicies
+      ? parsePlatformAlertAutomationPolicies(
+          configuredPolicies,
+          "PLATFORM_ALERT_AUTOMATION_POLICIES_JSON"
         )
       : []
   };

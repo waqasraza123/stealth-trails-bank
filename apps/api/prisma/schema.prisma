@@ -619,25 +619,32 @@ model PlatformAlert {
 }
 
 model PlatformAlertDelivery {
-  id                 String                         @id @default(cuid())
-  platformAlertId    String
-  platformAlert      PlatformAlert                  @relation(fields: [platformAlertId], references: [id])
-  targetName         String
-  targetUrl          String
-  eventType          PlatformAlertDeliveryEventType
-  status             PlatformAlertDeliveryStatus    @default(pending)
-  attemptCount       Int                            @default(0)
-  requestPayload     Json
-  responseStatusCode Int?
-  errorMessage       String?
-  lastAttemptedAt    DateTime?
-  deliveredAt        DateTime?
-  createdAt          DateTime                       @default(now())
-  updatedAt          DateTime                       @updatedAt
+  id                      String                         @id @default(cuid())
+  platformAlertId         String
+  platformAlert           PlatformAlert                  @relation(fields: [platformAlertId], references: [id])
+  targetName              String
+  targetUrl               String
+  eventType               PlatformAlertDeliveryEventType
+  escalatedFromDeliveryId String?
+  escalatedFromDelivery   PlatformAlertDelivery?         @relation("PlatformAlertDeliveryEscalation", fields: [escalatedFromDeliveryId], references: [id])
+  escalatedDeliveries     PlatformAlertDelivery[]        @relation("PlatformAlertDeliveryEscalation")
+  escalationLevel         Int                            @default(0)
+  escalationReason        String?
+  status                  PlatformAlertDeliveryStatus    @default(pending)
+  attemptCount            Int                            @default(0)
+  requestPayload          Json
+  responseStatusCode      Int?
+  errorMessage            String?
+  lastAttemptedAt         DateTime?
+  deliveredAt             DateTime?
+  createdAt               DateTime                       @default(now())
+  updatedAt               DateTime                       @updatedAt
 
   @@index([platformAlertId, createdAt])
   @@index([status, createdAt])
   @@index([targetName, status, createdAt])
+  @@index([escalatedFromDeliveryId, createdAt])
+  @@index([platformAlertId, escalationLevel, createdAt])
 }
 
 model ReviewCaseEvent {
