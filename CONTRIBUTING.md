@@ -128,7 +128,7 @@ If your change is bounded, run at least the focused tests around that area.
 
 ## Push guard
 
-This repo includes a versioned pre-push guard so broken builds do not get pushed.
+This repo includes a versioned pre-push guard so broken builds or failing tests do not get pushed.
 
 Enable it once per clone:
 
@@ -137,6 +137,13 @@ pnpm setup:hooks
 ~~~
 
 After that, normal `git push` runs the repo's push verification automatically.
+
+The enforced verification is:
+
+~~~bash
+pnpm build
+pnpm test
+~~~
 
 If you want one explicit command that works well from terminal-driven AI tools too, use:
 

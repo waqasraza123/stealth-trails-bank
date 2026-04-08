@@ -152,6 +152,7 @@ Run these from the repository root unless noted otherwise.
 | `pnpm test` | Run workspace tests |
 | `pnpm lint` | Run lint tasks where defined |
 | `pnpm compile` | Run compile tasks where defined |
+| `pnpm safe-push` | Run the repo push guard (`build` + `test`) and push only if it passes |
 
 ### Package-scoped examples
 
