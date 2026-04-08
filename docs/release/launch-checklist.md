@@ -67,3 +67,4 @@
 - worker owner on call
 - release approved
 - latest release-readiness evidence gaps accepted or remediated
+- governed launch approval requested and approved in release-readiness workflow

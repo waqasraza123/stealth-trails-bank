@@ -37,6 +37,10 @@ const DEFAULT_INCIDENT_PACKAGE_RELEASE_APPROVER_ALLOWED_OPERATOR_ROLES = [
   "risk_manager"
 ] as const;
 const DEFAULT_INCIDENT_PACKAGE_RELEASE_APPROVAL_EXPIRY_HOURS = 72;
+const DEFAULT_RELEASE_READINESS_APPROVAL_ALLOWED_OPERATOR_ROLES = [
+  "compliance_lead",
+  "risk_manager"
+] as const;
 const DEFAULT_PLATFORM_ALERT_DELIVERY_REQUEST_TIMEOUT_MS = 5_000;
 const DEFAULT_PLATFORM_ALERT_DELIVERY_HEALTH_SLO_LOOKBACK_HOURS = 24;
 const DEFAULT_PLATFORM_ALERT_DELIVERY_HEALTH_SLO_MINIMUM_RECENT_DELIVERIES = 3;
@@ -673,6 +677,10 @@ export type IncidentPackageExportGovernanceRuntimeConfig = {
 export type IncidentPackageReleaseGovernanceRuntimeConfig = {
   readonly incidentPackageReleaseApproverAllowedOperatorRoles: readonly string[];
   readonly incidentPackageReleaseApprovalExpiryHours: number;
+};
+
+export type ReleaseReadinessApprovalRuntimeConfig = {
+  readonly releaseReadinessApprovalAllowedOperatorRoles: readonly string[];
 };
 
 export type PlatformAlertDeliverySeverity = "warning" | "critical";
@@ -1335,6 +1343,24 @@ export function loadIncidentPackageReleaseGovernanceRuntimeConfig(
           "INCIDENT_PACKAGE_RELEASE_APPROVAL_EXPIRY_HOURS"
         )
       : DEFAULT_INCIDENT_PACKAGE_RELEASE_APPROVAL_EXPIRY_HOURS
+  };
+}
+
+export function loadReleaseReadinessApprovalRuntimeConfig(
+  env: RuntimeEnvShape = getNodeRuntimeEnv()
+): ReleaseReadinessApprovalRuntimeConfig {
+  const configuredApproverRoles = readOptionalRuntimeEnv(
+    env,
+    "RELEASE_READINESS_APPROVAL_ALLOWED_OPERATOR_ROLES"
+  );
+
+  return {
+    releaseReadinessApprovalAllowedOperatorRoles: configuredApproverRoles
+      ? parseCommaSeparatedValues(
+          configuredApproverRoles,
+          "RELEASE_READINESS_APPROVAL_ALLOWED_OPERATOR_ROLES"
+        )
+      : [...DEFAULT_RELEASE_READINESS_APPROVAL_ALLOWED_OPERATOR_ROLES]
   };
 }
 

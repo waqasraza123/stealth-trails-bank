@@ -178,6 +178,7 @@ That command runs the same verification and only pushes if it passes.
 Update docs when you change:
 
 - architecture assumptions
+- Phase 12 release-readiness evidence or governed launch approval expectations
 - workflow behavior
 - operational procedures
 - onboarding or setup steps

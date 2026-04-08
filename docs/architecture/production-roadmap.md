@@ -15,13 +15,13 @@ It is intentionally phase-based so each step can be implemented, verified, and c
 - Phase 8 and Phase 9 are materially advanced through the current API and truthful customer web surfaces.
 - Phase 10 is materially complete at the operator-visibility level through the console for review, oversight, hold-release, reconciliation mismatch, governed export, audit-log, and treasury visibility workflows.
 - Phase 11 is materially advanced through worker heartbeat reporting, scheduled reconciliation scan history, durable platform alerts, operator-visible runtime health, structured API request logging with request correlation IDs, an internal Prometheus-style metrics surface spanning API requests and worker execution, alert-routing automation that opens manual-intervention review cases from platform alerts, durable alert ownership, acknowledgement, and suppression controls, runtime-configured external alert delivery targets with durable delivery attempts and retry support, category-specific automation policies that auto-route eligible alert classes into review work, failover-only delivery targets with durable escalation ancestry, time-based re-escalation for overdue critical alerts, delivery-target health reporting, and SLO-backed alerting on sustained delivery-target degradation.
-- Phase 12 has begun through the repo-specific threat model, secret handling review, role review, restore and rollback drills, launch checklist, and durable release-readiness evidence tracking for staging or production-like proof capture, but release proof remains outstanding.
+- Phase 12 has begun through the repo-specific threat model, secret handling review, role review, restore and rollback drills, launch checklist, durable release-readiness evidence tracking for staging or production-like proof capture, and a governed launch-approval workflow that blocks approval while required proof or checklist attestations are missing, but release proof remains outstanding.
 
 Current active execution frontier:
 - Phase 11/12 boundary hardening
 
 Immediate next execution step:
-- run the delivery-target SLO, critical alert re-escalation, restore, and rollback drills against staging or production-like traffic and record the resulting evidence through the new release-readiness workflow
+- run the delivery-target SLO, critical alert re-escalation, restore, and rollback drills against staging or production-like traffic, record the resulting evidence through the release-readiness workflow, and drive the release candidate through governed launch approval
 
 ## Phase Order
 

@@ -20,6 +20,11 @@ The goal is to replace ad hoc screenshots and scattered notes with a durable ope
 - `GET /release-readiness/internal/evidence`
 - `GET /release-readiness/internal/evidence/:evidenceId`
 - `POST /release-readiness/internal/evidence`
+- `GET /release-readiness/internal/approvals`
+- `GET /release-readiness/internal/approvals/:approvalId`
+- `POST /release-readiness/internal/approvals`
+- `POST /release-readiness/internal/approvals/:approvalId/approve`
+- `POST /release-readiness/internal/approvals/:approvalId/reject`
 
 Required operator headers:
 
@@ -93,4 +98,4 @@ Optional fields:
 
 ## Launch rule
 
-No launch posture is approved until the required proofs have accepted evidence in this workflow and the latest gaps are explicitly accepted or remediated.
+No launch posture is approved until the required proofs have accepted evidence in this workflow, the launch checklist attestations are complete, and the candidate has been approved through the governed launch-approval workflow.

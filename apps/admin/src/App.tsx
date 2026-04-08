@@ -17,6 +17,7 @@ import {
   addOversightIncidentNote,
   addReviewCaseNote,
   assignPlatformAlertOwner,
+  approveReleaseReadinessApproval,
   applyAccountRestriction,
   applyManualResolution,
   approveRelease,
@@ -49,6 +50,7 @@ import {
   listPendingReleases,
   listPlatformAlertDeliveryTargetHealth,
   listPlatformAlerts,
+  listReleaseReadinessApprovals,
   listReleasedReleases,
   listReleaseReadinessEvidence,
   listReviewCases,
@@ -62,6 +64,8 @@ import {
   resolveOversightIncident,
   resolveReviewCase,
   rejectRelease,
+  rejectReleaseReadinessApproval,
+  requestReleaseReadinessApproval,
   retryPlatformAlertDeliveries,
   routeCriticalPlatformAlerts,
   routePlatformAlertToReviewCase,
@@ -102,6 +106,7 @@ const auditTargetTypeOptions = [
   "LedgerReconciliationMismatch",
   "LedgerReconciliationScanRun",
   "OversightIncident",
+  "ReleaseReadinessApproval",
   "ReleaseReadinessEvidence",
   "ReviewCase",
   "TransactionIntent"
@@ -174,6 +179,24 @@ type ReleaseReadinessDraft = {
   note: string;
   evidenceLinksText: string;
   evidencePayloadText: string;
+};
+
+type ReleaseReadinessApprovalDraft = {
+  releaseIdentifier: string;
+  environment: (typeof releaseReadinessEnvironmentOptions)[number];
+  rollbackReleaseIdentifier: string;
+  summary: string;
+  requestNote: string;
+  securityConfigurationComplete: boolean;
+  accessAndGovernanceComplete: boolean;
+  dataAndRecoveryComplete: boolean;
+  platformHealthComplete: boolean;
+  functionalProofComplete: boolean;
+  contractAndChainProofComplete: boolean;
+  finalSignoffComplete: boolean;
+  unresolvedRisksAccepted: boolean;
+  openBlockersText: string;
+  residualRiskNote: string;
 };
 
 function loadStoredSession(serverUrl: string): SessionDraft {
@@ -313,6 +336,26 @@ function AdminConsole() {
       evidenceLinksText: "",
       evidencePayloadText: ""
     });
+  const [releaseReadinessApprovalDraft, setReleaseReadinessApprovalDraft] =
+    useState<ReleaseReadinessApprovalDraft>({
+      releaseIdentifier: "",
+      environment: "production_like",
+      rollbackReleaseIdentifier: "",
+      summary: "",
+      requestNote: "",
+      securityConfigurationComplete: false,
+      accessAndGovernanceComplete: false,
+      dataAndRecoveryComplete: false,
+      platformHealthComplete: false,
+      functionalProofComplete: false,
+      contractAndChainProofComplete: false,
+      finalSignoffComplete: false,
+      unresolvedRisksAccepted: false,
+      openBlockersText: "",
+      residualRiskNote: ""
+    });
+  const [launchApprovalNote, setLaunchApprovalNote] = useState("");
+  const [launchRejectionNote, setLaunchRejectionNote] = useState("");
 
   const isSessionReady =
     savedSession.baseUrl.trim().length > 0 &&
@@ -401,6 +444,17 @@ function AdminConsole() {
     queryKey: ["releaseReadinessEvidence", operatorSession?.baseUrl],
     queryFn: () =>
       listReleaseReadinessEvidence(operatorSession!, {
+        limit: 10,
+        sinceDays: 90
+      }),
+    enabled: Boolean(operatorSession),
+    refetchInterval: 30000
+  });
+
+  const releaseReadinessApprovalsQuery = useQuery({
+    queryKey: ["releaseReadinessApprovals", operatorSession?.baseUrl],
+    queryFn: () =>
+      listReleaseReadinessApprovals(operatorSession!, {
         limit: 10,
         sinceDays: 90
       }),
@@ -811,6 +865,129 @@ function AdminConsole() {
           evidenceLinksText: "",
           evidencePayloadText: ""
         }));
+      }
+    );
+  }
+
+  async function handleRequestReleaseReadinessApproval(): Promise<void> {
+    if (!operatorSession) {
+      return;
+    }
+
+    const releaseIdentifier =
+      releaseReadinessApprovalDraft.releaseIdentifier.trim();
+    const summary = releaseReadinessApprovalDraft.summary.trim();
+
+    if (releaseIdentifier.length === 0) {
+      setFlash({
+        tone: "error",
+        message: "Release identifier is required for launch approval."
+      });
+      return;
+    }
+
+    if (summary.length === 0) {
+      setFlash({
+        tone: "error",
+        message: "Launch approval summary is required."
+      });
+      return;
+    }
+
+    const openBlockers = releaseReadinessApprovalDraft.openBlockersText
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    await executeAction(
+      "request-release-readiness-approval",
+      "Launch approval requested.",
+      async () => {
+        await requestReleaseReadinessApproval(operatorSession, {
+          releaseIdentifier,
+          environment: releaseReadinessApprovalDraft.environment,
+          rollbackReleaseIdentifier: trimToUndefined(
+            releaseReadinessApprovalDraft.rollbackReleaseIdentifier
+          ),
+          summary,
+          requestNote: trimToUndefined(releaseReadinessApprovalDraft.requestNote),
+          securityConfigurationComplete:
+            releaseReadinessApprovalDraft.securityConfigurationComplete,
+          accessAndGovernanceComplete:
+            releaseReadinessApprovalDraft.accessAndGovernanceComplete,
+          dataAndRecoveryComplete:
+            releaseReadinessApprovalDraft.dataAndRecoveryComplete,
+          platformHealthComplete:
+            releaseReadinessApprovalDraft.platformHealthComplete,
+          functionalProofComplete:
+            releaseReadinessApprovalDraft.functionalProofComplete,
+          contractAndChainProofComplete:
+            releaseReadinessApprovalDraft.contractAndChainProofComplete,
+          finalSignoffComplete:
+            releaseReadinessApprovalDraft.finalSignoffComplete,
+          unresolvedRisksAccepted:
+            releaseReadinessApprovalDraft.unresolvedRisksAccepted,
+          ...(openBlockers.length > 0 ? { openBlockers } : {}),
+          residualRiskNote: trimToUndefined(
+            releaseReadinessApprovalDraft.residualRiskNote
+          )
+        });
+
+        setReleaseReadinessApprovalDraft((current) => ({
+          ...current,
+          summary: "",
+          requestNote: "",
+          openBlockersText: "",
+          residualRiskNote: ""
+        }));
+      }
+    );
+  }
+
+  async function handleApproveReleaseReadinessApproval(
+    approvalId: string
+  ): Promise<void> {
+    if (!operatorSession) {
+      return;
+    }
+
+    await executeAction(
+      "approve-release-readiness-approval",
+      "Launch approval marked approved.",
+      async () => {
+        await approveReleaseReadinessApproval(operatorSession, approvalId, {
+          approvalNote: trimToUndefined(launchApprovalNote)
+        });
+        setLaunchApprovalNote("");
+      }
+    );
+  }
+
+  async function handleRejectReleaseReadinessApproval(
+    approvalId: string
+  ): Promise<void> {
+    if (!operatorSession) {
+      return;
+    }
+
+    const rejectionNote = launchRejectionNote.trim();
+
+    if (rejectionNote.length === 0) {
+      setFlash({
+        tone: "error",
+        message: "A rejection note is required to reject launch approval."
+      });
+      return;
+    }
+
+    await executeAction(
+      "reject-release-readiness-approval",
+      "Launch approval rejected.",
+      async () => {
+        await rejectReleaseReadinessApproval(operatorSession, approvalId, {
+          rejectionNote
+        });
+        setLaunchRejectionNote("");
       }
     );
   }
@@ -1284,6 +1461,367 @@ function AdminConsole() {
                   Record evidence
                 </button>
               </section>
+
+              <section className="panel">
+                <div className="section-heading compact">
+                  <div>
+                    <p className="section-kicker">Launch Gate</p>
+                    <h2>Request governed approval</h2>
+                  </div>
+                </div>
+
+                <div className="split-form">
+                  <label>
+                    Release identifier
+                    <input
+                      value={releaseReadinessApprovalDraft.releaseIdentifier}
+                      onChange={(event) =>
+                        setReleaseReadinessApprovalDraft((current) => ({
+                          ...current,
+                          releaseIdentifier: event.target.value
+                        }))
+                      }
+                      placeholder="api-2026.04.08.1"
+                    />
+                  </label>
+                  <label>
+                    Environment
+                    <select
+                      value={releaseReadinessApprovalDraft.environment}
+                      onChange={(event) =>
+                        setReleaseReadinessApprovalDraft((current) => ({
+                          ...current,
+                          environment:
+                            event.target.value as ReleaseReadinessApprovalDraft["environment"]
+                        }))
+                      }
+                    >
+                      {releaseReadinessEnvironmentOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {toTitleCase(option)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Rollback release identifier
+                    <input
+                      value={
+                        releaseReadinessApprovalDraft.rollbackReleaseIdentifier
+                      }
+                      onChange={(event) =>
+                        setReleaseReadinessApprovalDraft((current) => ({
+                          ...current,
+                          rollbackReleaseIdentifier: event.target.value
+                        }))
+                      }
+                      placeholder="api-2026.04.07.3"
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  Launch summary
+                  <textarea
+                    value={releaseReadinessApprovalDraft.summary}
+                    onChange={(event) =>
+                      setReleaseReadinessApprovalDraft((current) => ({
+                        ...current,
+                        summary: event.target.value
+                      }))
+                    }
+                    placeholder="Summarize the release candidate, traffic profile, and why launch posture is being requested."
+                  />
+                </label>
+
+                <label>
+                  Request note
+                  <textarea
+                    value={releaseReadinessApprovalDraft.requestNote}
+                    onChange={(event) =>
+                      setReleaseReadinessApprovalDraft((current) => ({
+                        ...current,
+                        requestNote: event.target.value
+                      }))
+                    }
+                    placeholder="Optional reviewer context, owners on call, or checklist notes."
+                  />
+                </label>
+
+                <div className="list-stack">
+                  <label>
+                    <input
+                      checked={
+                        releaseReadinessApprovalDraft.securityConfigurationComplete
+                      }
+                      onChange={(event) =>
+                        setReleaseReadinessApprovalDraft((current) => ({
+                          ...current,
+                          securityConfigurationComplete: event.target.checked
+                        }))
+                      }
+                      type="checkbox"
+                    />{" "}
+                    Security configuration complete
+                  </label>
+                  <label>
+                    <input
+                      checked={
+                        releaseReadinessApprovalDraft.accessAndGovernanceComplete
+                      }
+                      onChange={(event) =>
+                        setReleaseReadinessApprovalDraft((current) => ({
+                          ...current,
+                          accessAndGovernanceComplete: event.target.checked
+                        }))
+                      }
+                      type="checkbox"
+                    />{" "}
+                    Access and governance reviewed
+                  </label>
+                  <label>
+                    <input
+                      checked={releaseReadinessApprovalDraft.dataAndRecoveryComplete}
+                      onChange={(event) =>
+                        setReleaseReadinessApprovalDraft((current) => ({
+                          ...current,
+                          dataAndRecoveryComplete: event.target.checked
+                        }))
+                      }
+                      type="checkbox"
+                    />{" "}
+                    Data and recovery checklist complete
+                  </label>
+                  <label>
+                    <input
+                      checked={releaseReadinessApprovalDraft.platformHealthComplete}
+                      onChange={(event) =>
+                        setReleaseReadinessApprovalDraft((current) => ({
+                          ...current,
+                          platformHealthComplete: event.target.checked
+                        }))
+                      }
+                      type="checkbox"
+                    />{" "}
+                    Platform health reviewed
+                  </label>
+                  <label>
+                    <input
+                      checked={releaseReadinessApprovalDraft.functionalProofComplete}
+                      onChange={(event) =>
+                        setReleaseReadinessApprovalDraft((current) => ({
+                          ...current,
+                          functionalProofComplete: event.target.checked
+                        }))
+                      }
+                      type="checkbox"
+                    />{" "}
+                    Functional proof complete
+                  </label>
+                  <label>
+                    <input
+                      checked={
+                        releaseReadinessApprovalDraft.contractAndChainProofComplete
+                      }
+                      onChange={(event) =>
+                        setReleaseReadinessApprovalDraft((current) => ({
+                          ...current,
+                          contractAndChainProofComplete: event.target.checked
+                        }))
+                      }
+                      type="checkbox"
+                    />{" "}
+                    Contract and chain proof complete
+                  </label>
+                  <label>
+                    <input
+                      checked={releaseReadinessApprovalDraft.finalSignoffComplete}
+                      onChange={(event) =>
+                        setReleaseReadinessApprovalDraft((current) => ({
+                          ...current,
+                          finalSignoffComplete: event.target.checked
+                        }))
+                      }
+                      type="checkbox"
+                    />{" "}
+                    Final sign-off checklist complete
+                  </label>
+                  <label>
+                    <input
+                      checked={
+                        releaseReadinessApprovalDraft.unresolvedRisksAccepted
+                      }
+                      onChange={(event) =>
+                        setReleaseReadinessApprovalDraft((current) => ({
+                          ...current,
+                          unresolvedRisksAccepted: event.target.checked
+                        }))
+                      }
+                      type="checkbox"
+                    />{" "}
+                    Residual risks explicitly accepted
+                  </label>
+                </div>
+
+                <div className="two-column">
+                  <label>
+                    Open blockers
+                    <textarea
+                      value={releaseReadinessApprovalDraft.openBlockersText}
+                      onChange={(event) =>
+                        setReleaseReadinessApprovalDraft((current) => ({
+                          ...current,
+                          openBlockersText: event.target.value
+                        }))
+                      }
+                      placeholder="One blocker per line. Leave blank when the candidate is clear."
+                    />
+                  </label>
+                  <label>
+                    Residual risk note
+                    <textarea
+                      value={releaseReadinessApprovalDraft.residualRiskNote}
+                      onChange={(event) =>
+                        setReleaseReadinessApprovalDraft((current) => ({
+                          ...current,
+                          residualRiskNote: event.target.value
+                        }))
+                      }
+                      placeholder="Optional risk acceptance or follow-up note."
+                    />
+                  </label>
+                </div>
+
+                <div className="two-column">
+                  <label>
+                    Approval note
+                    <textarea
+                      value={launchApprovalNote}
+                      onChange={(event) => setLaunchApprovalNote(event.target.value)}
+                      placeholder="Optional note used when approving a pending request."
+                    />
+                  </label>
+                  <label>
+                    Rejection note
+                    <textarea
+                      value={launchRejectionNote}
+                      onChange={(event) => setLaunchRejectionNote(event.target.value)}
+                      placeholder="Required when rejecting a pending request."
+                    />
+                  </label>
+                </div>
+
+                <button
+                  className="button primary"
+                  disabled={!operatorSession || pendingAction !== null}
+                  onClick={() => void handleRequestReleaseReadinessApproval()}
+                  type="button"
+                >
+                  Request approval
+                </button>
+              </section>
+            </div>
+
+            <div className="list-stack">
+              {releaseReadinessApprovalsQuery.isLoading ? (
+                <p>Loading launch approvals...</p>
+              ) : null}
+              {releaseReadinessApprovalsQuery.data?.approvals.map((approval) => (
+                <article className="list-card" key={approval.id}>
+                  <div className="list-card-topline">
+                    <strong>{approval.releaseIdentifier}</strong>
+                    <span
+                      className={`status-pill ${
+                        approval.status === "approved"
+                          ? "healthy"
+                          : approval.status === "rejected"
+                            ? "critical"
+                            : approval.gate.approvalEligible
+                              ? "healthy"
+                              : "warning"
+                      }`}
+                    >
+                      {toTitleCase(approval.status)}
+                    </span>
+                  </div>
+                  <p>{approval.summary}</p>
+                  <p className="muted">
+                    {toTitleCase(approval.environment)} | Requested by{" "}
+                    {approval.requestedByOperatorId} |{" "}
+                    {formatDateTime(approval.requestedAt)}
+                  </p>
+                  <p className="muted">
+                    Gate {toTitleCase(approval.gate.overallStatus)} | Evidence{" "}
+                    {approval.evidenceSnapshot.summary.passedCheckCount}/
+                    {approval.evidenceSnapshot.summary.requiredCheckCount} passed
+                  </p>
+                  <p className="muted">
+                    Checklist blockers{" "}
+                    {approval.gate.missingChecklistItems.length > 0
+                      ? approval.gate.missingChecklistItems.join(" | ")
+                      : "none"}
+                  </p>
+                  <p className="muted">
+                    Evidence gaps{" "}
+                    {approval.gate.failedEvidenceTypes.length > 0 ||
+                    approval.gate.missingEvidenceTypes.length > 0
+                      ? [
+                          ...approval.gate.failedEvidenceTypes.map(
+                            (value) => `failed ${value}`
+                          ),
+                          ...approval.gate.missingEvidenceTypes.map(
+                            (value) => `missing ${value}`
+                          )
+                        ].join(" | ")
+                      : "none"}
+                  </p>
+                  <p className="muted">
+                    Open blockers{" "}
+                    {approval.gate.openBlockers.length > 0
+                      ? approval.gate.openBlockers.join(" | ")
+                      : "none"}
+                  </p>
+                  {approval.requestNote ? (
+                    <p className="muted">{approval.requestNote}</p>
+                  ) : null}
+                  {approval.approvalNote ? (
+                    <p className="muted">Approval note {approval.approvalNote}</p>
+                  ) : null}
+                  {approval.rejectionNote ? (
+                    <p className="muted">
+                      Rejection note {approval.rejectionNote}
+                    </p>
+                  ) : null}
+                  {approval.status === "pending_approval" ? (
+                    <div className="button-row">
+                      <button
+                        className="button"
+                        disabled={!operatorSession || pendingAction !== null}
+                        onClick={() =>
+                          void handleApproveReleaseReadinessApproval(approval.id)
+                        }
+                        type="button"
+                      >
+                        Approve launch
+                      </button>
+                      <button
+                        className="button"
+                        disabled={!operatorSession || pendingAction !== null}
+                        onClick={() =>
+                          void handleRejectReleaseReadinessApproval(approval.id)
+                        }
+                        type="button"
+                      >
+                        Reject launch
+                      </button>
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+              {releaseReadinessApprovalsQuery.data &&
+              releaseReadinessApprovalsQuery.data.approvals.length === 0 ? (
+                <p>No launch approval requests have been recorded yet.</p>
+              ) : null}
             </div>
 
             <div className="list-stack">

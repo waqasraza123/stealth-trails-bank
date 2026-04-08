@@ -911,6 +911,12 @@ enum ReleaseReadinessEvidenceStatus {
   failed
 }
 
+enum ReleaseReadinessApprovalStatus {
+  pending_approval
+  approved
+  rejected
+}
+
 model CustomerAccountIncidentPackageRelease {
   id                      String                                      @id @default(cuid())
   customerAccountId       String
@@ -977,4 +983,44 @@ model ReleaseReadinessEvidence {
   @@index([status, observedAt])
   @@index([operatorId, observedAt])
   @@index([releaseIdentifier, observedAt])
+}
+
+model ReleaseReadinessApproval {
+  id                            String                         @id @default(cuid())
+  releaseIdentifier             String
+  environment                   ReleaseReadinessEnvironment
+  rollbackReleaseIdentifier     String?
+  status                        ReleaseReadinessApprovalStatus @default(pending_approval)
+  summary                       String
+  requestNote                   String?
+  approvalNote                  String?
+  rejectionNote                 String?
+  requestedByOperatorId         String
+  requestedByOperatorRole       String?
+  approvedByOperatorId          String?
+  approvedByOperatorRole        String?
+  rejectedByOperatorId          String?
+  rejectedByOperatorRole        String?
+  securityConfigurationComplete Boolean                        @default(false)
+  accessAndGovernanceComplete   Boolean                        @default(false)
+  dataAndRecoveryComplete       Boolean                        @default(false)
+  platformHealthComplete        Boolean                        @default(false)
+  functionalProofComplete       Boolean                        @default(false)
+  contractAndChainProofComplete Boolean                        @default(false)
+  finalSignoffComplete          Boolean                        @default(false)
+  unresolvedRisksAccepted       Boolean                        @default(false)
+  openBlockers                  String[]
+  residualRiskNote              String?
+  evidenceSnapshot              Json
+  blockerSnapshot               Json
+  requestedAt                   DateTime                       @default(now())
+  approvedAt                    DateTime?
+  rejectedAt                    DateTime?
+  createdAt                     DateTime                       @default(now())
+  updatedAt                     DateTime                       @updatedAt
+
+  @@index([releaseIdentifier, environment, requestedAt])
+  @@index([status, requestedAt])
+  @@index([requestedByOperatorId, requestedAt])
+  @@index([approvedByOperatorId, approvedAt])
 }

@@ -18,6 +18,7 @@ export {
   loadPlatformAlertDeliveryHealthSloRuntimeConfig,
   loadPlatformAlertReEscalationRuntimeConfig,
   loadProductChainRuntimeConfig,
+  loadReleaseReadinessApprovalRuntimeConfig,
   loadSharedLoginBootstrapRuntimeConfig,
   loadWorkerRuntimeConfig,
   type ApiRuntimeEnvironment,
@@ -46,6 +47,7 @@ export {
   type PlatformAlertDeliverySeverity,
   type PlatformAlertDeliveryTargetRuntimeConfig,
   type ProductChainRuntimeConfig,
+  type ReleaseReadinessApprovalRuntimeConfig,
   type SharedLoginBootstrapRuntimeConfig,
   type WorkerExecutionMode,
   type WorkerRuntimeConfig

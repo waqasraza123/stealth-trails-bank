@@ -22,6 +22,7 @@ import type {
   OversightIncidentList,
   PlatformAlertDeliveryTargetHealthList,
   PlatformAlertList,
+  ReleaseReadinessApprovalList,
   ReleaseReadinessEvidenceList,
   ReleaseReadinessSummary,
   PlatformAlertGovernanceMutationResult,
@@ -261,6 +262,56 @@ export async function createReleaseReadinessEvidence(
   return requestData(session, {
     method: "POST",
     url: "/release-readiness/internal/evidence",
+    data: payload
+  });
+}
+
+export async function listReleaseReadinessApprovals(
+  session: OperatorSession,
+  params: Record<string, string | number | undefined>
+): Promise<ReleaseReadinessApprovalList> {
+  return requestData(session, {
+    method: "GET",
+    url: "/release-readiness/internal/approvals",
+    params
+  });
+}
+
+export async function requestReleaseReadinessApproval(
+  session: OperatorSession,
+  payload: Record<string, unknown>
+): Promise<{ approval: ReleaseReadinessApprovalList["approvals"][number] }> {
+  return requestData(session, {
+    method: "POST",
+    url: "/release-readiness/internal/approvals",
+    data: payload
+  });
+}
+
+export async function approveReleaseReadinessApproval(
+  session: OperatorSession,
+  approvalId: string,
+  payload: {
+    approvalNote?: string;
+  } = {}
+): Promise<{ approval: ReleaseReadinessApprovalList["approvals"][number] }> {
+  return requestData(session, {
+    method: "POST",
+    url: `/release-readiness/internal/approvals/${approvalId}/approve`,
+    data: payload
+  });
+}
+
+export async function rejectReleaseReadinessApproval(
+  session: OperatorSession,
+  approvalId: string,
+  payload: {
+    rejectionNote: string;
+  }
+): Promise<{ approval: ReleaseReadinessApprovalList["approvals"][number] }> {
+  return requestData(session, {
+    method: "POST",
+    url: `/release-readiness/internal/approvals/${approvalId}/reject`,
     data: payload
   });
 }

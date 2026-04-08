@@ -671,6 +671,79 @@ export type ReleaseReadinessSummary = {
   recentEvidence: ReleaseReadinessEvidence[];
 };
 
+export type ReleaseReadinessApprovalChecklist = {
+  securityConfigurationComplete: boolean;
+  accessAndGovernanceComplete: boolean;
+  dataAndRecoveryComplete: boolean;
+  platformHealthComplete: boolean;
+  functionalProofComplete: boolean;
+  contractAndChainProofComplete: boolean;
+  finalSignoffComplete: boolean;
+  unresolvedRisksAccepted: boolean;
+  openBlockers: string[];
+  residualRiskNote: string | null;
+};
+
+export type ReleaseReadinessApprovalEvidenceSnapshot = {
+  generatedAt: string;
+  overallStatus: "healthy" | "warning" | "critical";
+  summary: {
+    requiredCheckCount: number;
+    passedCheckCount: number;
+    failedCheckCount: number;
+    pendingCheckCount: number;
+  };
+  requiredChecks: Array<{
+    evidenceType: string;
+    status: "passed" | "failed" | "pending";
+    latestEvidenceObservedAt: string | null;
+    latestEvidenceEnvironment: string | null;
+    latestEvidenceStatus: string | null;
+  }>;
+};
+
+export type ReleaseReadinessApprovalGate = {
+  overallStatus: "ready" | "blocked" | "approved" | "rejected";
+  approvalEligible: boolean;
+  missingChecklistItems: string[];
+  missingEvidenceTypes: string[];
+  failedEvidenceTypes: string[];
+  openBlockers: string[];
+  generatedAt: string;
+};
+
+export type ReleaseReadinessApproval = {
+  id: string;
+  releaseIdentifier: string;
+  environment: string;
+  rollbackReleaseIdentifier: string | null;
+  status: "pending_approval" | "approved" | "rejected";
+  summary: string;
+  requestNote: string | null;
+  approvalNote: string | null;
+  rejectionNote: string | null;
+  requestedByOperatorId: string;
+  requestedByOperatorRole: string | null;
+  approvedByOperatorId: string | null;
+  approvedByOperatorRole: string | null;
+  rejectedByOperatorId: string | null;
+  rejectedByOperatorRole: string | null;
+  checklist: ReleaseReadinessApprovalChecklist;
+  evidenceSnapshot: ReleaseReadinessApprovalEvidenceSnapshot;
+  gate: ReleaseReadinessApprovalGate;
+  requestedAt: string;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReleaseReadinessApprovalList = {
+  approvals: ReleaseReadinessApproval[];
+  limit: number;
+  totalCount: number;
+};
+
 export type LedgerReconciliationWorkspace = {
   mismatch: LedgerReconciliationMismatch;
   currentSnapshot: JsonValue;

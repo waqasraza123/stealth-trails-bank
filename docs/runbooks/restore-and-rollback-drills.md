@@ -98,6 +98,12 @@ After each staging or production-like drill, record the outcome through the rele
 
 The launch checklist is not complete until that durable evidence exists.
 
+After the evidence is recorded, request governed launch approval through:
+
+- `POST /release-readiness/internal/approvals`
+- include the release identifier, rollback release identifier, checklist attestations, and any open blockers
+- approval remains blocked until all required proof types show a latest `passed` record and checklist blockers are cleared
+
 ## Launch rule
 
 No launch posture is approved until these drills have been run against production-like infrastructure and the evidence is attached to the launch checklist.
