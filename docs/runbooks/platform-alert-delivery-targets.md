@@ -117,3 +117,37 @@ After this SLO-backed delivery baseline:
 1. prove the worker sweep cadence and delivery-target SLO alerts against staging alert traffic
 2. record the resulting proof through `POST /release-readiness/internal/evidence` using `platform_alert_delivery_slo` and `critical_alert_reescalation`
 3. attach threshold decisions and residual gaps to the launch checklist before any real launch posture
+
+## Drill runner
+
+The repo now includes an executable drill runner:
+
+```bash
+pnpm release:readiness:probe -- \
+  --probe platform_alert_delivery_slo \
+  --base-url https://staging-api.example.com \
+  --operator-id ops_stage_1 \
+  --api-key "$INTERNAL_OPERATOR_API_KEY" \
+  --operator-role operations_admin \
+  --expected-target-name ops-critical \
+  --expected-target-health-status critical \
+  --environment production_like \
+  --release-id api-2026.04.08.1 \
+  --record-evidence
+```
+
+For critical re-escalation proof, use:
+
+```bash
+pnpm release:readiness:probe -- \
+  --probe critical_alert_reescalation \
+  --base-url https://staging-api.example.com \
+  --operator-id ops_stage_1 \
+  --api-key "$INTERNAL_OPERATOR_API_KEY" \
+  --operator-role operations_admin \
+  --expected-alert-id alert_123 \
+  --expected-min-re-escalations 1 \
+  --environment production_like \
+  --release-id api-2026.04.08.1 \
+  --record-evidence
+```

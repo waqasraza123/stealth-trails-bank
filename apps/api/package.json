@@ -24,7 +24,8 @@
     "export:wallet-projection-manual-review-queue": "ts-node src/scripts/export-wallet-projection-manual-review-queue.ts",
     "repair:missing-customer-projections": "ts-node src/scripts/repair-missing-customer-projections.ts",
     "repair:wallet-projection-safe-batch": "ts-node src/scripts/repair-wallet-projection-safe-batch.ts",
-    "audit:wallet-projection-repair-events": "ts-node src/scripts/audit-wallet-projection-repair-events.ts"
+    "audit:wallet-projection-repair-events": "ts-node src/scripts/audit-wallet-projection-repair-events.ts",
+    "release-readiness:probe": "ts-node src/scripts/release-readiness-drill.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

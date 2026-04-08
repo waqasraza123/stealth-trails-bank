@@ -104,6 +104,57 @@ After the evidence is recorded, request governed launch approval through:
 - include the release identifier, rollback release identifier, checklist attestations, and any open blockers
 - approval remains blocked until all required proof types show a latest `passed` record and checklist blockers are cleared
 
+## Drill runner
+
+Use the executable runner to capture the post-drill validation payload and optionally record evidence immediately:
+
+Database restore:
+
+```bash
+pnpm release:readiness:probe -- \
+  --probe database_restore_drill \
+  --base-url https://restore-api.example.com \
+  --operator-id ops_stage_1 \
+  --api-key "$INTERNAL_OPERATOR_API_KEY" \
+  --operator-role operations_admin \
+  --environment production_like \
+  --release-id api-2026.04.08.1 \
+  --backup-ref snapshot-2026-04-08T09:00Z \
+  --record-evidence
+```
+
+API rollback:
+
+```bash
+pnpm release:readiness:probe -- \
+  --probe api_rollback_drill \
+  --base-url https://staging-api.example.com \
+  --operator-id ops_stage_1 \
+  --api-key "$INTERNAL_OPERATOR_API_KEY" \
+  --operator-role operations_admin \
+  --environment production_like \
+  --release-id api-2026.04.08.1 \
+  --rollback-release-id api-2026.04.07.3 \
+  --record-evidence
+```
+
+Worker rollback:
+
+```bash
+pnpm release:readiness:probe -- \
+  --probe worker_rollback_drill \
+  --base-url https://staging-api.example.com \
+  --operator-id ops_stage_1 \
+  --api-key "$INTERNAL_OPERATOR_API_KEY" \
+  --operator-role operations_admin \
+  --expected-worker-id worker-staging-1 \
+  --expected-min-healthy-workers 1 \
+  --environment production_like \
+  --release-id worker-2026.04.08.1 \
+  --rollback-release-id worker-2026.04.07.3 \
+  --record-evidence
+```
+
 ## Launch rule
 
 No launch posture is approved until these drills have been run against production-like infrastructure and the evidence is attached to the launch checklist.

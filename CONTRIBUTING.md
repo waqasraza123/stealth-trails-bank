@@ -173,6 +173,16 @@ pnpm safe-push
 
 That command runs the same verification and only pushes if it passes.
 
+## Phase 12 drill execution
+
+When you need to validate staged release proof, use the repo-owned drill runner instead of assembling manual curl sequences:
+
+~~~bash
+pnpm release:readiness:probe -- --help
+~~~
+
+That command can validate a specific drill profile and optionally record the result directly into release-readiness evidence.
+
 ## Documentation
 
 Update docs when you change:

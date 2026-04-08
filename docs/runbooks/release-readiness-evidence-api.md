@@ -99,3 +99,13 @@ Optional fields:
 ## Launch rule
 
 No launch posture is approved until the required proofs have accepted evidence in this workflow, the launch checklist attestations are complete, and the candidate has been approved through the governed launch-approval workflow.
+
+## CLI helper
+
+For staging or production-like drills, prefer the repo-owned runner:
+
+```bash
+pnpm release:readiness:probe -- --help
+```
+
+The command validates the relevant operator endpoints for a chosen evidence type, prints structured JSON proof, and can persist that result through `POST /release-readiness/internal/evidence` when `--record-evidence` is supplied.

@@ -9,6 +9,7 @@
     "lint": "turbo lint",
     "test": "turbo test",
     "compile": "turbo run compile",
+    "release:readiness:probe": "pnpm --filter @stealth-trails-bank/api release-readiness:probe",
     "verify:push": "./scripts/verify-push.sh",
     "safe-push": "./scripts/safe-push.sh",
     "setup:hooks": "git config core.hooksPath .githooks"
