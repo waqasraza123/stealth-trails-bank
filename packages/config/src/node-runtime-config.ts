@@ -56,6 +56,7 @@ const DEFAULT_WORKER_BATCH_LIMIT = 20;
 const DEFAULT_WORKER_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_WORKER_CONFIRMATION_BLOCKS = 1;
 const DEFAULT_WORKER_PLATFORM_ALERT_REESCALATION_INTERVAL_MS = 300_000;
+const DEFAULT_WORKER_INTERNAL_API_STARTUP_GRACE_PERIOD_MS = 45_000;
 const DEFAULT_LOCAL_WORKER_ID = "worker-local-1";
 const DEFAULT_LOCAL_INTERNAL_API_BASE_URL = "http://localhost:9001";
 const DEFAULT_LOCAL_INTERNAL_WORKER_API_KEY = "local-dev-worker-key";
@@ -629,6 +630,7 @@ export type WorkerRuntimeConfig = {
   readonly pollIntervalMs: number;
   readonly batchLimit: number;
   readonly requestTimeoutMs: number;
+  readonly internalApiStartupGracePeriodMs: number;
   readonly confirmationBlocks: number;
   readonly reconciliationScanIntervalMs: number;
   readonly platformAlertReEscalationIntervalMs: number;
@@ -1089,6 +1091,11 @@ export function loadWorkerRuntimeConfig(
       readOptionalRuntimeEnv(env, "WORKER_REQUEST_TIMEOUT_MS") ??
         String(DEFAULT_WORKER_REQUEST_TIMEOUT_MS),
       "WORKER_REQUEST_TIMEOUT_MS"
+    ),
+    internalApiStartupGracePeriodMs: parsePositiveInteger(
+      readOptionalRuntimeEnv(env, "WORKER_INTERNAL_API_STARTUP_GRACE_PERIOD_MS") ??
+        String(DEFAULT_WORKER_INTERNAL_API_STARTUP_GRACE_PERIOD_MS),
+      "WORKER_INTERNAL_API_STARTUP_GRACE_PERIOD_MS"
     ),
     confirmationBlocks: parsePositiveInteger(
       readOptionalRuntimeEnv(env, "WORKER_CONFIRMATION_BLOCKS") ??

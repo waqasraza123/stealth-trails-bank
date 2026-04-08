@@ -15,6 +15,7 @@ test("internal worker api client wraps unavailable upstream errors", async () =>
     pollIntervalMs: 10,
     batchLimit: 20,
     requestTimeoutMs: 250,
+    internalApiStartupGracePeriodMs: 45000,
     confirmationBlocks: 1,
     reconciliationScanIntervalMs: 300000,
     platformAlertReEscalationIntervalMs: 300000,

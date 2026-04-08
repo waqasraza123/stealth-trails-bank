@@ -18,6 +18,7 @@ test("worker runtime config defaults to monitor mode and requires rpc", () => {
   assert.equal(runtime.executionMode, "monitor");
   assert.equal(runtime.internalApiBaseUrl, "http://localhost:9001");
   assert.equal(runtime.confirmationBlocks, 1);
+  assert.equal(runtime.internalApiStartupGracePeriodMs, 45000);
   assert.equal(runtime.reconciliationScanIntervalMs, 300000);
   assert.equal(runtime.depositSignerPrivateKey, null);
 });
@@ -31,7 +32,17 @@ test("worker runtime config defaults local development to synthetic mode", () =>
   assert.equal(runtime.internalApiBaseUrl, "http://localhost:9001");
   assert.equal(runtime.internalWorkerApiKey, "local-dev-worker-key");
   assert.equal(runtime.executionMode, "synthetic");
+  assert.equal(runtime.internalApiStartupGracePeriodMs, 45000);
   assert.equal(runtime.rpcUrl, null);
+});
+
+test("worker runtime config allows overriding internal API startup grace period", () => {
+  const runtime = loadWorkerRuntimeConfig({
+    NODE_ENV: "development",
+    WORKER_INTERNAL_API_STARTUP_GRACE_PERIOD_MS: "15000"
+  });
+
+  assert.equal(runtime.internalApiStartupGracePeriodMs, 15000);
 });
 
 test("internal API key config defaults in local development", () => {

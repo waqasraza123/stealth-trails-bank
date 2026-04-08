@@ -4,6 +4,11 @@ import {
   createInternalWorkerApiClient,
   InternalApiUnavailableError
 } from "./runtime/internal-worker-api-client";
+import {
+  createInternalApiStartupAvailabilityState,
+  reportInternalApiStartupAvailable,
+  reportInternalApiStartupUnavailable
+} from "./runtime/internal-api-startup-guard";
 import { createManagedDepositBroadcaster } from "./runtime/deposit-broadcaster";
 import { createJsonRpcClient } from "./runtime/json-rpc-client";
 import { createWorkerLogger } from "./runtime/worker-logger";
@@ -59,22 +64,19 @@ async function safeReportWorkerHeartbeat(args: {
   internalApiClient: ReturnType<typeof createInternalWorkerApiClient>;
   logger: ReturnType<typeof createWorkerLogger>;
   payload: WorkerHeartbeatPayload;
-}): Promise<void> {
+}): Promise<InternalApiUnavailableError | null> {
   try {
     await args.internalApiClient.reportWorkerHeartbeat(args.payload);
+    return null;
   } catch (error) {
     if (error instanceof InternalApiUnavailableError) {
-      args.logger.warn("worker_heartbeat_report_retryable_failure", {
-        baseUrl: error.baseUrl,
-        errorCode: error.code,
-        message: error.message
-      });
-      return;
+      return error;
     }
 
     args.logger.error("worker_heartbeat_report_failed", {
       error
     });
+    return null;
   }
 }
 
@@ -96,6 +98,8 @@ export async function startWorkerRuntime(): Promise<void> {
     depositBroadcaster,
     logger
   });
+  const internalApiStartupState = createInternalApiStartupAvailabilityState();
+  const workerStartedAtMs = Date.now();
 
   let shutdownRequested = false;
   let lastReconciliationScanAttemptedAt = 0;
@@ -131,13 +135,14 @@ export async function startWorkerRuntime(): Promise<void> {
     executionMode: runtime.executionMode,
     batchLimit: runtime.batchLimit,
     pollIntervalMs: runtime.pollIntervalMs,
-    confirmationBlocks: runtime.confirmationBlocks
+    confirmationBlocks: runtime.confirmationBlocks,
+    internalApiStartupGracePeriodMs: runtime.internalApiStartupGracePeriodMs
   });
 
   while (!shutdownRequested) {
     const iterationStartedAt = new Date();
 
-    await safeReportWorkerHeartbeat({
+    const initialHeartbeatUnavailableError = await safeReportWorkerHeartbeat({
       internalApiClient,
       logger,
       payload: {
@@ -164,6 +169,8 @@ export async function startWorkerRuntime(): Promise<void> {
         runtimeMetadata: {
           pollIntervalMs: runtime.pollIntervalMs,
           batchLimit: runtime.batchLimit,
+          internalApiStartupGracePeriodMs:
+            runtime.internalApiStartupGracePeriodMs,
           confirmationBlocks: runtime.confirmationBlocks,
           reconciliationScanIntervalMs: runtime.reconciliationScanIntervalMs,
           platformAlertReEscalationIntervalMs:
@@ -172,10 +179,39 @@ export async function startWorkerRuntime(): Promise<void> {
       }
     });
 
+    if (initialHeartbeatUnavailableError) {
+      const handledAsStartupWait = reportInternalApiStartupUnavailable({
+        logger,
+        error: initialHeartbeatUnavailableError,
+        state: internalApiStartupState,
+        workerStartedAtMs,
+        startupGracePeriodMs: runtime.internalApiStartupGracePeriodMs
+      });
+
+      if (!handledAsStartupWait) {
+        logger.warn("worker_heartbeat_report_retryable_failure", {
+          baseUrl: initialHeartbeatUnavailableError.baseUrl,
+          errorCode: initialHeartbeatUnavailableError.code,
+          message: initialHeartbeatUnavailableError.message
+        });
+      }
+    } else {
+      reportInternalApiStartupAvailable({
+        logger,
+        state: internalApiStartupState,
+        baseUrl: runtime.internalApiBaseUrl
+      });
+    }
+
     let iterationMetrics: WorkerIterationMetrics | null = null;
 
     try {
       iterationMetrics = await orchestrator.runOnce();
+      reportInternalApiStartupAvailable({
+        logger,
+        state: internalApiStartupState,
+        baseUrl: runtime.internalApiBaseUrl
+      });
 
       const now = Date.now();
       if (now - lastReconciliationScanAttemptedAt >= runtime.reconciliationScanIntervalMs) {
@@ -235,7 +271,7 @@ export async function startWorkerRuntime(): Promise<void> {
 
       const iterationCompletedAt = new Date();
 
-      await safeReportWorkerHeartbeat({
+      const finalHeartbeatUnavailableError = await safeReportWorkerHeartbeat({
         internalApiClient,
         logger,
         payload: {
@@ -263,6 +299,8 @@ export async function startWorkerRuntime(): Promise<void> {
           runtimeMetadata: {
             pollIntervalMs: runtime.pollIntervalMs,
             batchLimit: runtime.batchLimit,
+            internalApiStartupGracePeriodMs:
+              runtime.internalApiStartupGracePeriodMs,
             confirmationBlocks: runtime.confirmationBlocks,
             reconciliationScanIntervalMs: runtime.reconciliationScanIntervalMs,
             platformAlertReEscalationIntervalMs:
@@ -273,10 +311,34 @@ export async function startWorkerRuntime(): Promise<void> {
             iterationCompletedAt.getTime() - iterationStartedAt.getTime()
         }
       });
+
+      if (finalHeartbeatUnavailableError) {
+        const handledAsStartupWait = reportInternalApiStartupUnavailable({
+          logger,
+          error: finalHeartbeatUnavailableError,
+          state: internalApiStartupState,
+          workerStartedAtMs,
+          startupGracePeriodMs: runtime.internalApiStartupGracePeriodMs
+        });
+
+        if (!handledAsStartupWait) {
+          logger.warn("worker_heartbeat_report_retryable_failure", {
+            baseUrl: finalHeartbeatUnavailableError.baseUrl,
+            errorCode: finalHeartbeatUnavailableError.code,
+            message: finalHeartbeatUnavailableError.message
+          });
+        }
+      } else {
+        reportInternalApiStartupAvailable({
+          logger,
+          state: internalApiStartupState,
+          baseUrl: runtime.internalApiBaseUrl
+        });
+      }
     } catch (error) {
       const normalizedError = normalizeWorkerError(error);
 
-      await safeReportWorkerHeartbeat({
+      const failedHeartbeatUnavailableError = await safeReportWorkerHeartbeat({
         internalApiClient,
         logger,
         payload: {
@@ -306,6 +368,8 @@ export async function startWorkerRuntime(): Promise<void> {
           runtimeMetadata: {
             pollIntervalMs: runtime.pollIntervalMs,
             batchLimit: runtime.batchLimit,
+            internalApiStartupGracePeriodMs:
+              runtime.internalApiStartupGracePeriodMs,
             confirmationBlocks: runtime.confirmationBlocks,
             reconciliationScanIntervalMs: runtime.reconciliationScanIntervalMs,
             platformAlertReEscalationIntervalMs:
@@ -316,12 +380,40 @@ export async function startWorkerRuntime(): Promise<void> {
         }
       });
 
-      if (error instanceof InternalApiUnavailableError) {
-        logger.warn("internal_api_unavailable_retrying", {
-          baseUrl: error.baseUrl,
-          errorCode: error.code,
-          retryInMs: runtime.pollIntervalMs
+      if (failedHeartbeatUnavailableError) {
+        const handledAsStartupWait = reportInternalApiStartupUnavailable({
+          logger,
+          error: failedHeartbeatUnavailableError,
+          state: internalApiStartupState,
+          workerStartedAtMs,
+          startupGracePeriodMs: runtime.internalApiStartupGracePeriodMs
         });
+
+        if (!handledAsStartupWait) {
+          logger.warn("worker_heartbeat_report_retryable_failure", {
+            baseUrl: failedHeartbeatUnavailableError.baseUrl,
+            errorCode: failedHeartbeatUnavailableError.code,
+            message: failedHeartbeatUnavailableError.message
+          });
+        }
+      }
+
+      if (error instanceof InternalApiUnavailableError) {
+        const handledAsStartupWait = reportInternalApiStartupUnavailable({
+          logger,
+          error,
+          state: internalApiStartupState,
+          workerStartedAtMs,
+          startupGracePeriodMs: runtime.internalApiStartupGracePeriodMs
+        });
+
+        if (!handledAsStartupWait) {
+          logger.warn("internal_api_unavailable_retrying", {
+            baseUrl: error.baseUrl,
+            errorCode: error.code,
+            retryInMs: runtime.pollIntervalMs
+          });
+        }
       } else {
         logger.error("worker_iteration_failed", {
           error
