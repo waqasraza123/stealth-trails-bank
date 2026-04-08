@@ -115,4 +115,5 @@ Use external delivery targets to:
 
 After this SLO-backed delivery baseline:
 1. prove the worker sweep cadence and delivery-target SLO alerts against staging alert traffic
-2. attach evidence and threshold decisions to the launch checklist before any real launch posture
+2. record the resulting proof through `POST /release-readiness/internal/evidence` using `platform_alert_delivery_slo` and `critical_alert_reescalation`
+3. attach threshold decisions and residual gaps to the launch checklist before any real launch posture

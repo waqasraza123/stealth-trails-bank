@@ -5,6 +5,7 @@
 - target release identifier recorded
 - release approver recorded
 - rollback target release identifier recorded
+- release-readiness summary reviewed
 
 ## Security configuration
 
@@ -28,9 +29,9 @@
 ## Data and recovery
 
 - latest backup completed successfully
-- restore drill completed and evidence attached
-- API rollback drill completed and evidence attached
-- worker rollback drill completed and evidence attached
+- restore drill completed and evidence recorded in release-readiness evidence
+- API rollback drill completed and evidence recorded in release-readiness evidence
+- worker rollback drill completed and evidence recorded in release-readiness evidence
 
 ## Platform health
 
@@ -65,3 +66,4 @@
 - operator owner on call
 - worker owner on call
 - release approved
+- latest release-readiness evidence gaps accepted or remediated

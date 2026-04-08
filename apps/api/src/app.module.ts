@@ -9,6 +9,7 @@ import { LedgerReconciliationModule } from "./ledger-reconciliation/ledger-recon
 import { OperationsMonitoringModule } from "./operations-monitoring/operations-monitoring.module";
 import { OversightIncidentsModule } from "./oversight-incidents/oversight-incidents.module";
 import { PoolsModule } from "./pools/pools.module";
+import { ReleaseReadinessModule } from "./release-readiness/release-readiness.module";
 import { ReviewCasesModule } from "./review-cases/review-cases.module";
 import { StakingPoolModule } from "./staking/staking.module";
 import { SupportedAssetsModule } from "./supported-assets/supported-assets.module";
@@ -29,6 +30,7 @@ import { UserModule } from "./user/user.module";
     SupportedAssetsModule,
     TreasuryModule,
     TransactionIntentsModule,
+    ReleaseReadinessModule,
     CustomerBalancesModule,
     ReviewCasesModule,
     OversightIncidentsModule,

@@ -13,6 +13,7 @@ Please read:
 - `SECURITY.md`
 - relevant architecture docs under `docs/architecture/`
 - relevant runbooks under `docs/runbooks/`
+- for Phase 12 work, check `docs/runbooks/release-readiness-evidence-api.md`
 
 If your change touches a specific flow, read the runbook for that flow first.
 

@@ -622,6 +622,55 @@ export type OperationsStatus = {
   recentAlerts: PlatformAlert[];
 };
 
+export type ReleaseReadinessEvidence = {
+  id: string;
+  evidenceType: string;
+  environment: string;
+  status: "pending" | "passed" | "failed";
+  releaseIdentifier: string | null;
+  rollbackReleaseIdentifier: string | null;
+  backupReference: string | null;
+  summary: string;
+  note: string | null;
+  operatorId: string;
+  operatorRole: string | null;
+  runbookPath: string | null;
+  evidenceLinks: string[];
+  evidencePayload: JsonValue | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  observedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReleaseReadinessEvidenceList = {
+  evidence: ReleaseReadinessEvidence[];
+  limit: number;
+  totalCount: number;
+};
+
+export type ReleaseReadinessSummary = {
+  generatedAt: string;
+  overallStatus: "healthy" | "warning" | "critical";
+  summary: {
+    requiredCheckCount: number;
+    passedCheckCount: number;
+    failedCheckCount: number;
+    pendingCheckCount: number;
+  };
+  requiredChecks: Array<{
+    evidenceType: string;
+    label: string;
+    description: string;
+    runbookPath: string;
+    acceptedEnvironments: string[];
+    status: "passed" | "failed" | "pending";
+    latestEvidence: ReleaseReadinessEvidence | null;
+  }>;
+  recentEvidence: ReleaseReadinessEvidence[];
+};
+
 export type LedgerReconciliationWorkspace = {
   mismatch: LedgerReconciliationMismatch;
   currentSnapshot: JsonValue;

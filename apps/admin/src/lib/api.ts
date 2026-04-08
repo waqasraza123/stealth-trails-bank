@@ -22,6 +22,8 @@ import type {
   OversightIncidentList,
   PlatformAlertDeliveryTargetHealthList,
   PlatformAlertList,
+  ReleaseReadinessEvidenceList,
+  ReleaseReadinessSummary,
   PlatformAlertGovernanceMutationResult,
   PlatformAlertRouteResult,
   RetryPlatformAlertDeliveriesResult,
@@ -229,6 +231,37 @@ export async function getOperationsStatus(
     method: "GET",
     url: "/operations/internal/status",
     params
+  });
+}
+
+export async function getReleaseReadinessSummary(
+  session: OperatorSession
+): Promise<ReleaseReadinessSummary> {
+  return requestData(session, {
+    method: "GET",
+    url: "/release-readiness/internal/summary"
+  });
+}
+
+export async function listReleaseReadinessEvidence(
+  session: OperatorSession,
+  params: Record<string, string | number | undefined>
+): Promise<ReleaseReadinessEvidenceList> {
+  return requestData(session, {
+    method: "GET",
+    url: "/release-readiness/internal/evidence",
+    params
+  });
+}
+
+export async function createReleaseReadinessEvidence(
+  session: OperatorSession,
+  payload: Record<string, unknown>
+): Promise<{ evidence: ReleaseReadinessSummary["recentEvidence"][number] }> {
+  return requestData(session, {
+    method: "POST",
+    url: "/release-readiness/internal/evidence",
+    data: payload
   });
 }
 

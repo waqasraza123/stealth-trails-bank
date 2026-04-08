@@ -87,6 +87,17 @@ After each drill validate:
 - screenshots or API responses for post-drill validation
 - discovered gaps and remediation owner
 
+## Durable evidence recording
+
+After each staging or production-like drill, record the outcome through the release-readiness API:
+
+- `POST /release-readiness/internal/evidence`
+- use `evidenceType=database_restore_drill`, `api_rollback_drill`, or `worker_rollback_drill`
+- set `environment` to `staging`, `production_like`, or `production`
+- include the release id, rollback release id, backup reference, evidence links, and structured payload for the exact validation steps that were run
+
+The launch checklist is not complete until that durable evidence exists.
+
 ## Launch rule
 
 No launch posture is approved until these drills have been run against production-like infrastructure and the evidence is attached to the launch checklist.

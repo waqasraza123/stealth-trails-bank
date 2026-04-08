@@ -21,6 +21,7 @@ import {
   applyManualResolution,
   approveRelease,
   clearPlatformAlertSuppression,
+  createReleaseReadinessEvidence,
   createIncidentPackageReleaseRequest,
   decideAccountRelease,
   dismissLedgerReconciliationMismatch,
@@ -30,6 +31,7 @@ import {
   getTreasuryOverview,
   getAccountHoldSummary,
   getOperationsStatus,
+  getReleaseReadinessSummary,
   getGovernedIncidentPackageExport,
   getIncidentPackage,
   getLedgerReconciliationWorkspace,
@@ -48,6 +50,7 @@ import {
   listPlatformAlertDeliveryTargetHealth,
   listPlatformAlerts,
   listReleasedReleases,
+  listReleaseReadinessEvidence,
   listReviewCases,
   listWorkerRuntimeHealth,
   openLedgerReconciliationReviewCase,
@@ -99,6 +102,7 @@ const auditTargetTypeOptions = [
   "LedgerReconciliationMismatch",
   "LedgerReconciliationScanRun",
   "OversightIncident",
+  "ReleaseReadinessEvidence",
   "ReviewCase",
   "TransactionIntent"
 ];
@@ -112,6 +116,23 @@ const releaseTargets = [
   "compliance_handoff",
   "regulator_response",
   "external_counsel"
+] as const;
+const releaseReadinessEvidenceTypeOptions = [
+  "platform_alert_delivery_slo",
+  "critical_alert_reescalation",
+  "database_restore_drill",
+  "api_rollback_drill",
+  "worker_rollback_drill"
+] as const;
+const releaseReadinessEnvironmentOptions = [
+  "staging",
+  "production_like",
+  "production"
+] as const;
+const releaseReadinessEvidenceStatusOptions = [
+  "pending",
+  "passed",
+  "failed"
 ] as const;
 
 const queryClient = new QueryClient({
@@ -140,6 +161,19 @@ type PackageRequestDraft = {
   recentLimit: string;
   timelineLimit: string;
   sinceDays: string;
+};
+
+type ReleaseReadinessDraft = {
+  evidenceType: (typeof releaseReadinessEvidenceTypeOptions)[number];
+  environment: (typeof releaseReadinessEnvironmentOptions)[number];
+  status: (typeof releaseReadinessEvidenceStatusOptions)[number];
+  releaseIdentifier: string;
+  rollbackReleaseIdentifier: string;
+  backupReference: string;
+  summary: string;
+  note: string;
+  evidenceLinksText: string;
+  evidencePayloadText: string;
 };
 
 function loadStoredSession(serverUrl: string): SessionDraft {
@@ -266,6 +300,19 @@ function AdminConsole() {
     useState<GovernedIncidentPackageExport | null>(null);
   const [rawIncidentPackage, setRawIncidentPackage] =
     useState<IncidentPackageSnapshot | null>(null);
+  const [releaseReadinessDraft, setReleaseReadinessDraft] =
+    useState<ReleaseReadinessDraft>({
+      evidenceType: "platform_alert_delivery_slo",
+      environment: "staging",
+      status: "passed",
+      releaseIdentifier: "",
+      rollbackReleaseIdentifier: "",
+      backupReference: "",
+      summary: "",
+      note: "",
+      evidenceLinksText: "",
+      evidencePayloadText: ""
+    });
 
   const isSessionReady =
     savedSession.baseUrl.trim().length > 0 &&
@@ -338,6 +385,24 @@ function AdminConsole() {
         limit: 12,
         staleAfterSeconds: 180,
         status: "open"
+      }),
+    enabled: Boolean(operatorSession),
+    refetchInterval: 30000
+  });
+
+  const releaseReadinessSummaryQuery = useQuery({
+    queryKey: ["releaseReadinessSummary", operatorSession?.baseUrl],
+    queryFn: () => getReleaseReadinessSummary(operatorSession!),
+    enabled: Boolean(operatorSession),
+    refetchInterval: 30000
+  });
+
+  const releaseReadinessEvidenceQuery = useQuery({
+    queryKey: ["releaseReadinessEvidence", operatorSession?.baseUrl],
+    queryFn: () =>
+      listReleaseReadinessEvidence(operatorSession!, {
+        limit: 10,
+        sinceDays: 90
       }),
     enabled: Boolean(operatorSession),
     refetchInterval: 30000
@@ -667,6 +732,89 @@ function AdminConsole() {
     );
   }
 
+  async function handleRecordReleaseReadinessEvidence(): Promise<void> {
+    if (!operatorSession) {
+      return;
+    }
+
+    const summary = releaseReadinessDraft.summary.trim();
+
+    if (summary.length === 0) {
+      setFlash({
+        tone: "error",
+        message: "Release readiness evidence summary is required."
+      });
+      return;
+    }
+
+    let parsedEvidencePayload: Record<string, unknown> | undefined;
+    const trimmedEvidencePayload = trimToUndefined(
+      releaseReadinessDraft.evidencePayloadText
+    );
+
+    if (trimmedEvidencePayload) {
+      try {
+        const parsedValue = JSON.parse(trimmedEvidencePayload);
+
+        if (
+          parsedValue === null ||
+          Array.isArray(parsedValue) ||
+          typeof parsedValue !== "object"
+        ) {
+          setFlash({
+            tone: "error",
+            message: "Evidence payload JSON must be an object."
+          });
+          return;
+        }
+
+        parsedEvidencePayload = parsedValue as Record<string, unknown>;
+      } catch {
+        setFlash({
+          tone: "error",
+          message: "Evidence payload JSON is invalid."
+        });
+        return;
+      }
+    }
+
+    const evidenceLinks = releaseReadinessDraft.evidenceLinksText
+      .split("\n")
+      .map((link) => link.trim())
+      .filter(Boolean);
+
+    await executeAction(
+      "record-release-readiness-evidence",
+      "Release readiness evidence recorded.",
+      async () => {
+        await createReleaseReadinessEvidence(operatorSession, {
+          evidenceType: releaseReadinessDraft.evidenceType,
+          environment: releaseReadinessDraft.environment,
+          status: releaseReadinessDraft.status,
+          releaseIdentifier: trimToUndefined(
+            releaseReadinessDraft.releaseIdentifier
+          ),
+          rollbackReleaseIdentifier: trimToUndefined(
+            releaseReadinessDraft.rollbackReleaseIdentifier
+          ),
+          backupReference: trimToUndefined(releaseReadinessDraft.backupReference),
+          summary,
+          note: trimToUndefined(releaseReadinessDraft.note),
+          ...(evidenceLinks.length > 0 ? { evidenceLinks } : {}),
+          ...(parsedEvidencePayload ? { evidencePayload: parsedEvidencePayload } : {})
+        });
+
+        setReleaseReadinessDraft((current) => ({
+          ...current,
+          summary: "",
+          note: "",
+          evidenceLinksText: "",
+          evidencePayloadText: ""
+        }));
+      }
+    );
+  }
+
   const selectedReleaseReview =
     accountReleaseReviewsQuery.data?.reviews.find(
       (review) => review.reviewCase.id === selectedAccountReleaseReviewId
@@ -868,6 +1016,321 @@ function AdminConsole() {
               <p>No delivery targets configured.</p>
             ) : null}
           </div>
+        ) : null}
+      </section>
+
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <p className="section-kicker">Phase 12</p>
+            <h2>Release readiness evidence</h2>
+          </div>
+          <p className="section-copy">
+            {releaseReadinessSummaryQuery.data
+              ? `Generated ${formatDateTime(releaseReadinessSummaryQuery.data.generatedAt)}`
+              : "Record staging or production-like proof for alert-delivery SLOs, re-escalation cadence, and restore or rollback drills."}
+          </p>
+        </div>
+
+        {releaseReadinessSummaryQuery.isLoading ? (
+          <p>Loading release readiness summary...</p>
+        ) : null}
+
+        {releaseReadinessSummaryQuery.data ? (
+          <>
+            <div className="metrics-grid">
+              <HealthStatusCard
+                label="Readiness"
+                status={releaseReadinessSummaryQuery.data.overallStatus}
+                detail={`${releaseReadinessSummaryQuery.data.summary.passedCheckCount}/${releaseReadinessSummaryQuery.data.summary.requiredCheckCount} required checks passed`}
+              />
+              <MetricCard
+                label="Passed proofs"
+                value={releaseReadinessSummaryQuery.data.summary.passedCheckCount}
+                detail="Latest proof status is passed"
+              />
+              <MetricCard
+                label="Pending proofs"
+                value={releaseReadinessSummaryQuery.data.summary.pendingCheckCount}
+                detail="No accepted evidence recorded yet"
+              />
+              <MetricCard
+                label="Failed proofs"
+                value={releaseReadinessSummaryQuery.data.summary.failedCheckCount}
+                detail="Latest evidence is failed and blocks launch posture"
+              />
+            </div>
+
+            <div className="workspace-grid">
+              <section className="panel">
+                <div className="section-heading compact">
+                  <div>
+                    <p className="section-kicker">Required Proofs</p>
+                    <h2>Checklist coverage</h2>
+                  </div>
+                </div>
+
+                <div className="list-stack">
+                  {releaseReadinessSummaryQuery.data.requiredChecks.map((check) => (
+                    <article className="list-card" key={check.evidenceType}>
+                      <div className="list-card-topline">
+                        <strong>{check.label}</strong>
+                        <span className={`status-pill ${check.status}`}>
+                          {toTitleCase(check.status)}
+                        </span>
+                      </div>
+                      <p>{check.description}</p>
+                      <p className="muted">
+                        Accepted environments {check.acceptedEnvironments.join(", ")}
+                      </p>
+                      <p className="muted">Runbook {check.runbookPath}</p>
+                      {check.latestEvidence ? (
+                        <>
+                          <p className="muted">
+                            Latest evidence {formatDateTime(check.latestEvidence.observedAt)} |{" "}
+                            {toTitleCase(check.latestEvidence.environment)} |{" "}
+                            {toTitleCase(check.latestEvidence.status)}
+                          </p>
+                          <p className="muted">
+                            {check.latestEvidence.summary}
+                            {check.latestEvidence.releaseIdentifier
+                              ? ` | Release ${check.latestEvidence.releaseIdentifier}`
+                              : ""}
+                            {check.latestEvidence.backupReference
+                              ? ` | Backup ${check.latestEvidence.backupReference}`
+                              : ""}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="muted">
+                          No accepted evidence is recorded yet for this proof.
+                        </p>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section className="panel">
+                <div className="section-heading compact">
+                  <div>
+                    <p className="section-kicker">Record Evidence</p>
+                    <h2>Attach staging or production-like proof</h2>
+                  </div>
+                </div>
+
+                <div className="form-grid">
+                  <label>
+                    Evidence type
+                    <select
+                      value={releaseReadinessDraft.evidenceType}
+                      onChange={(event) =>
+                        setReleaseReadinessDraft((current) => ({
+                          ...current,
+                          evidenceType: event.target.value as ReleaseReadinessDraft["evidenceType"]
+                        }))
+                      }
+                    >
+                      {releaseReadinessEvidenceTypeOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {toTitleCase(option)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Environment
+                    <select
+                      value={releaseReadinessDraft.environment}
+                      onChange={(event) =>
+                        setReleaseReadinessDraft((current) => ({
+                          ...current,
+                          environment: event.target.value as ReleaseReadinessDraft["environment"]
+                        }))
+                      }
+                    >
+                      {releaseReadinessEnvironmentOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {toTitleCase(option)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Result
+                    <select
+                      value={releaseReadinessDraft.status}
+                      onChange={(event) =>
+                        setReleaseReadinessDraft((current) => ({
+                          ...current,
+                          status: event.target.value as ReleaseReadinessDraft["status"]
+                        }))
+                      }
+                    >
+                      {releaseReadinessEvidenceStatusOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {toTitleCase(option)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="split-form">
+                  <label>
+                    Release identifier
+                    <input
+                      value={releaseReadinessDraft.releaseIdentifier}
+                      onChange={(event) =>
+                        setReleaseReadinessDraft((current) => ({
+                          ...current,
+                          releaseIdentifier: event.target.value
+                        }))
+                      }
+                      placeholder="api-2026.04.08.1"
+                    />
+                  </label>
+                  <label>
+                    Rollback release identifier
+                    <input
+                      value={releaseReadinessDraft.rollbackReleaseIdentifier}
+                      onChange={(event) =>
+                        setReleaseReadinessDraft((current) => ({
+                          ...current,
+                          rollbackReleaseIdentifier: event.target.value
+                        }))
+                      }
+                      placeholder="api-2026.04.07.3"
+                    />
+                  </label>
+                  <label>
+                    Backup reference
+                    <input
+                      value={releaseReadinessDraft.backupReference}
+                      onChange={(event) =>
+                        setReleaseReadinessDraft((current) => ({
+                          ...current,
+                          backupReference: event.target.value
+                        }))
+                      }
+                      placeholder="snapshot-2026-04-08T09:00Z"
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  Summary
+                  <textarea
+                    value={releaseReadinessDraft.summary}
+                    onChange={(event) =>
+                      setReleaseReadinessDraft((current) => ({
+                        ...current,
+                        summary: event.target.value
+                      }))
+                    }
+                    placeholder="What was proven, against which traffic profile, and whether the result passed."
+                  />
+                </label>
+
+                <label>
+                  Operator note
+                  <textarea
+                    value={releaseReadinessDraft.note}
+                    onChange={(event) =>
+                      setReleaseReadinessDraft((current) => ({
+                        ...current,
+                        note: event.target.value
+                      }))
+                    }
+                    placeholder="Threshold decisions, discovered gaps, or remediation ownership."
+                  />
+                </label>
+
+                <div className="two-column">
+                  <label>
+                    Evidence links
+                    <textarea
+                      value={releaseReadinessDraft.evidenceLinksText}
+                      onChange={(event) =>
+                        setReleaseReadinessDraft((current) => ({
+                          ...current,
+                          evidenceLinksText: event.target.value
+                        }))
+                      }
+                      placeholder={"One URL or artifact reference per line"}
+                    />
+                  </label>
+                  <label>
+                    Evidence payload JSON
+                    <textarea
+                      value={releaseReadinessDraft.evidencePayloadText}
+                      onChange={(event) =>
+                        setReleaseReadinessDraft((current) => ({
+                          ...current,
+                          evidencePayloadText: event.target.value
+                        }))
+                      }
+                      placeholder='{"alertId":"alert_1","targetName":"ops-critical"}'
+                    />
+                  </label>
+                </div>
+
+                <button
+                  className="button primary"
+                  disabled={!operatorSession || pendingAction !== null}
+                  onClick={() => void handleRecordReleaseReadinessEvidence()}
+                  type="button"
+                >
+                  Record evidence
+                </button>
+              </section>
+            </div>
+
+            <div className="list-stack">
+              {releaseReadinessEvidenceQuery.isLoading ? (
+                <p>Loading recent release readiness evidence...</p>
+              ) : null}
+              {releaseReadinessEvidenceQuery.data?.evidence.map((evidence) => (
+                <article className="list-card" key={evidence.id}>
+                  <div className="list-card-topline">
+                    <strong>{toTitleCase(evidence.evidenceType)}</strong>
+                    <span className={`status-pill ${evidence.status}`}>
+                      {toTitleCase(evidence.status)}
+                    </span>
+                  </div>
+                  <p>{evidence.summary}</p>
+                  <p className="muted">
+                    {toTitleCase(evidence.environment)} | Recorded by {evidence.operatorId} |{" "}
+                    {formatDateTime(evidence.observedAt)}
+                  </p>
+                  <p className="muted">
+                    {evidence.releaseIdentifier
+                      ? `Release ${evidence.releaseIdentifier}`
+                      : "No release identifier"}
+                    {evidence.rollbackReleaseIdentifier
+                      ? ` | Rollback ${evidence.rollbackReleaseIdentifier}`
+                      : ""}
+                    {evidence.backupReference
+                      ? ` | Backup ${evidence.backupReference}`
+                      : ""}
+                  </p>
+                  {evidence.note ? <p className="muted">{evidence.note}</p> : null}
+                  {evidence.runbookPath ? (
+                    <p className="muted">Runbook {evidence.runbookPath}</p>
+                  ) : null}
+                  {evidence.evidenceLinks.length > 0 ? (
+                    <p className="muted">
+                      Evidence {evidence.evidenceLinks.join(" | ")}
+                    </p>
+                  ) : null}
+                </article>
+              ))}
+              {releaseReadinessEvidenceQuery.data &&
+              releaseReadinessEvidenceQuery.data.evidence.length === 0 ? (
+                <p>No release readiness evidence has been recorded yet.</p>
+              ) : null}
+            </div>
+          </>
         ) : null}
       </section>
 

@@ -891,6 +891,26 @@ enum CustomerAccountIncidentPackageReleaseStatus {
   expired
 }
 
+enum ReleaseReadinessEvidenceType {
+  platform_alert_delivery_slo
+  critical_alert_reescalation
+  database_restore_drill
+  api_rollback_drill
+  worker_rollback_drill
+}
+
+enum ReleaseReadinessEnvironment {
+  staging
+  production_like
+  production
+}
+
+enum ReleaseReadinessEvidenceStatus {
+  pending
+  passed
+  failed
+}
+
 model CustomerAccountIncidentPackageRelease {
   id                      String                                      @id @default(cuid())
   customerAccountId       String
@@ -930,4 +950,31 @@ model CustomerAccountIncidentPackageRelease {
   @@index([requestedByOperatorId, requestedAt])
   @@index([approvedByOperatorId, approvedAt])
   @@index([releasedByOperatorId, releasedAt])
+}
+
+model ReleaseReadinessEvidence {
+  id                       String                         @id @default(cuid())
+  evidenceType             ReleaseReadinessEvidenceType
+  environment              ReleaseReadinessEnvironment
+  status                   ReleaseReadinessEvidenceStatus
+  releaseIdentifier        String?
+  rollbackReleaseIdentifier String?
+  backupReference          String?
+  summary                  String
+  note                     String?
+  operatorId               String
+  operatorRole             String?
+  runbookPath              String?
+  evidenceLinks            String[]
+  evidencePayload          Json?
+  startedAt                DateTime?
+  completedAt              DateTime?
+  observedAt               DateTime                       @default(now())
+  createdAt                DateTime                       @default(now())
+  updatedAt                DateTime                       @updatedAt
+
+  @@index([evidenceType, environment, observedAt])
+  @@index([status, observedAt])
+  @@index([operatorId, observedAt])
+  @@index([releaseIdentifier, observedAt])
 }
