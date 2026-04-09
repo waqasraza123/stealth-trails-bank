@@ -23,7 +23,12 @@ It does not yet cover:
 - automatic confirmation ingestion
 - final admin console views
 
-## Worker authentication
+## Internal authentication
+
+Operator fallback endpoints require:
+
+- `x-operator-api-key`
+- `x-operator-id`
 
 Worker endpoints require:
 
@@ -92,6 +97,22 @@ Expected behavior:
 - writes:
   - `AuditEvent.action = transaction_intent.deposit.confirmed`
 
+Repeated submissions reuse the existing confirmed state when the same latest blockchain transaction is already confirmed.
+
+## Confirm a broadcast deposit intent through manual operator fallback
+
+Endpoint:
+
+```text
+POST /transaction-intents/internal/deposit-requests/:intentId/confirm
+```
+
+Expected behavior:
+
+- applies the same confirmation rules as the worker endpoint
+- accepts an optional operator note
+- writes audit metadata with `executionChannel = manual_custody`
+
 ## Settle a confirmed deposit intent
 
 Endpoint:
@@ -124,6 +145,22 @@ Expected behavior:
   - `TransactionIntent.settledAmount = requestedAmount`
 - writes:
   - `AuditEvent.action = transaction_intent.deposit.settled`
+
+Repeated submissions reuse the existing settled state when a `LedgerJournal` already exists for the intent.
+
+## Settle a confirmed deposit intent through manual operator fallback
+
+Endpoint:
+
+```text
+POST /transaction-intents/internal/deposit-requests/:intentId/settle
+```
+
+Expected behavior:
+
+- applies the same settlement rules as the worker endpoint
+- accepts an optional operator note
+- writes audit metadata with `executionChannel = manual_custody`
 
 ## Customer ledger-backed balances
 

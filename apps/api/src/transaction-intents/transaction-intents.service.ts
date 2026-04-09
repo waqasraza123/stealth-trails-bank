@@ -24,9 +24,9 @@ import { FailDepositIntentExecutionDto } from "./dto/fail-deposit-intent-executi
 import { ListApprovedDepositIntentsDto } from "./dto/list-approved-deposit-intents.dto";
 import { ListBroadcastDepositIntentsDto } from "./dto/list-broadcast-deposit-intents.dto";
 import { ListConfirmedDepositIntentsDto } from "./dto/list-confirmed-deposit-intents.dto";
+import { ListQueuedDepositIntentsDto } from "./dto/list-queued-deposit-intents.dto";
 import { ListMyTransactionIntentsDto } from "./dto/list-my-transaction-intents.dto";
 import { ListPendingDepositIntentsDto } from "./dto/list-pending-deposit-intents.dto";
-import { ListQueuedDepositIntentsDto } from "./dto/list-queued-deposit-intents.dto";
 import { QueueApprovedDepositIntentDto } from "./dto/queue-approved-deposit-intent.dto";
 import { RecordDepositBroadcastDto } from "./dto/record-deposit-broadcast.dto";
 import { SettleConfirmedDepositIntentDto } from "./dto/settle-confirmed-deposit-intent.dto";
@@ -245,6 +245,20 @@ export class TransactionIntentsService {
     private readonly ledgerService: LedgerService
   ) {
     this.productChainId = loadProductChainRuntimeConfig().productChainId;
+  }
+
+  private resolveExecutionChannel(
+    actor: DepositTransitionActor
+  ): "worker_runtime" | "manual_custody" | "reconciliation_replay" {
+    if (actor.reconciliationReplay) {
+      return "reconciliation_replay";
+    }
+
+    if (actor.actorType === "operator") {
+      return "manual_custody";
+    }
+
+    return "worker_runtime";
   }
 
   private normalizeAssetSymbol(assetSymbol: string): string {
@@ -1323,6 +1337,32 @@ export class TransactionIntentsService {
     workerId: string,
     dto: RecordDepositBroadcastDto
   ): Promise<RecordDepositBroadcastResult> {
+    return this.recordDepositBroadcastWithActor(intentId, dto, {
+      actorType: "worker",
+      actorId: workerId,
+      reconciliationReplay: false,
+      replayReason: null
+    });
+  }
+
+  async recordDepositBroadcastByOperator(
+    intentId: string,
+    operatorId: string,
+    dto: RecordDepositBroadcastDto
+  ): Promise<RecordDepositBroadcastResult> {
+    return this.recordDepositBroadcastWithActor(intentId, dto, {
+      actorType: "operator",
+      actorId: operatorId,
+      reconciliationReplay: false,
+      replayReason: null
+    });
+  }
+
+  private async recordDepositBroadcastWithActor(
+    intentId: string,
+    dto: RecordDepositBroadcastDto,
+    actor: DepositTransitionActor
+  ): Promise<RecordDepositBroadcastResult> {
     const existingIntent = await this.findDepositIntentForReview(intentId);
 
     if (!existingIntent) {
@@ -1469,8 +1509,8 @@ export class TransactionIntentsService {
         await transaction.auditEvent.create({
           data: {
             customerId: currentIntent.customerAccount!.customer.id,
-            actorType: "worker",
-            actorId: workerId,
+            actorType: actor.actorType,
+            actorId: actor.actorId,
             action: "transaction_intent.deposit.broadcast",
             targetType: "TransactionIntent",
             targetId: currentIntent.id,
@@ -1488,7 +1528,10 @@ export class TransactionIntentsService {
               fromAddress: dto.fromAddress ?? null,
               toAddress: dto.toAddress ?? null,
               previousStatus: currentIntent.status,
-              newStatus: TransactionIntentStatus.broadcast
+              newStatus: TransactionIntentStatus.broadcast,
+              executionChannel: this.resolveExecutionChannel(actor),
+              reconciliationReplay: actor.reconciliationReplay,
+              replayReason: actor.replayReason
             }
           }
         });
@@ -1566,6 +1609,32 @@ export class TransactionIntentsService {
     workerId: string,
     dto: FailDepositIntentExecutionDto
   ): Promise<FailDepositIntentExecutionResult> {
+    return this.failDepositIntentExecutionWithActor(intentId, dto, {
+      actorType: "worker",
+      actorId: workerId,
+      reconciliationReplay: false,
+      replayReason: null
+    });
+  }
+
+  async failDepositIntentExecutionByOperator(
+    intentId: string,
+    operatorId: string,
+    dto: FailDepositIntentExecutionDto
+  ): Promise<FailDepositIntentExecutionResult> {
+    return this.failDepositIntentExecutionWithActor(intentId, dto, {
+      actorType: "operator",
+      actorId: operatorId,
+      reconciliationReplay: false,
+      replayReason: null
+    });
+  }
+
+  private async failDepositIntentExecutionWithActor(
+    intentId: string,
+    dto: FailDepositIntentExecutionDto,
+    actor: DepositTransitionActor
+  ): Promise<FailDepositIntentExecutionResult> {
     const failureCode = dto.failureCode.trim();
     const failureReason = dto.failureReason.trim();
 
@@ -1578,7 +1647,18 @@ export class TransactionIntentsService {
     const latestBlockchainTransaction =
       existingIntent.blockchainTransactions[0] ?? null;
 
-    
+    if (
+      existingIntent.status === TransactionIntentStatus.failed &&
+      existingIntent.policyDecision === PolicyDecision.approved &&
+      existingIntent.failureCode === failureCode &&
+      existingIntent.failureReason === failureReason &&
+      (!dto.txHash || latestBlockchainTransaction?.txHash === dto.txHash)
+    ) {
+      return {
+        intent: this.mapIntentReviewProjection(existingIntent),
+        failureReused: true
+      };
+    }
 
     if (
       existingIntent.policyDecision !== PolicyDecision.approved ||
@@ -1655,6 +1735,7 @@ export class TransactionIntentsService {
 
         if (
           currentIntent.status === TransactionIntentStatus.failed &&
+          currentIntent.policyDecision === PolicyDecision.approved &&
           currentIntent.failureCode === failureCode &&
           currentIntent.failureReason === failureReason &&
           (!dto.txHash || currentLatestBlockchainTransaction?.txHash === dto.txHash)
@@ -1724,8 +1805,8 @@ export class TransactionIntentsService {
         await transaction.auditEvent.create({
           data: {
             customerId: currentIntent.customerAccount!.customer.id,
-            actorType: "worker",
-            actorId: workerId,
+            actorType: actor.actorType,
+            actorId: actor.actorId,
             action: "transaction_intent.deposit.execution_failed",
             targetType: "TransactionIntent",
             targetId: currentIntent.id,
@@ -1747,7 +1828,10 @@ export class TransactionIntentsService {
               previousStatus: currentIntent.status,
               newStatus: TransactionIntentStatus.failed,
               failureCode,
-              failureReason
+              failureReason,
+              executionChannel: this.resolveExecutionChannel(actor),
+              reconciliationReplay: actor.reconciliationReplay,
+              replayReason: actor.replayReason
             }
           }
         });
@@ -1816,12 +1900,7 @@ export class TransactionIntentsService {
 
     return {
       intent: this.mapIntentReviewProjection(updatedIntent),
-      failureReused:
-        updatedIntent.status === TransactionIntentStatus.failed &&
-        updatedIntent.failureCode === failureCode &&
-        updatedIntent.failureReason === failureReason &&
-        false &&
-        true
+      failureReused: false
     };
   }
 
@@ -1995,6 +2074,24 @@ export class TransactionIntentsService {
     );
   }
 
+  async confirmDepositIntentByOperator(
+    intentId: string,
+    operatorId: string,
+    dto: ConfirmDepositIntentDto
+  ): Promise<ConfirmDepositIntentResult> {
+    return this.confirmDepositIntentWithActor(
+      intentId,
+      dto.txHash?.trim() ?? null,
+      dto.note?.trim() ?? null,
+      {
+        actorType: "operator",
+        actorId: operatorId,
+        reconciliationReplay: false,
+        replayReason: null
+      }
+    );
+  }
+
   private async confirmDepositIntentWithActor(
     intentId: string,
     txHash: string | null,
@@ -2159,6 +2256,7 @@ export class TransactionIntentsService {
               txHash: currentLatestBlockchainTransaction.txHash,
               previousStatus: currentIntent.status,
               newStatus: TransactionIntentStatus.confirmed,
+              executionChannel: this.resolveExecutionChannel(actor),
               note,
               reconciliationReplay: actor.reconciliationReplay,
               replayReason: actor.replayReason
@@ -2245,6 +2343,23 @@ export class TransactionIntentsService {
       {
         actorType: "worker",
         actorId: workerId,
+        reconciliationReplay: false,
+        replayReason: null
+      }
+    );
+  }
+
+  async settleConfirmedDepositIntentByOperator(
+    intentId: string,
+    operatorId: string,
+    dto: SettleConfirmedDepositIntentDto
+  ): Promise<SettleConfirmedDepositIntentResult> {
+    return this.settleConfirmedDepositIntentWithActor(
+      intentId,
+      dto.note?.trim() ?? null,
+      {
+        actorType: "operator",
+        actorId: operatorId,
         reconciliationReplay: false,
         replayReason: null
       }
@@ -2433,6 +2548,7 @@ export class TransactionIntentsService {
               debitLedgerAccountId: ledgerResult.debitLedgerAccountId,
               creditLedgerAccountId: ledgerResult.creditLedgerAccountId,
               availableBalance: ledgerResult.availableBalance,
+              executionChannel: this.resolveExecutionChannel(actor),
               note,
               reconciliationReplay: actor.reconciliationReplay,
               replayReason: actor.replayReason

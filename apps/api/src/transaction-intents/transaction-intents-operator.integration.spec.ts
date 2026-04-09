@@ -81,6 +81,50 @@ describe("TransactionIntentsInternalController integration", () => {
       }),
       findFirst: jest.fn(async () => currentIntent)
     },
+    blockchainTransaction: {
+      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        currentIntent = buildReviewIntentRecord({
+          ...currentIntent,
+          blockchainTransactions: [
+            {
+              id: "tx_1",
+              txHash: data.txHash,
+              status: data.status,
+              fromAddress: data.fromAddress,
+              toAddress: data.toAddress,
+              createdAt: new Date("2026-04-06T18:05:00.000Z"),
+              updatedAt: new Date("2026-04-06T18:05:00.000Z"),
+              confirmedAt: null
+            }
+          ]
+        });
+
+        return {
+          id: "tx_1"
+        };
+      }),
+      update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        const latestBlockchainTransaction =
+          currentIntent.blockchainTransactions[0] as Record<string, unknown> | undefined;
+
+        currentIntent = buildReviewIntentRecord({
+          ...currentIntent,
+          blockchainTransactions: latestBlockchainTransaction
+            ? [
+                {
+                  ...latestBlockchainTransaction,
+                  ...data,
+                  updatedAt: new Date("2026-04-06T18:05:00.000Z")
+                }
+              ]
+            : currentIntent.blockchainTransactions
+        });
+
+        return {
+          id: "tx_1"
+        };
+      })
+    },
     auditEvent: {
       create: jest.fn(async () => ({
         id: "audit_1"
@@ -228,6 +272,43 @@ describe("TransactionIntentsInternalController integration", () => {
     expect(secondResponse.body.data.intent.status).toBe("queued");
     expect((prismaService.$transaction as jest.Mock).mock.calls.length).toBe(
       transactionCallCountAfterFirstQueue
+    );
+  });
+
+  it("records a manual deposit broadcast through the operator control-plane", async () => {
+    currentIntent = buildReviewIntentRecord({
+      status: "queued",
+      policyDecision: "approved",
+      updatedAt: new Date("2026-04-06T18:03:00.000Z")
+    });
+
+    const response = await request(app.getHttpServer())
+      .post("/transaction-intents/internal/deposit-requests/intent_1/broadcast")
+      .set("x-operator-api-key", "test-operator-key")
+      .set("x-operator-id", "ops_1")
+      .send({
+        txHash: `0x${"1".repeat(64)}`,
+        fromAddress: "0x0000000000000000000000000000000000000def",
+        toAddress: "0x0000000000000000000000000000000000000abc"
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.message).toBe(
+      "Deposit custody broadcast recorded successfully."
+    );
+    expect(response.body.data.broadcastReused).toBe(false);
+    expect(response.body.data.intent.status).toBe("broadcast");
+    expect(prismaTransaction.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          actorType: "operator",
+          actorId: "ops_1",
+          action: "transaction_intent.deposit.broadcast",
+          metadata: expect.objectContaining({
+            executionChannel: "manual_custody"
+          })
+        })
+      })
     );
   });
 });

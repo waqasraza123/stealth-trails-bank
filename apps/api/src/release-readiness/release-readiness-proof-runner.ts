@@ -13,6 +13,13 @@ type CommandExecutionResult = {
   durationMs: number;
 };
 
+type AutomatedProofCommandDefinition = {
+  label: string;
+  command: string;
+  args: string[];
+  coverage: string[];
+};
+
 type CommandExecutor = (
   command: string,
   args: string[],
@@ -68,8 +75,7 @@ const automatedProofDefinitions: Record<
     runbookPath: string;
     successSummary: string;
     failureSummary: string;
-    command: string;
-    args: string[];
+    commands: AutomatedProofCommandDefinition[];
   }
 > = {
   contract_invariant_suite: {
@@ -77,39 +83,129 @@ const automatedProofDefinitions: Record<
     successSummary:
       "Contract invariant suite passed for the release artifact.",
     failureSummary: "Contract invariant suite failed for the release artifact.",
-    command: "pnpm",
-    args: [
-      "--filter",
-      "@stealth-trails-bank/contracts",
-      "test",
-      "--",
-      "--grep",
-      "invariant"
+    commands: [
+      {
+        label: "staking_pool_invariants",
+        command: "pnpm",
+        args: [
+          "--filter",
+          "@stealth-trails-bank/contracts",
+          "test",
+          "--",
+          "--grep",
+          "invariant"
+        ],
+        coverage: [
+          "contract accounting invariants",
+          "reward reserve conservation",
+          "emergency control safety"
+        ]
+      }
     ]
   },
   backend_integration_suite: {
     runbookPath: "docs/runbooks/release-candidate-verification.md",
     successSummary:
-      "Backend integration suite passed across guarded operator and worker APIs.",
+      "Backend integration suite passed across guarded operator, worker, reconciliation, and launch-governance boundaries.",
     failureSummary:
-      "Backend integration suite failed across guarded operator and worker APIs.",
-    command: "pnpm",
-    args: ["--filter", "@stealth-trails-bank/api", "test:integration"]
+      "Backend integration suite failed across guarded operator, worker, reconciliation, or launch-governance boundaries.",
+    commands: [
+      {
+        label: "guarded_transaction_intent_boundaries",
+        command: "pnpm",
+        args: [
+          "--filter",
+          "@stealth-trails-bank/api",
+          "test",
+          "--",
+          "--runTestsByPath",
+          "src/transaction-intents/transaction-intents.integration.spec.ts",
+          "src/transaction-intents/transaction-intents-operator.integration.spec.ts"
+        ],
+        coverage: [
+          "customer deposit and withdrawal intent APIs",
+          "internal operator control-plane routes",
+          "guarded worker-facing transaction intent boundaries"
+        ]
+      },
+      {
+        label: "reconciliation_and_release_readiness_services",
+        command: "pnpm",
+        args: [
+          "--filter",
+          "@stealth-trails-bank/api",
+          "test",
+          "--",
+          "--runTestsByPath",
+          "src/ledger-reconciliation/ledger-reconciliation.service.spec.ts",
+          "src/release-readiness/release-readiness.service.spec.ts"
+        ],
+        coverage: [
+          "reconciliation mismatch lifecycle",
+          "linked review-case resolution",
+          "release-readiness evidence and approval gates"
+        ]
+      }
+    ]
   },
   end_to_end_finance_flows: {
     runbookPath: "docs/runbooks/release-candidate-verification.md",
     successSummary:
-      "End-to-end finance flow suite passed for deposit and withdrawal lifecycles.",
+      "End-to-end finance flow suite passed for deposit and withdrawal lifecycles, including replay and worker recovery paths.",
     failureSummary:
-      "End-to-end finance flow suite failed for deposit or withdrawal lifecycles.",
-    command: "pnpm",
-    args: [
-      "--filter",
-      "@stealth-trails-bank/api",
-      "test",
-      "--",
-      "--runTestsByPath",
-      "src/transaction-intents/finance-flows.integration.spec.ts"
+      "End-to-end finance flow suite failed for deposit, withdrawal, replay, or worker recovery paths.",
+    commands: [
+      {
+        label: "finance_flow_integration",
+        command: "pnpm",
+        args: [
+          "--filter",
+          "@stealth-trails-bank/api",
+          "test",
+          "--",
+          "--runTestsByPath",
+          "src/transaction-intents/finance-flows.integration.spec.ts"
+        ],
+        coverage: [
+          "deposit lifecycle",
+          "withdrawal lifecycle",
+          "ledger-backed settlement"
+        ]
+      },
+      {
+        label: "replay_and_recovery_specs",
+        command: "pnpm",
+        args: [
+          "--filter",
+          "@stealth-trails-bank/api",
+          "test",
+          "--",
+          "--runTestsByPath",
+          "src/transaction-intents/transaction-intents.replay.spec.ts",
+          "src/transaction-intents/withdrawal-intents.replay.spec.ts",
+          "src/transaction-intents/deposit-settlement-reconciliation.review-cases.spec.ts",
+          "src/transaction-intents/withdrawal-settlement-reconciliation.review-cases.spec.ts"
+        ],
+        coverage: [
+          "deposit replay safety",
+          "withdrawal replay safety",
+          "reconciliation-triggered repair and review routing"
+        ]
+      },
+      {
+        label: "worker_runtime_recovery",
+        command: "pnpm",
+        args: [
+          "--filter",
+          "@stealth-trails-bank/worker",
+          "test"
+        ],
+        coverage: [
+          "worker orchestration",
+          "confirmed-backlog settlement recovery",
+          "runtime mode safety"
+        ]
+      }
     ]
   }
 };
@@ -207,6 +303,76 @@ function executeCommand(
   };
 }
 
+async function executeAutomatedProofCommands(
+  commands: AutomatedProofCommandDefinition[],
+  workspaceRoot: string,
+  commandExecutor: CommandExecutor
+): Promise<{
+  status: "passed" | "failed";
+  totalDurationMs: number;
+  commandResults: Array<{
+    label: string;
+    command: string;
+    coverage: string[];
+    exitCode: number;
+    durationMs: number;
+    stdoutTail: string;
+    stderrTail: string;
+    status: "passed" | "failed";
+  }>;
+}> {
+  const commandResults: Array<{
+    label: string;
+    command: string;
+    coverage: string[];
+    exitCode: number;
+    durationMs: number;
+    stdoutTail: string;
+    stderrTail: string;
+    status: "passed" | "failed";
+  }> = [];
+
+  for (const commandDefinition of commands) {
+    const executionResult = await commandExecutor(
+      commandDefinition.command,
+      commandDefinition.args,
+      workspaceRoot
+    );
+    const status = executionResult.exitCode === 0 ? "passed" : "failed";
+
+    commandResults.push({
+      label: commandDefinition.label,
+      command: [commandDefinition.command, ...commandDefinition.args].join(" "),
+      coverage: commandDefinition.coverage,
+      exitCode: executionResult.exitCode,
+      durationMs: executionResult.durationMs,
+      stdoutTail: buildOutputTail(executionResult.stdout),
+      stderrTail: buildOutputTail(executionResult.stderr),
+      status
+    });
+
+    if (status === "failed") {
+      return {
+        status,
+        totalDurationMs: commandResults.reduce(
+          (total, result) => total + result.durationMs,
+          0
+        ),
+        commandResults
+      };
+    }
+  }
+
+  return {
+    status: "passed",
+    totalDurationMs: commandResults.reduce(
+      (total, result) => total + result.durationMs,
+      0
+    ),
+    commandResults
+  };
+}
+
 function isAutomatedProofType(
   evidenceType: ReleaseReadinessEvidenceType
 ): evidenceType is AutomatedReleaseReadinessProofType {
@@ -253,12 +419,12 @@ export async function runReleaseReadinessProof(
       automatedInput.workspaceRoot ?? defaultWorkspaceRoot();
     const commandExecutor =
       automatedInput.commandExecutor ?? executeCommand;
-    const executionResult = await commandExecutor(
-      definition.command,
-      definition.args,
-      workspaceRoot
+    const execution = await executeAutomatedProofCommands(
+      definition.commands,
+      workspaceRoot,
+      commandExecutor
     );
-    const status = executionResult.exitCode === 0 ? "passed" : "failed";
+    const status = execution.status;
 
     return {
       evidenceType: input.evidenceType,
@@ -271,12 +437,10 @@ export async function runReleaseReadinessProof(
       runbookPath: definition.runbookPath,
       evidenceLinks: [],
       evidencePayload: {
-        proofKind: "automated_command",
-        command: [definition.command, ...definition.args].join(" "),
-        exitCode: executionResult.exitCode,
-        durationMs: executionResult.durationMs,
-        stdoutTail: buildOutputTail(executionResult.stdout),
-        stderrTail: buildOutputTail(executionResult.stderr),
+        proofKind: "automated_command_bundle",
+        commandCount: definition.commands.length,
+        durationMs: execution.totalDurationMs,
+        commands: execution.commandResults,
         workspaceRoot
       }
     };

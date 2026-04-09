@@ -4,11 +4,12 @@
 
 This runbook covers the first post-approval execution slice for deposit transaction intents.
 
-This slice lets the system move from approved review state into worker-owned execution state.
+This slice lets the system move from approved review state into execution state.
 
 It covers:
 
 - operator queueing
+- operator manual execution fallback
 - worker queued fetch
 - worker broadcast recording
 - worker execution failure recording
@@ -94,6 +95,35 @@ Expected behavior:
 - sorts oldest first
 - includes latest blockchain transaction if one exists
 
+## List queued deposit intents for manual operator execution
+
+Endpoint:
+
+~~~text
+GET /transaction-intents/internal/deposit-requests/queued?limit=20
+~~~
+
+Expected behavior:
+
+- returns the same queued custody backlog visible to workers
+- supports manual fallback when the worker control-plane is degraded
+
+## List broadcast deposit intents for manual operator review
+
+Endpoint:
+
+~~~text
+GET /transaction-intents/internal/deposit-requests/broadcast?limit=20
+~~~
+
+Expected behavior:
+
+- returns deposit intents with:
+  - status = broadcast
+  - policyDecision = approved
+- includes latest blockchain transaction
+- supports manual confirmation follow-up
+
 ## Record a worker broadcast
 
 Endpoint:
@@ -122,6 +152,22 @@ Expected behavior:
   - status = broadcast
 - writes:
   - AuditEvent.action = transaction_intent.deposit.broadcast
+
+Repeated submissions with the same `txHash` reuse the existing broadcast state instead of creating a second blockchain transaction.
+
+## Record a manual operator broadcast
+
+Endpoint:
+
+~~~text
+POST /transaction-intents/internal/deposit-requests/:intentId/broadcast
+~~~
+
+Expected behavior:
+
+- applies the same state transition rules as the worker broadcast endpoint
+- writes audit metadata with `executionChannel = manual_custody`
+- allows operator-run custody fallback during worker outages or incident response
 
 ## Record a worker execution failure
 
@@ -154,6 +200,22 @@ Expected behavior:
   - failureReason
 - writes:
   - AuditEvent.action = transaction_intent.deposit.execution_failed
+
+Repeated submissions with the same failure payload reuse the recorded failed state instead of returning a conflict.
+
+## Record a manual operator execution failure
+
+Endpoint:
+
+~~~text
+POST /transaction-intents/internal/deposit-requests/:intentId/fail
+~~~
+
+Expected behavior:
+
+- applies the same state transition rules as the worker failure endpoint
+- writes audit metadata with `executionChannel = manual_custody`
+- allows operator-run custody fallback during worker outages or incident response
 
 ## Success condition
 

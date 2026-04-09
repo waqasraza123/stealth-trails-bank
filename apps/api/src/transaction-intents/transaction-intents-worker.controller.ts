@@ -99,7 +99,13 @@ export class TransactionIntentsWorkerController {
 
   @Get("deposit-requests/queued")
   async listQueuedDepositIntents(
-    @Query(new ValidationPipe({ transform: true }))
+    @Query(
+      new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
     query: ListQueuedDepositIntentsDto
   ): Promise<CustomJsonResponse> {
     const result = await this.attachAssetExecutionMetadata(
@@ -115,7 +121,13 @@ export class TransactionIntentsWorkerController {
 
   @Get("deposit-requests/broadcast")
   async listBroadcastDepositIntents(
-    @Query(new ValidationPipe({ transform: true }))
+    @Query(
+      new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
     query: ListBroadcastDepositIntentsDto
   ): Promise<CustomJsonResponse> {
     const result = await this.attachAssetExecutionMetadata(
@@ -131,7 +143,13 @@ export class TransactionIntentsWorkerController {
 
   @Get("deposit-requests/confirmed-ready-to-settle")
   async listConfirmedDepositIntentsReadyToSettle(
-    @Query(new ValidationPipe({ transform: true }))
+    @Query(
+      new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
     query: ListConfirmedDepositIntentsDto
   ): Promise<CustomJsonResponse> {
     const result = await this.attachAssetExecutionMetadata(
@@ -151,7 +169,13 @@ export class TransactionIntentsWorkerController {
   @Post("deposit-requests/:intentId/broadcast")
   async recordDepositBroadcast(
     @Param("intentId") intentId: string,
-    @Body(new ValidationPipe()) dto: RecordDepositBroadcastDto,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
+    dto: RecordDepositBroadcastDto,
     @Request() request: InternalWorkerRequest
   ): Promise<CustomJsonResponse> {
     const result = await this.transactionIntentsService.recordDepositBroadcast(
@@ -172,7 +196,13 @@ export class TransactionIntentsWorkerController {
   @Post("deposit-requests/:intentId/confirm")
   async confirmDepositIntent(
     @Param("intentId") intentId: string,
-    @Body(new ValidationPipe()) dto: ConfirmDepositIntentDto,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
+    dto: ConfirmDepositIntentDto,
     @Request() request: InternalWorkerRequest
   ): Promise<CustomJsonResponse> {
     const result = await this.transactionIntentsService.confirmDepositIntent(
@@ -193,7 +223,13 @@ export class TransactionIntentsWorkerController {
   @Post("deposit-requests/:intentId/fail")
   async failDepositIntentExecution(
     @Param("intentId") intentId: string,
-    @Body(new ValidationPipe()) dto: FailDepositIntentExecutionDto,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
+    dto: FailDepositIntentExecutionDto,
     @Request() request: InternalWorkerRequest
   ): Promise<CustomJsonResponse> {
     const result =
@@ -215,7 +251,13 @@ export class TransactionIntentsWorkerController {
   @Post("deposit-requests/:intentId/settle")
   async settleConfirmedDepositIntent(
     @Param("intentId") intentId: string,
-    @Body(new ValidationPipe()) dto: SettleConfirmedDepositIntentDto,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
+    dto: SettleConfirmedDepositIntentDto,
     @Request() request: InternalWorkerRequest
   ): Promise<CustomJsonResponse> {
     const result =

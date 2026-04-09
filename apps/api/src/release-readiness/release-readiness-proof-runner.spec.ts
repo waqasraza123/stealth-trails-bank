@@ -41,20 +41,38 @@ describe("release-readiness-proof-runner", () => {
     );
     expect(result.evidencePayload).toEqual(
       expect.objectContaining({
-        proofKind: "automated_command",
-        exitCode: 0,
+        proofKind: "automated_command_bundle",
         durationMs: 321
+      })
+    );
+    expect(result.evidencePayload).toEqual(
+      expect.objectContaining({
+        commands: [
+          expect.objectContaining({
+            label: "staking_pool_invariants",
+            exitCode: 0,
+            status: "passed"
+          })
+        ]
       })
     );
   });
 
   it("captures failing output for automated proof execution", async () => {
-    const commandExecutor = jest.fn().mockResolvedValue({
-      exitCode: 1,
-      stdout: "",
-      stderr: "finance flows failed",
-      durationMs: 111
-    });
+    const commandExecutor = jest
+      .fn()
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "finance flows passed",
+        stderr: "",
+        durationMs: 111
+      })
+      .mockResolvedValueOnce({
+        exitCode: 1,
+        stdout: "",
+        stderr: "replay recovery failed",
+        durationMs: 222
+      });
 
     const result = await runReleaseReadinessProof({
       evidenceType: "end_to_end_finance_flows",
@@ -66,7 +84,18 @@ describe("release-readiness-proof-runner", () => {
     expect(result.summary).toContain("End-to-end finance flow suite failed");
     expect(result.evidencePayload).toEqual(
       expect.objectContaining({
-        stderrTail: "finance flows failed"
+        durationMs: 333,
+        commands: [
+          expect.objectContaining({
+            label: "finance_flow_integration",
+            status: "passed"
+          }),
+          expect.objectContaining({
+            label: "replay_and_recovery_specs",
+            status: "failed",
+            stderrTail: "replay recovery failed"
+          })
+        ]
       })
     );
   });

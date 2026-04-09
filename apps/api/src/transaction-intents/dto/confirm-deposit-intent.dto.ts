@@ -7,4 +7,8 @@ export class ConfirmDepositIntentDto {
     message: "txHash must be a valid 32-byte hex transaction hash."
   })
   readonly txHash?: string;
+
+  @IsOptional()
+  @IsString()
+  readonly note?: string;
 }

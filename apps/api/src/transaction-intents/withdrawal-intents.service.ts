@@ -1676,7 +1676,18 @@ export class WithdrawalIntentsService {
     const latestBlockchainTransaction =
       existingIntent.blockchainTransactions[0] ?? null;
 
-    
+    if (
+      existingIntent.status === TransactionIntentStatus.failed &&
+      existingIntent.policyDecision === PolicyDecision.approved &&
+      existingIntent.failureCode === failureCode &&
+      existingIntent.failureReason === failureReason &&
+      (!dto.txHash || latestBlockchainTransaction?.txHash === dto.txHash)
+    ) {
+      return {
+        intent: this.mapIntentReviewProjection(existingIntent),
+        failureReused: true
+      };
+    }
 
     if (
       existingIntent.policyDecision !== PolicyDecision.approved ||

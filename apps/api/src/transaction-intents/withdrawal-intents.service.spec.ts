@@ -506,6 +506,49 @@ describe("WithdrawalIntentsService", () => {
     expect(result.intent.status).toBe(TransactionIntentStatus.failed);
   });
 
+  it("reuses an identical withdrawal execution failure instead of conflicting", async () => {
+    const { service, prismaService, ledgerService } = createService();
+
+    const existingIntent = buildInternalIntentRecord({
+      status: TransactionIntentStatus.failed,
+      policyDecision: PolicyDecision.approved,
+      failureCode: "broadcast_failed",
+      failureReason: "RPC submission failed.",
+      blockchainTransactions: [
+        {
+          id: "tx_1",
+          txHash: "0x1111111111111111111111111111111111111111111111111111111111111111",
+          status: BlockchainTransactionStatus.failed,
+          fromAddress: "0x0000000000000000000000000000000000000def",
+          toAddress: "0x0000000000000000000000000000000000000abc",
+          createdAt: new Date("2026-04-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-04-01T00:00:00.000Z"),
+          confirmedAt: null
+        }
+      ]
+    });
+
+    jest
+      .spyOn(service as any, "findWithdrawalIntentForReview")
+      .mockResolvedValue(existingIntent);
+
+    const result = await service.failWithdrawalIntentExecution(
+      "intent_1",
+      "worker_1",
+      {
+        failureCode: "broadcast_failed",
+        failureReason: "RPC submission failed.",
+        txHash:
+          "0x1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    );
+
+    expect(result.failureReused).toBe(true);
+    expect(result.intent.status).toBe(TransactionIntentStatus.failed);
+    expect(prismaService.$transaction).not.toHaveBeenCalled();
+    expect(ledgerService.releaseWithdrawalReservation).not.toHaveBeenCalled();
+  });
+
   it("settles a confirmed withdrawal through ledger and pending balance reduction", async () => {
     const { service, prismaService, ledgerService } = createService();
 

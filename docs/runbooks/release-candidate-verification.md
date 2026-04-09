@@ -22,9 +22,17 @@ pnpm release:readiness:verify -- --proof all-auto
 
 That command runs:
 
-- `pnpm --filter @stealth-trails-bank/contracts test -- --grep invariant`
-- `pnpm --filter @stealth-trails-bank/api test:integration`
-- `pnpm --filter @stealth-trails-bank/api test -- --runTestsByPath src/transaction-intents/finance-flows.integration.spec.ts`
+- the contract invariant bundle:
+  - `pnpm --filter @stealth-trails-bank/contracts test -- --grep invariant`
+- the backend integration bundle:
+  - `pnpm --filter @stealth-trails-bank/api test -- --runTestsByPath src/transaction-intents/transaction-intents.integration.spec.ts src/transaction-intents/transaction-intents-operator.integration.spec.ts`
+  - `pnpm --filter @stealth-trails-bank/api test -- --runTestsByPath src/ledger-reconciliation/ledger-reconciliation.service.spec.ts src/release-readiness/release-readiness.service.spec.ts`
+- the finance proof bundle:
+  - `pnpm --filter @stealth-trails-bank/api test -- --runTestsByPath src/transaction-intents/finance-flows.integration.spec.ts`
+  - `pnpm --filter @stealth-trails-bank/api test -- --runTestsByPath src/transaction-intents/transaction-intents.replay.spec.ts src/transaction-intents/withdrawal-intents.replay.spec.ts src/transaction-intents/deposit-settlement-reconciliation.review-cases.spec.ts src/transaction-intents/withdrawal-settlement-reconciliation.review-cases.spec.ts`
+  - `pnpm --filter @stealth-trails-bank/worker test`
+
+Each automated proof is recorded as a command bundle with per-command status, duration, output tails, and coverage notes so the durable evidence matches the hardened platform surface instead of a single coarse command.
 
 ## Single-proof examples
 
@@ -100,11 +108,12 @@ pnpm release:readiness:verify -- \
 
 The verifier prints structured JSON. Automated proofs include:
 
-- executed command
-- exit code
-- duration
-- stdout tail
-- stderr tail
+- executed command bundle
+- per-command labels and coverage
+- per-command exit code
+- aggregate duration
+- per-command stdout tail
+- per-command stderr tail
 
 That payload is suitable for durable evidence storage and later launch approval review.
 

@@ -231,6 +231,48 @@ describe("Finance flows integration", () => {
     ]);
   });
 
+  it("rejects non-whitelisted fields on the deposit worker control-plane", async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post("/transaction-intents/deposit-requests")
+      .set(authHeaders)
+      .send({
+        idempotencyKey: "deposit-flow-validation-001",
+        assetSymbol: "usdc",
+        amount: "10"
+      });
+
+    expect(createResponse.status).toBe(201);
+
+    const intentId = createResponse.body.data.intent.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/transaction-intents/internal/deposit-requests/${intentId}/decision`)
+      .set(operatorHeaders)
+      .send({
+        decision: "approved"
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/transaction-intents/internal/deposit-requests/${intentId}/queue`)
+      .set(operatorHeaders)
+      .send({})
+      .expect(201);
+
+    const response = await request(app.getHttpServer())
+      .post(
+        `/transaction-intents/internal/worker/deposit-requests/${intentId}/broadcast`
+      )
+      .set(workerHeaders)
+      .send({
+        txHash: `0x${"9".repeat(64)}`,
+        unexpectedField: "reject-me"
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain("property unexpectedField should not exist");
+  });
+
   it("proves a full withdrawal lifecycle with reservation and settlement balance effects", async () => {
     harness.setAvailableBalance("500");
 

@@ -584,6 +584,63 @@ describe("TransactionIntentsService", () => {
     expect(transactionClient.blockchainTransaction.create).toHaveBeenCalled();
   });
 
+  it("records a deposit broadcast from the operator custody surface", async () => {
+    const { service, prismaService, transactionClient } = createService();
+
+    prismaService.transactionIntent.findFirst.mockResolvedValue(
+      createInternalIntentRecord({
+        status: TransactionIntentStatus.queued,
+        policyDecision: PolicyDecision.approved
+      })
+    );
+    transactionClient.transactionIntent.findFirst.mockResolvedValueOnce(
+      createInternalIntentRecord({
+        status: TransactionIntentStatus.queued,
+        policyDecision: PolicyDecision.approved
+      })
+    );
+    transactionClient.blockchainTransaction.create.mockResolvedValue({
+      id: "chain_tx_1"
+    });
+    transactionClient.auditEvent.create.mockResolvedValue({
+      id: "audit_broadcast_1"
+    });
+    transactionClient.transactionIntent.findFirst.mockResolvedValueOnce(
+      createInternalIntentRecord({
+        status: TransactionIntentStatus.broadcast,
+        policyDecision: PolicyDecision.approved,
+        txHash:
+          "0x1111111111111111111111111111111111111111111111111111111111111111",
+        blockchainStatus: BlockchainTransactionStatus.broadcast
+      })
+    );
+
+    const result = await service.recordDepositBroadcastByOperator(
+      "intent_1",
+      "ops_1",
+      {
+        txHash:
+          "0x1111111111111111111111111111111111111111111111111111111111111111",
+        fromAddress: "0x0000000000000000000000000000000000000def",
+        toAddress: "0x0000000000000000000000000000000000000abc"
+      }
+    );
+
+    expect(transactionClient.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          actorType: "operator",
+          actorId: "ops_1",
+          metadata: expect.objectContaining({
+            executionChannel: "manual_custody"
+          })
+        })
+      })
+    );
+    expect(result.broadcastReused).toBe(false);
+    expect(result.intent.status).toBe(TransactionIntentStatus.broadcast);
+  });
+
   it("records deposit execution failure", async () => {
     const { service, prismaService, transactionClient } = createService();
 
@@ -641,6 +698,37 @@ describe("TransactionIntentsService", () => {
     expect(result.intent.status).toBe(TransactionIntentStatus.failed);
     expect(result.intent.failureCode).toBe("broadcast_failed");
     expect(result.intent.failureReason).toBe("RPC submission failed.");
+  });
+
+  it("reuses an identical deposit execution failure instead of conflicting", async () => {
+    const { service, prismaService } = createService();
+
+    prismaService.transactionIntent.findFirst.mockResolvedValue(
+      createInternalIntentRecord({
+        status: TransactionIntentStatus.failed,
+        policyDecision: PolicyDecision.approved,
+        failureCode: "broadcast_failed",
+        failureReason: "RPC submission failed.",
+        txHash:
+          "0x1111111111111111111111111111111111111111111111111111111111111111",
+        blockchainStatus: BlockchainTransactionStatus.failed
+      })
+    );
+
+    const result = await service.failDepositIntentExecution(
+      "intent_1",
+      "worker_1",
+      {
+        failureCode: "broadcast_failed",
+        failureReason: "RPC submission failed.",
+        txHash:
+          "0x1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    );
+
+    expect(result.failureReused).toBe(true);
+    expect(result.intent.status).toBe(TransactionIntentStatus.failed);
+    expect(prismaService.$transaction).not.toHaveBeenCalled();
   });
 
   it("rejects decisioning when the deposit intent is no longer pending", async () => {
