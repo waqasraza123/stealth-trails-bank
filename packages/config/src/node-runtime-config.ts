@@ -37,10 +37,16 @@ const DEFAULT_INCIDENT_PACKAGE_RELEASE_APPROVER_ALLOWED_OPERATOR_ROLES = [
   "risk_manager"
 ] as const;
 const DEFAULT_INCIDENT_PACKAGE_RELEASE_APPROVAL_EXPIRY_HOURS = 72;
-const DEFAULT_RELEASE_READINESS_APPROVAL_ALLOWED_OPERATOR_ROLES = [
+const DEFAULT_RELEASE_READINESS_APPROVAL_REQUEST_ALLOWED_OPERATOR_ROLES = [
+  "operations_admin",
   "compliance_lead",
   "risk_manager"
 ] as const;
+const DEFAULT_RELEASE_READINESS_APPROVER_ALLOWED_OPERATOR_ROLES = [
+  "compliance_lead",
+  "risk_manager"
+] as const;
+const DEFAULT_RELEASE_READINESS_MAX_EVIDENCE_AGE_HOURS = 72;
 const DEFAULT_TRANSACTION_INTENT_DECISION_ALLOWED_OPERATOR_ROLES = [
   "operations_admin",
   "risk_manager"
@@ -704,7 +710,9 @@ export type IncidentPackageReleaseGovernanceRuntimeConfig = {
 };
 
 export type ReleaseReadinessApprovalRuntimeConfig = {
-  readonly releaseReadinessApprovalAllowedOperatorRoles: readonly string[];
+  readonly releaseReadinessApprovalRequestAllowedOperatorRoles: readonly string[];
+  readonly releaseReadinessApprovalApproverAllowedOperatorRoles: readonly string[];
+  readonly releaseReadinessApprovalMaxEvidenceAgeHours: number;
 };
 
 export type StakingPoolGovernanceRuntimeConfig = {
@@ -1385,18 +1393,48 @@ export function loadIncidentPackageReleaseGovernanceRuntimeConfig(
 export function loadReleaseReadinessApprovalRuntimeConfig(
   env: RuntimeEnvShape = getNodeRuntimeEnv()
 ): ReleaseReadinessApprovalRuntimeConfig {
+  const configuredRequestRoles = readOptionalRuntimeEnv(
+    env,
+    "RELEASE_READINESS_APPROVAL_REQUEST_ALLOWED_OPERATOR_ROLES"
+  );
   const configuredApproverRoles = readOptionalRuntimeEnv(
+    env,
+    "RELEASE_READINESS_APPROVER_ALLOWED_OPERATOR_ROLES"
+  );
+  const configuredLegacyApproverRoles = readOptionalRuntimeEnv(
     env,
     "RELEASE_READINESS_APPROVAL_ALLOWED_OPERATOR_ROLES"
   );
+  const configuredMaxEvidenceAgeHours = readOptionalRuntimeEnv(
+    env,
+    "RELEASE_READINESS_APPROVAL_MAX_EVIDENCE_AGE_HOURS"
+  );
 
   return {
-    releaseReadinessApprovalAllowedOperatorRoles: configuredApproverRoles
+    releaseReadinessApprovalRequestAllowedOperatorRoles: configuredRequestRoles
+      ? parseCommaSeparatedValues(
+          configuredRequestRoles,
+          "RELEASE_READINESS_APPROVAL_REQUEST_ALLOWED_OPERATOR_ROLES"
+        )
+      : [...DEFAULT_RELEASE_READINESS_APPROVAL_REQUEST_ALLOWED_OPERATOR_ROLES],
+    releaseReadinessApprovalApproverAllowedOperatorRoles:
+      configuredApproverRoles
       ? parseCommaSeparatedValues(
           configuredApproverRoles,
-          "RELEASE_READINESS_APPROVAL_ALLOWED_OPERATOR_ROLES"
+          "RELEASE_READINESS_APPROVER_ALLOWED_OPERATOR_ROLES"
         )
-      : [...DEFAULT_RELEASE_READINESS_APPROVAL_ALLOWED_OPERATOR_ROLES]
+      : configuredLegacyApproverRoles
+        ? parseCommaSeparatedValues(
+            configuredLegacyApproverRoles,
+            "RELEASE_READINESS_APPROVAL_ALLOWED_OPERATOR_ROLES"
+          )
+        : [...DEFAULT_RELEASE_READINESS_APPROVER_ALLOWED_OPERATOR_ROLES],
+    releaseReadinessApprovalMaxEvidenceAgeHours: configuredMaxEvidenceAgeHours
+      ? parsePositiveInteger(
+          configuredMaxEvidenceAgeHours,
+          "RELEASE_READINESS_APPROVAL_MAX_EVIDENCE_AGE_HOURS"
+        )
+      : DEFAULT_RELEASE_READINESS_MAX_EVIDENCE_AGE_HOURS
   };
 }
 

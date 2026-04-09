@@ -12,6 +12,10 @@ import {
   ReleaseReadinessEvidenceStatus,
   ReleaseReadinessEvidenceType
 } from "@prisma/client";
+import {
+  assertOperatorRoleAuthorized,
+  normalizeOperatorRole
+} from "../auth/internal-operator-role-policy";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateReleaseReadinessApprovalDto } from "./dto/create-release-readiness-approval.dto";
 import { CreateReleaseReadinessEvidenceDto } from "./dto/create-release-readiness-evidence.dto";
@@ -282,6 +286,8 @@ type ReleaseReadinessApprovalGate = {
   missingChecklistItems: string[];
   missingEvidenceTypes: ReleaseReadinessEvidenceType[];
   failedEvidenceTypes: ReleaseReadinessEvidenceType[];
+  staleEvidenceTypes: ReleaseReadinessEvidenceType[];
+  maximumEvidenceAgeHours: number;
   openBlockers: string[];
   generatedAt: string;
 };
@@ -324,13 +330,19 @@ type ReleaseReadinessApprovalList = {
 
 @Injectable()
 export class ReleaseReadinessService {
+  private readonly requestAllowedOperatorRoles: string[];
   private readonly approvalAllowedOperatorRoles: string[];
+  private readonly maxEvidenceAgeHours: number;
 
   constructor(private readonly prismaService: PrismaService) {
     const config = loadReleaseReadinessApprovalRuntimeConfig();
-    this.approvalAllowedOperatorRoles = [
-      ...config.releaseReadinessApprovalAllowedOperatorRoles
+    this.requestAllowedOperatorRoles = [
+      ...config.releaseReadinessApprovalRequestAllowedOperatorRoles
     ];
+    this.approvalAllowedOperatorRoles = [
+      ...config.releaseReadinessApprovalApproverAllowedOperatorRoles
+    ];
+    this.maxEvidenceAgeHours = config.releaseReadinessApprovalMaxEvidenceAgeHours;
   }
 
   private normalizeOptionalString(value?: string | null): string | null {
@@ -359,26 +371,20 @@ export class ReleaseReadinessService {
     return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
   }
 
-  private normalizeOperatorRole(operatorRole?: string): string | null {
-    const normalizedOperatorRole = operatorRole?.trim().toLowerCase() ?? null;
-    return normalizedOperatorRole && normalizedOperatorRole.length > 0
-      ? normalizedOperatorRole
-      : null;
+  private assertCanRequest(operatorRole?: string): string {
+    return assertOperatorRoleAuthorized(
+      operatorRole,
+      this.requestAllowedOperatorRoles,
+      "Operator role is not authorized to request launch readiness approval."
+    );
   }
 
   private assertCanApprove(operatorRole?: string): string {
-    const normalizedOperatorRole = this.normalizeOperatorRole(operatorRole);
-
-    if (
-      !normalizedOperatorRole ||
-      !this.approvalAllowedOperatorRoles.includes(normalizedOperatorRole)
-    ) {
-      throw new ForbiddenException(
-        "Operator role is not authorized to approve or reject launch readiness."
-      );
-    }
-
-    return normalizedOperatorRole;
+    return assertOperatorRoleAuthorized(
+      operatorRole,
+      this.approvalAllowedOperatorRoles,
+      "Operator role is not authorized to approve or reject launch readiness."
+    );
   }
 
   private mapEvidenceProjection(
@@ -529,11 +535,26 @@ export class ReleaseReadinessService {
     const failedEvidenceTypes = summary.requiredChecks
       .filter((check) => check.status === "failed")
       .map((check) => check.evidenceType);
+    const staleEvidenceTypes = summary.requiredChecks
+      .filter((check) => {
+        if (check.status !== "passed" || !check.latestEvidence?.observedAt) {
+          return false;
+        }
+
+        const observedAt = new Date(check.latestEvidence.observedAt);
+
+        return (
+          Date.now() - observedAt.getTime() >
+          this.maxEvidenceAgeHours * 60 * 60 * 1000
+        );
+      })
+      .map((check) => check.evidenceType);
     const openBlockers = [...checklist.openBlockers];
     const approvalEligible =
       missingChecklistItems.length === 0 &&
       missingEvidenceTypes.length === 0 &&
       failedEvidenceTypes.length === 0 &&
+      staleEvidenceTypes.length === 0 &&
       openBlockers.length === 0;
 
     const overallStatus =
@@ -555,6 +576,8 @@ export class ReleaseReadinessService {
       missingChecklistItems,
       missingEvidenceTypes,
       failedEvidenceTypes,
+      staleEvidenceTypes,
+      maximumEvidenceAgeHours: this.maxEvidenceAgeHours,
       openBlockers,
       generatedAt: summary.generatedAt
     };
@@ -620,7 +643,7 @@ export class ReleaseReadinessService {
     operatorId: string,
     operatorRole: string | undefined
   ): Promise<ReleaseReadinessEvidenceMutationResult> {
-    const normalizedOperatorRole = this.normalizeOptionalString(operatorRole);
+    const normalizedOperatorRole = normalizeOperatorRole(operatorRole);
     const runbookPath =
       this.normalizeOptionalString(dto.runbookPath) ??
       requiredReleaseReadinessChecks.find(
@@ -842,7 +865,7 @@ export class ReleaseReadinessService {
     const rollbackReleaseIdentifier = this.normalizeOptionalString(
       dto.rollbackReleaseIdentifier
     );
-    const normalizedOperatorRole = this.normalizeOptionalString(operatorRole);
+    const normalizedOperatorRole = this.assertCanRequest(operatorRole);
     const checklist = this.buildApprovalChecklist(dto);
 
     const [existingPendingApproval, readinessSummary] = await Promise.all([
@@ -945,6 +968,12 @@ export class ReleaseReadinessService {
       );
     }
 
+    if (approval.requestedByOperatorId === operatorId) {
+      throw new ForbiddenException(
+        "Launch approval requires a different approver than the requester."
+      );
+    }
+
     const readinessSummary = await this.getSummary();
     const checklist = this.mapApprovalChecklist(approval);
     const gate = this.evaluateApprovalGate(
@@ -955,7 +984,7 @@ export class ReleaseReadinessService {
 
     if (!gate.approvalEligible) {
       throw new ConflictException(
-        "Launch approval is blocked until checklist gaps, failed evidence, and open blockers are remediated."
+        "Launch approval is blocked until checklist gaps, failed or stale evidence, and open blockers are remediated."
       );
     }
 
@@ -1030,6 +1059,12 @@ export class ReleaseReadinessService {
     if (approval.status !== ReleaseReadinessApprovalStatus.pending_approval) {
       throw new ConflictException(
         "Only pending launch approvals can be rejected."
+      );
+    }
+
+    if (approval.requestedByOperatorId === operatorId) {
+      throw new ForbiddenException(
+        "Launch approval requires a different approver than the requester."
       );
     }
 

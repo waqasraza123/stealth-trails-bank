@@ -83,6 +83,8 @@ function buildApprovalRecord(
       missingChecklistItems: [],
       missingEvidenceTypes: [],
       failedEvidenceTypes: [],
+      staleEvidenceTypes: [],
+      maximumEvidenceAgeHours: 72,
       openBlockers: [],
       generatedAt: "2026-04-08T12:00:00.000Z"
     },
@@ -206,7 +208,17 @@ describe("ReleaseReadinessService", () => {
     process.env = {
       ...originalEnv
     };
+    jest
+      .spyOn(Date, "now")
+      .mockReturnValue(new Date("2026-04-08T12:00:00.000Z").getTime());
+    delete process.env["RELEASE_READINESS_APPROVAL_REQUEST_ALLOWED_OPERATOR_ROLES"];
+    delete process.env["RELEASE_READINESS_APPROVER_ALLOWED_OPERATOR_ROLES"];
     delete process.env["RELEASE_READINESS_APPROVAL_ALLOWED_OPERATOR_ROLES"];
+    delete process.env["RELEASE_READINESS_APPROVAL_MAX_EVIDENCE_AGE_HOURS"];
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   afterAll(() => {
@@ -385,6 +397,35 @@ describe("ReleaseReadinessService", () => {
     expect(transactionClient.auditEvent.create).toHaveBeenCalledTimes(1);
     expect(result.approval.gate.overallStatus).toBe("ready");
     expect(result.approval.gate.approvalEligible).toBe(true);
+    expect(result.approval.gate.staleEvidenceTypes).toEqual([]);
+  });
+
+  it("blocks launch approval requests for operators outside the request roster", async () => {
+    const { service } = createService();
+
+    await expect(
+      service.requestApproval(
+        {
+          releaseIdentifier: "release-2026-04-08.1",
+          environment: "production_like",
+          rollbackReleaseIdentifier: "release-2026-04-07.3",
+          summary: "Launch posture reviewed.",
+          securityConfigurationComplete: true,
+          accessAndGovernanceComplete: true,
+          dataAndRecoveryComplete: true,
+          platformHealthComplete: true,
+          functionalProofComplete: true,
+          contractAndChainProofComplete: true,
+          finalSignoffComplete: true,
+          unresolvedRisksAccepted: true,
+          openBlockers: []
+        },
+        "ops_1",
+        "senior_operator"
+      )
+    ).rejects.toThrow(
+      "Operator role is not authorized to request launch readiness approval."
+    );
   });
 
   it("rejects duplicate pending approval requests for the same release and environment", async () => {
@@ -444,8 +485,70 @@ describe("ReleaseReadinessService", () => {
         "risk_manager"
       )
     ).rejects.toThrow(
-      "Launch approval is blocked until checklist gaps, failed evidence, and open blockers are remediated."
+      "Launch approval is blocked until checklist gaps, failed or stale evidence, and open blockers are remediated."
     );
+  });
+
+  it("blocks self-approval so the requester cannot approve their own launch request", async () => {
+    const { service, prismaService } = createService();
+    (prismaService.releaseReadinessApproval.findUnique as jest.Mock).mockResolvedValue(
+      buildApprovalRecord()
+    );
+
+    await expect(
+      service.approveApproval(
+        "approval_1",
+        {
+          approvalNote: "Approved"
+        },
+        "ops_1",
+        "risk_manager"
+      )
+    ).rejects.toThrow(
+      "Launch approval requires a different approver than the requester."
+    );
+  });
+
+  it("blocks stale evidence from being reused for launch approval", async () => {
+    const { service, prismaService } = createService();
+    (prismaService.releaseReadinessApproval.findUnique as jest.Mock).mockResolvedValue(
+      buildApprovalRecord()
+    );
+    (prismaService.releaseReadinessEvidence.findMany as jest.Mock)
+      .mockResolvedValueOnce(
+        buildPassedRequiredEvidenceRecords().map((record) => ({
+          ...record,
+          observedAt: new Date("2026-04-04T09:05:00.000Z")
+        }))
+      )
+      .mockResolvedValueOnce([buildEvidenceRecord()])
+      .mockResolvedValueOnce(
+        buildPassedRequiredEvidenceRecords().map((record) => ({
+          ...record,
+          observedAt: new Date("2026-04-04T09:05:00.000Z")
+        }))
+      )
+      .mockResolvedValueOnce([buildEvidenceRecord()]);
+
+    await expect(
+      service.approveApproval(
+        "approval_1",
+        {
+          approvalNote: "Approved"
+        },
+        "approver_1",
+        "risk_manager"
+      )
+    ).rejects.toThrow(
+      "Launch approval is blocked until checklist gaps, failed or stale evidence, and open blockers are remediated."
+    );
+
+    const approval = await service.getApproval("approval_1");
+
+    expect(approval.approval.gate.staleEvidenceTypes).toContain(
+      ReleaseReadinessEvidenceType.platform_alert_delivery_slo
+    );
+    expect(approval.approval.gate.maximumEvidenceAgeHours).toBe(72);
   });
 
   it("approves launch readiness when the gate is healthy and operator role is allowed", async () => {
@@ -471,6 +574,8 @@ describe("ReleaseReadinessService", () => {
           missingChecklistItems: [],
           missingEvidenceTypes: [],
           failedEvidenceTypes: [],
+          staleEvidenceTypes: [],
+          maximumEvidenceAgeHours: 72,
           openBlockers: [],
           generatedAt: "2026-04-08T13:00:00.000Z"
         }
@@ -544,6 +649,8 @@ describe("ReleaseReadinessService", () => {
             ReleaseReadinessEvidenceType.critical_alert_reescalation
           ],
           failedEvidenceTypes: [],
+          staleEvidenceTypes: [],
+          maximumEvidenceAgeHours: 72,
           openBlockers: [],
           generatedAt: "2026-04-08T13:00:00.000Z"
         }
@@ -561,6 +668,26 @@ describe("ReleaseReadinessService", () => {
 
     expect(result.approval.status).toBe("rejected");
     expect(result.approval.gate.overallStatus).toBe("rejected");
+  });
+
+  it("blocks self-rejection so the requester cannot reject their own launch request", async () => {
+    const { service, prismaService } = createService();
+    (prismaService.releaseReadinessApproval.findUnique as jest.Mock).mockResolvedValue(
+      buildApprovalRecord()
+    );
+
+    await expect(
+      service.rejectApproval(
+        "approval_1",
+        {
+          rejectionNote: "Rejected"
+        },
+        "ops_1",
+        "risk_manager"
+      )
+    ).rejects.toThrow(
+      "Launch approval requires a different approver than the requester."
+    );
   });
 
   it("blocks approving an already-approved launch request", async () => {

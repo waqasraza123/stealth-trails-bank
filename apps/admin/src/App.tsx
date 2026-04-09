@@ -1792,10 +1792,15 @@ function AdminConsole() {
                   <p className="muted">
                     Evidence gaps{" "}
                     {approval.gate.failedEvidenceTypes.length > 0 ||
+                    approval.gate.staleEvidenceTypes.length > 0 ||
                     approval.gate.missingEvidenceTypes.length > 0
                       ? [
                           ...approval.gate.failedEvidenceTypes.map(
                             (value) => `failed ${value}`
+                          ),
+                          ...approval.gate.staleEvidenceTypes.map(
+                            (value) =>
+                              `stale ${value} (> ${approval.gate.maximumEvidenceAgeHours}h)`
                           ),
                           ...approval.gate.missingEvidenceTypes.map(
                             (value) => `missing ${value}`

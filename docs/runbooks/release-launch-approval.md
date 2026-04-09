@@ -42,11 +42,18 @@ Required operator headers:
 
 The service snapshots the latest release-readiness evidence state and computes whether the request is actually eligible for approval.
 
+Request policy:
+
+- only configured launch-request roles may create approval requests
+- the requester cannot later approve or reject the same launch request
+- the approval gate records stale evidence separately from missing or failed evidence
+
 ## Approval rule
 
 `POST /release-readiness/internal/approvals/:approvalId/approve` succeeds only when:
 
 - every required release-readiness proof has a latest `passed` record
+- every required `passed` proof is still fresh enough for the configured maximum evidence age
 - every checklist attestation is complete
 - no open blockers remain
 
@@ -55,6 +62,8 @@ If any of those conditions are false, the approval stays blocked and the endpoin
 ## Rejection rule
 
 `POST /release-readiness/internal/approvals/:approvalId/reject` records a durable rejection with a required rejection note and the current blocker snapshot.
+
+The requester cannot reject their own launch request; rejection follows the same dual-control rule as approval.
 
 ## Launch rule
 

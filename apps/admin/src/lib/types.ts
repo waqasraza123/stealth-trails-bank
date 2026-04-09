@@ -708,6 +708,8 @@ export type ReleaseReadinessApprovalGate = {
   missingChecklistItems: string[];
   missingEvidenceTypes: string[];
   failedEvidenceTypes: string[];
+  staleEvidenceTypes: string[];
+  maximumEvidenceAgeHours: number;
   openBlockers: string[];
   generatedAt: string;
 };
