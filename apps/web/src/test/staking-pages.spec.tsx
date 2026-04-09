@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -168,5 +168,123 @@ describe("staking product pages", () => {
     expect(
       screen.queryByRole("button", { name: /^create pool$/i })
     ).not.toBeInTheDocument();
+  });
+
+  it("submits live staking actions when the backend enables execution", async () => {
+    const user = userEvent.setup();
+    const depositMutateAsync = vi.fn().mockResolvedValue({
+      transactionHash:
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    });
+    const withdrawMutateAsync = vi.fn().mockResolvedValue({
+      transactionHash:
+        "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    });
+    const claimMutateAsync = vi.fn().mockResolvedValue({
+      transactionHash:
+        "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    });
+    const emergencyMutateAsync = vi.fn().mockResolvedValue({
+      transactionHash:
+        "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    });
+
+    mockUseMyStakingSnapshot.mockReturnValue({
+      data: {
+        walletAddress: "0x1111222233334444555566667777888899990000",
+        accountStatus: "active",
+        walletStatus: "active",
+        walletCustodyType: "platform_managed",
+        readModel: {
+          available: true,
+          message: "Live reads are available."
+        },
+        execution: {
+          available: true,
+          reasonCode: null,
+          message: "Managed staking execution is enabled."
+        },
+        pools: [
+          {
+            id: 11,
+            blockchainPoolId: 1001,
+            rewardRate: 4.8,
+            totalStakedAmount: "32.5",
+            totalRewardsPaid: "1.25",
+            poolStatus: "active",
+            createdAt: "2026-04-05T10:00:00.000Z",
+            updatedAt: "2026-04-05T11:00:00.000Z",
+            position: {
+              stakedBalance: "1.5",
+              pendingReward: "0.25",
+              canReadPosition: true
+            }
+          }
+        ]
+      },
+      isLoading: false,
+      isError: false,
+      error: null
+    } as ReturnType<typeof useMyStakingSnapshot>);
+
+    mockUseStakeDeposit.mockReturnValue({
+      mutateAsync: depositMutateAsync,
+      isPending: false
+    } as ReturnType<typeof useStakeDeposit>);
+    mockUseStakeWithdrawal.mockReturnValue({
+      mutateAsync: withdrawMutateAsync,
+      isPending: false
+    } as ReturnType<typeof useStakeWithdrawal>);
+    mockUseClaimStakeReward.mockReturnValue({
+      mutateAsync: claimMutateAsync,
+      isPending: false
+    } as ReturnType<typeof useClaimStakeReward>);
+    mockUseEmergencyStakeWithdrawal.mockReturnValue({
+      mutateAsync: emergencyMutateAsync,
+      isPending: false
+    } as ReturnType<typeof useEmergencyStakeWithdrawal>);
+
+    renderWithRouter(<Staking />);
+
+    await user.type(screen.getByLabelText(/deposit amount/i), "2.75");
+    await user.click(screen.getByRole("button", { name: /stake eth/i }));
+    await waitFor(() => {
+      expect(depositMutateAsync).toHaveBeenCalledWith({
+        poolId: 11,
+        amount: "2.75"
+      });
+    });
+
+    await user.type(screen.getByLabelText(/withdrawal amount/i), "0.5");
+    await user.click(screen.getByRole("button", { name: /withdraw stake/i }));
+    await waitFor(() => {
+      expect(withdrawMutateAsync).toHaveBeenCalledWith({
+        poolId: 11,
+        amount: "0.5"
+      });
+    });
+
+    await user.click(screen.getByRole("button", { name: /claim rewards/i }));
+    await waitFor(() => {
+      expect(claimMutateAsync).toHaveBeenCalledWith({ poolId: 11 });
+    });
+
+    await user.click(screen.getByRole("button", { name: /emergency exit/i }));
+    await waitFor(() => {
+      expect(emergencyMutateAsync).toHaveBeenCalledWith({ poolId: 11 });
+    });
+  });
+
+  it("renders an explicit backend error when the staking snapshot fails", () => {
+    mockUseMyStakingSnapshot.mockReturnValue({
+      data: null,
+      isLoading: false,
+      isError: true,
+      error: new Error("staking backend unavailable")
+    } as ReturnType<typeof useMyStakingSnapshot>);
+
+    renderWithRouter(<Staking />);
+
+    expect(screen.getByText("staking backend unavailable")).toBeInTheDocument();
   });
 });

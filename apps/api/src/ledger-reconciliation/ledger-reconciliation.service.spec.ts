@@ -4,6 +4,7 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
   })
 }));
 
+import { ConflictException } from "@nestjs/common";
 import {
   LedgerReconciliationMismatchRecommendedAction,
   LedgerReconciliationMismatchScope,
@@ -607,5 +608,68 @@ describe("LedgerReconciliationService", () => {
     );
     expect(result.autoResolvedCount).toBe(1);
     expect(result.activeMismatchCount).toBe(0);
+  });
+
+  it("dismisses an open mismatch and emits exactly one operator audit event", async () => {
+    const { service, prismaService } = createService();
+    const mismatch = buildMismatchRecord();
+    const dismissedMismatch = buildMismatchRecord({
+      status: LedgerReconciliationMismatchStatus.dismissed,
+      dismissedAt: new Date("2026-04-06T00:12:00.000Z"),
+      dismissedByOperatorId: "ops_1",
+      resolutionNote: "No repair needed."
+    });
+
+    jest.spyOn(service as any, "findMismatchById").mockResolvedValue(mismatch);
+    (prismaService.ledgerReconciliationMismatch.update as jest.Mock).mockResolvedValue(
+      dismissedMismatch
+    );
+    (prismaService.auditEvent.create as jest.Mock).mockResolvedValue(undefined);
+
+    const result = await service.dismissMismatch(
+      "mismatch_1",
+      "ops_1",
+      "No repair needed."
+    );
+
+    expect(prismaService.ledgerReconciliationMismatch.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: "mismatch_1"
+        },
+        data: expect.objectContaining({
+          status: LedgerReconciliationMismatchStatus.dismissed,
+          dismissedByOperatorId: "ops_1",
+          resolutionNote: "No repair needed."
+        })
+      })
+    );
+    expect(prismaService.auditEvent.create).toHaveBeenCalledTimes(1);
+    expect(prismaService.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          actorType: "operator",
+          actorId: "ops_1",
+          action: "ledger_reconciliation.mismatch.dismissed",
+          targetType: "LedgerReconciliationMismatch",
+          targetId: "mismatch_1"
+        })
+      })
+    );
+    expect(result.mismatch.status).toBe("dismissed");
+  });
+
+  it("rejects dismissing a mismatch that is already resolved", async () => {
+    const { service } = createService();
+
+    jest.spyOn(service as any, "findMismatchById").mockResolvedValue(
+      buildMismatchRecord({
+        status: LedgerReconciliationMismatchStatus.resolved
+      })
+    );
+
+    await expect(
+      service.dismissMismatch("mismatch_1", "ops_1", null)
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

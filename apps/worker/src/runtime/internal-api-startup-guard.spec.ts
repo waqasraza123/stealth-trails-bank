@@ -107,3 +107,25 @@ test("startup unavailability falls through after the grace period", () => {
 
   assert.equal(handled, false);
 });
+
+test("startup grace helpers no-op when the grace period is disabled or no wait state exists", () => {
+  assert.equal(
+    isWithinInternalApiStartupGracePeriod({
+      workerStartedAtMs: 1_000,
+      nowMs: 1_100,
+      startupGracePeriodMs: 0
+    }),
+    false
+  );
+
+  reportInternalApiStartupAvailable({
+    logger: {
+      info() {
+        throw new Error("should not log when startup waiting was never entered");
+      }
+    },
+    state: createInternalApiStartupAvailabilityState(),
+    baseUrl: "http://localhost:9101",
+    nowMs: 2_000
+  });
+});

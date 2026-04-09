@@ -235,4 +235,49 @@ describe("wallet page", () => {
     expect(screen.getByText(/Latest withdrawal request/i)).toBeInTheDocument();
     expect(screen.getByText(/25 USDC/i)).toBeInTheDocument();
   });
+
+  it("blocks invalid deposit amounts before the mutation is called", async () => {
+    const user = userEvent.setup();
+
+    renderWithRouter(<Wallet />);
+
+    await user.type(
+      screen.getByLabelText(/^Amount$/i, { selector: "#deposit-amount" }),
+      "abc"
+    );
+    await user.click(
+      screen.getByRole("button", { name: /create deposit request/i })
+    );
+
+    expect(mutateDepositAsync).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        /Amount must be a positive decimal string with up to 18 decimal places/i
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("blocks invalid withdrawal destination addresses before the mutation is called", async () => {
+    const user = userEvent.setup();
+
+    renderWithRouter(<Wallet />);
+
+    await user.selectOptions(
+      screen.getByLabelText(/^Asset$/i, { selector: "#withdraw-asset" }),
+      "USDC"
+    );
+    await user.type(screen.getByLabelText(/destination address/i), "invalid");
+    await user.type(
+      screen.getByLabelText(/^Amount$/i, { selector: "#withdraw-amount" }),
+      "25"
+    );
+    await user.click(
+      screen.getByRole("button", { name: /create withdrawal request/i })
+    );
+
+    expect(mutateWithdrawalAsync).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(/Destination address must be a valid EVM address/i)
+    ).toBeInTheDocument();
+  });
 });

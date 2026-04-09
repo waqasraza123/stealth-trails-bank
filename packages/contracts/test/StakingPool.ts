@@ -96,6 +96,31 @@ describe("StakingPool", function () {
     );
   });
 
+  it("rejects zero-value deposits and withdrawal boundary violations", async function () {
+    await stakingPool.createPool(10, 42);
+
+    await expectRevert(
+      stakingPool.connect(addr1).deposit(1, 0n, {
+        value: 0n
+      }),
+      "Amount must be greater than 0"
+    );
+
+    const depositAmount = hre.ethers.parseEther("1");
+    await stakingPool.connect(addr1).deposit(1, depositAmount, {
+      value: depositAmount
+    });
+
+    await expectRevert(
+      stakingPool.connect(addr1).withdraw(1, 0n),
+      "Withdrawal amount must be greater than zero"
+    );
+    await expectRevert(
+      stakingPool.connect(addr1).withdraw(1, hre.ethers.parseEther("2")),
+      "Insufficient staked balance"
+    );
+  });
+
   it("pauses deposits without blocking later exits", async function () {
     const depositAmount = hre.ethers.parseEther("1");
 

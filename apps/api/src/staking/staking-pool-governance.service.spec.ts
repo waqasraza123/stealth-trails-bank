@@ -140,6 +140,21 @@ describe("StakingPoolGovernanceService", () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it("blocks approval for operator roles outside the governance approver policy", async () => {
+    const { service } = createService();
+
+    await expect(
+      service.approveRequest(
+        "request_1",
+        {
+          approvalNote: "approved"
+        },
+        "ops_1",
+        "operations_admin"
+      )
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   it("executes an approved governance request and links the created pool", async () => {
     const { service, prismaService, stakingService } = createService();
 
@@ -276,5 +291,20 @@ describe("StakingPoolGovernanceService", () => {
       }),
       include: expect.any(Object)
     });
+  });
+
+  it("blocks execution for operator roles outside the treasury executor policy", async () => {
+    const { service } = createService();
+
+    await expect(
+      service.executeRequest(
+        "request_1",
+        {
+          executionNote: "attempted with the wrong role"
+        },
+        "ops_1",
+        "risk_manager"
+      )
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

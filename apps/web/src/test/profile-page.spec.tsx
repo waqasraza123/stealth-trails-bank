@@ -73,4 +73,18 @@ describe("profile page", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
   });
+
+  it("renders a destructive profile alert when the backend profile request fails", () => {
+    mockUseGetUser.mockReturnValue({
+      data: null,
+      isLoading: false,
+      isError: true,
+      error: new Error("profile backend unavailable")
+    } as ReturnType<typeof useGetUser>);
+
+    renderWithRouter(<Profile />);
+
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByText("profile backend unavailable")).toBeInTheDocument();
+  });
 });

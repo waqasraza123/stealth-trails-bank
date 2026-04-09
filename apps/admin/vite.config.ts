@@ -17,6 +17,31 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",
-    css: true
+    css: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov"],
+      include: [
+        "src/components/LanguageSwitcher.tsx",
+        "src/i18n/**/*.ts",
+        "src/i18n/**/*.tsx",
+        "src/lib/format.ts"
+      ],
+      exclude: [
+        "**/*.config.*",
+        "src/test/**",
+        "src/**/*.spec.ts",
+        "src/**/*.spec.tsx",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/lib/api.ts"
+      ],
+      thresholds: {
+        statements: 70,
+        branches: 60,
+        functions: 70,
+        lines: 70
+      }
+    }
   }
 });

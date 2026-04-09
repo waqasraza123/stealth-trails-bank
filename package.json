@@ -8,6 +8,11 @@
     "build": "turbo build",
     "lint": "turbo lint",
     "test": "turbo test",
+    "test:unit": "pnpm --filter @stealth-trails-bank/api test:unit && pnpm --filter @stealth-trails-bank/worker test && pnpm --filter @stealth-trails-bank/web test && pnpm --filter @stealth-trails-bank/admin test",
+    "test:integration": "pnpm --filter @stealth-trails-bank/api test:integration && pnpm --filter @stealth-trails-bank/contracts test",
+    "test:e2e": "playwright test",
+    "test:coverage": "pnpm --filter @stealth-trails-bank/api test:coverage && pnpm --filter @stealth-trails-bank/worker test:coverage && pnpm --filter @stealth-trails-bank/web test:coverage && pnpm --filter @stealth-trails-bank/admin test:coverage",
+    "test:ci": "pnpm build && pnpm test:unit && pnpm test:integration && pnpm test:coverage && pnpm test:e2e",
     "compile": "turbo run compile",
     "release:readiness:probe": "pnpm --filter @stealth-trails-bank/api release-readiness:probe",
     "release:readiness:verify": "pnpm --filter @stealth-trails-bank/api release-readiness:verify",
@@ -16,6 +21,7 @@
     "setup:hooks": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
+    "@playwright/test": "^1.54.2",
     "turbo": "^2.4.4"
   }
 }

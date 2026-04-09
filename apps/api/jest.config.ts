@@ -18,7 +18,25 @@ const config: Config = {
       "<rootDir>/../../packages/config/api.ts"
   },
   clearMocks: true,
-  modulePathIgnorePatterns: ["<rootDir>/dist"]
+  modulePathIgnorePatterns: ["<rootDir>/dist"],
+  collectCoverageFrom: [
+    "<rootDir>/src/transaction-intents/transaction-intents-worker.controller.ts",
+    "<rootDir>/src/release-readiness/release-readiness.service.ts",
+    "<rootDir>/src/release-readiness/release-readiness-proof-runner.ts",
+    "!<rootDir>/src/**/*.spec.ts",
+    "!<rootDir>/src/**/*.integration.spec.ts",
+    "!<rootDir>/src/**/*.d.ts"
+  ],
+  coverageDirectory: "<rootDir>/coverage",
+  coverageReporters: ["text", "lcov"],
+  coverageThreshold: {
+    global: {
+      statements: 80,
+      branches: 50,
+      functions: 80,
+      lines: 80
+    }
+  }
 };
 
 export default config;

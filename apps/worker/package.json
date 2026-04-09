@@ -13,7 +13,8 @@
     "clean": "rm -rf dist",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "test": "tsx --test src/**/*.spec.ts"
+    "test": "tsx --test src/**/*.spec.ts",
+    "test:coverage": "c8 --reporter=text --reporter=lcov --exclude 'src/**/*.spec.ts' --exclude 'src/index.ts' --check-coverage --lines 90 --functions 90 --statements 90 --branches 85 -- tsx --test 'src/**/*.spec.ts'"
   },
   "dependencies": {
     "@stealth-trails-bank/config": "workspace:*",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.5.5",
+    "c8": "^10.1.3",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }

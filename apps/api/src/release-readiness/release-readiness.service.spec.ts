@@ -387,6 +387,40 @@ describe("ReleaseReadinessService", () => {
     expect(result.approval.gate.approvalEligible).toBe(true);
   });
 
+  it("rejects duplicate pending approval requests for the same release and environment", async () => {
+    const { service, prismaService } = createService();
+    (prismaService.releaseReadinessApproval.findFirst as jest.Mock).mockResolvedValue(
+      buildApprovalRecord()
+    );
+    (prismaService.releaseReadinessEvidence.findMany as jest.Mock).mockResolvedValue(
+      buildPassedRequiredEvidenceRecords()
+    );
+
+    await expect(
+      service.requestApproval(
+        {
+          releaseIdentifier: "release-2026-04-08.1",
+          environment: "production_like",
+          rollbackReleaseIdentifier: "release-2026-04-07.3",
+          summary: "Launch posture reviewed.",
+          securityConfigurationComplete: true,
+          accessAndGovernanceComplete: true,
+          dataAndRecoveryComplete: true,
+          platformHealthComplete: true,
+          functionalProofComplete: true,
+          contractAndChainProofComplete: true,
+          finalSignoffComplete: true,
+          unresolvedRisksAccepted: true,
+          openBlockers: []
+        },
+        "ops_1",
+        "operations_admin"
+      )
+    ).rejects.toThrow(
+      "A pending launch approval already exists for this release identifier and environment."
+    );
+  });
+
   it("blocks approval when required evidence is still missing", async () => {
     const { service, prismaService } = createService();
     (prismaService.releaseReadinessApproval.findUnique as jest.Mock).mockResolvedValue(
@@ -464,6 +498,23 @@ describe("ReleaseReadinessService", () => {
     expect(result.approval.gate.overallStatus).toBe("approved");
   });
 
+  it("blocks approval for operator roles outside the launch-approval roster", async () => {
+    const { service } = createService();
+
+    await expect(
+      service.approveApproval(
+        "approval_1",
+        {
+          approvalNote: "Approved for launch."
+        },
+        "ops_1",
+        "operations_admin"
+      )
+    ).rejects.toThrow(
+      "Operator role is not authorized to approve or reject launch readiness."
+    );
+  });
+
   it("rejects launch readiness using the approver gate", async () => {
     const { service, prismaService, transactionClient } = createService();
     (prismaService.releaseReadinessApproval.findUnique as jest.Mock).mockResolvedValue(
@@ -510,5 +561,28 @@ describe("ReleaseReadinessService", () => {
 
     expect(result.approval.status).toBe("rejected");
     expect(result.approval.gate.overallStatus).toBe("rejected");
+  });
+
+  it("blocks approving an already-approved launch request", async () => {
+    const { service, prismaService } = createService();
+    (prismaService.releaseReadinessApproval.findUnique as jest.Mock).mockResolvedValue(
+      buildApprovalRecord({
+        status: ReleaseReadinessApprovalStatus.approved,
+        approvedByOperatorId: "approver_1",
+        approvedByOperatorRole: "risk_manager",
+        approvedAt: new Date("2026-04-08T13:00:00.000Z")
+      })
+    );
+
+    await expect(
+      service.approveApproval(
+        "approval_1",
+        {
+          approvalNote: "Approved for launch."
+        },
+        "approver_2",
+        "risk_manager"
+      )
+    ).rejects.toThrow("Only pending launch approvals can be approved.");
   });
 });

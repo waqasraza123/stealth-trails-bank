@@ -62,5 +62,49 @@ export default defineConfig(({ mode }) => ({
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",
     css: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov"],
+      include: [
+        "src/App.tsx",
+        "src/components/Layout.tsx",
+        "src/components/LanguageSwitcher.tsx",
+        "src/components/auth/AuthShell.tsx",
+        "src/components/auth/auth-content.ts",
+        "src/components/dashboard/RecentTransactions.tsx",
+        "src/components/dashboard/TransactionItem.tsx",
+        "src/components/routing/ProtectedRoute.tsx",
+        "src/components/staking/**/*.tsx",
+        "src/components/transactions/TransactionFilter.tsx",
+        "src/i18n/**/*.ts",
+        "src/i18n/**/*.tsx",
+        "src/lib/customer-account.ts",
+        "src/lib/customer-finance.ts",
+        "src/pages/Index.tsx",
+        "src/pages/Profile.tsx",
+        "src/pages/Staking.tsx",
+        "src/pages/Transactions.tsx",
+        "src/pages/Wallet.tsx",
+        "src/pages/auth/*.tsx",
+        "src/pages/wallet/*.tsx"
+      ],
+      exclude: [
+        "**/*.config.*",
+        "scripts/**",
+        "src/test/**",
+        "src/**/*.spec.ts",
+        "src/**/*.spec.tsx",
+        "src/main.tsx",
+        "src/components/ui/**",
+        "src/hooks/**",
+        "src/stores/**"
+      ],
+      thresholds: {
+        statements: 75,
+        branches: 65,
+        functions: 75,
+        lines: 75
+      }
+    }
   },
 }));
