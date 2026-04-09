@@ -110,6 +110,12 @@ test("synthetic mode records broadcasts and settles them", async () => {
         limit: 20
       };
     },
+    async listConfirmedDepositIntentsReadyToSettle() {
+      return { intents: [], limit: 20 };
+    },
+    async listConfirmedWithdrawalIntentsReadyToSettle() {
+      return { intents: [], limit: 20 };
+    },
     async recordDepositBroadcast(intentId: string) {
       operations.push(`recordDepositBroadcast:${intentId}`);
     },
@@ -214,6 +220,12 @@ test("monitor mode confirms and settles broadcast intents with enough confirmati
     async listBroadcastWithdrawalIntents() {
       return { intents: [], limit: 20 };
     },
+    async listConfirmedDepositIntentsReadyToSettle() {
+      return { intents: [], limit: 20 };
+    },
+    async listConfirmedWithdrawalIntentsReadyToSettle() {
+      return { intents: [], limit: 20 };
+    },
     async recordDepositBroadcast() {
       throw new Error("should not broadcast in monitor mode");
     },
@@ -294,6 +306,137 @@ test("monitor mode confirms and settles broadcast intents with enough confirmati
   ]);
 });
 
+test("worker settles confirmed recovery backlog after the broadcast pass", async () => {
+  const operations: string[] = [];
+
+  const client = {
+    async listQueuedDepositIntents() {
+      return { intents: [], limit: 20 };
+    },
+    async listQueuedWithdrawalIntents() {
+      return { intents: [], limit: 20 };
+    },
+    async listBroadcastDepositIntents() {
+      return { intents: [], limit: 20 };
+    },
+    async listBroadcastWithdrawalIntents() {
+      return { intents: [], limit: 20 };
+    },
+    async listConfirmedDepositIntentsReadyToSettle() {
+      return {
+        intents: [
+          createIntent("deposit_confirmed_1", {
+            status: "confirmed",
+            latestBlockchainTransaction: {
+              id: "btx_3",
+              txHash:
+                "0x4444444444444444444444444444444444444444444444444444444444444444",
+              status: "confirmed",
+              fromAddress: "0x000000000000000000000000000000000000dEaD",
+              toAddress: "0x0000000000000000000000000000000000000abc",
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              confirmedAt: new Date().toISOString()
+            }
+          })
+        ],
+        limit: 20
+      };
+    },
+    async listConfirmedWithdrawalIntentsReadyToSettle() {
+      return {
+        intents: [
+          createIntent("withdrawal_confirmed_1", {
+            status: "confirmed",
+            latestBlockchainTransaction: {
+              id: "btx_4",
+              txHash:
+                "0x5555555555555555555555555555555555555555555555555555555555555555",
+              status: "confirmed",
+              fromAddress: "0x0000000000000000000000000000000000000def",
+              toAddress: "0x0000000000000000000000000000000000000fed",
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              confirmedAt: new Date().toISOString()
+            }
+          })
+        ],
+        limit: 20
+      };
+    },
+    async recordDepositBroadcast() {
+      throw new Error("no broadcast expected");
+    },
+    async confirmDepositIntent() {
+      throw new Error("no confirm expected");
+    },
+    async settleDepositIntent(intentId: string) {
+      operations.push(`settleDepositIntent:${intentId}`);
+    },
+    async failDepositIntent() {
+      throw new Error("no deposit failure expected");
+    },
+    async recordWithdrawalBroadcast() {
+      throw new Error("no broadcast expected");
+    },
+    async confirmWithdrawalIntent() {
+      throw new Error("no confirm expected");
+    },
+    async settleWithdrawalIntent(intentId: string) {
+      operations.push(`settleWithdrawalIntent:${intentId}`);
+    },
+    async failWithdrawalIntent() {
+      throw new Error("no withdrawal failure expected");
+    },
+    async reportWorkerHeartbeat() {
+      throw new Error("worker heartbeat reporting is handled outside the orchestrator");
+    },
+    async triggerLedgerReconciliationScan() {
+      throw new Error("reconciliation scan scheduling is handled outside the orchestrator");
+    },
+    async triggerCriticalAlertReEscalationSweep() {
+      throw new Error("platform alert re-escalation is handled outside the orchestrator");
+    }
+  };
+
+  const orchestrator = new WorkerOrchestrator({
+    runtime: {
+      environment: "production",
+      workerId: "worker_1",
+      internalApiBaseUrl: "https://internal.example.com",
+      internalWorkerApiKey: "secret",
+      executionMode: "monitor",
+      pollIntervalMs: 10,
+      batchLimit: 20,
+      requestTimeoutMs: 1000,
+      internalApiStartupGracePeriodMs: 45000,
+      confirmationBlocks: 2,
+      reconciliationScanIntervalMs: 300000,
+      platformAlertReEscalationIntervalMs: 300000,
+      rpcUrl: "https://rpc.example.com",
+      depositSignerPrivateKey: null
+    },
+    internalApiClient: client,
+    rpcClient: {
+      async getBlockNumber() {
+        return 101n;
+      },
+      async getTransactionReceipt() {
+        return null;
+      }
+    },
+    depositBroadcaster: null,
+    logger: createLogger()
+  });
+
+  await orchestrator.runOnce();
+
+  assert.deepEqual(operations, [
+    "settleDepositIntent:deposit_confirmed_1",
+    "settleWithdrawalIntent:withdrawal_confirmed_1"
+  ]);
+});
+
 test("managed mode broadcasts queued deposits and leaves withdrawals for manual custody execution", async () => {
   const operations: string[] = [];
   const { logger, warnings } = createCapturingLogger();
@@ -309,6 +452,12 @@ test("managed mode broadcasts queued deposits and leaves withdrawals for manual 
       return { intents: [], limit: 20 };
     },
     async listBroadcastWithdrawalIntents() {
+      return { intents: [], limit: 20 };
+    },
+    async listConfirmedDepositIntentsReadyToSettle() {
+      return { intents: [], limit: 20 };
+    },
+    async listConfirmedWithdrawalIntentsReadyToSettle() {
       return { intents: [], limit: 20 };
     },
     async recordDepositBroadcast(intentId: string, payload: { txHash: string }) {
@@ -420,6 +569,12 @@ test("managed mode permanently fails malformed deposit intents", async () => {
       return { intents: [], limit: 20 };
     },
     async listBroadcastWithdrawalIntents() {
+      return { intents: [], limit: 20 };
+    },
+    async listConfirmedDepositIntentsReadyToSettle() {
+      return { intents: [], limit: 20 };
+    },
+    async listConfirmedWithdrawalIntentsReadyToSettle() {
       return { intents: [], limit: 20 };
     },
     async recordDepositBroadcast() {

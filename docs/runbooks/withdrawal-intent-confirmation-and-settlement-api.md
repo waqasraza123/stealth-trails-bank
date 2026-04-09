@@ -36,6 +36,22 @@ Expected behavior:
   - `policyDecision = approved`
 - includes latest blockchain transaction
 
+## List confirmed withdrawal intents ready for settlement recovery
+
+Endpoint:
+
+    GET /transaction-intents/internal/worker/withdrawal-requests/confirmed-ready-to-settle?limit=20
+
+Expected behavior:
+
+- returns withdrawal intents with:
+  - `status = confirmed`
+  - `policyDecision = approved`
+  - latest blockchain transaction status = `confirmed`
+  - no existing `LedgerJournal`
+- sorts oldest first
+- lets the worker recover intents stranded after confirmation if a prior settle call failed or timed out
+
 ## Confirm a broadcast withdrawal intent
 
 Endpoint:

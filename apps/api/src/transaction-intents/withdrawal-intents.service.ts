@@ -24,6 +24,7 @@ import { DecideWithdrawalIntentDto } from "./dto/decide-withdrawal-intent.dto";
 import { FailWithdrawalIntentExecutionDto } from "./dto/fail-withdrawal-intent-execution.dto";
 import { ListApprovedWithdrawalIntentsDto } from "./dto/list-approved-withdrawal-intents.dto";
 import { ListBroadcastWithdrawalIntentsDto } from "./dto/list-broadcast-withdrawal-intents.dto";
+import { ListConfirmedWithdrawalIntentsDto } from "./dto/list-confirmed-withdrawal-intents.dto";
 import { ListPendingWithdrawalIntentsDto } from "./dto/list-pending-withdrawal-intents.dto";
 import { ListQueuedWithdrawalIntentsDto } from "./dto/list-queued-withdrawal-intents.dto";
 import { QueueApprovedWithdrawalIntentDto } from "./dto/queue-approved-withdrawal-intent.dto";
@@ -205,6 +206,11 @@ type FailWithdrawalIntentExecutionResult = {
 };
 
 type ListBroadcastWithdrawalIntentsResult = {
+  intents: WithdrawalIntentReviewProjection[];
+  limit: number;
+};
+
+type ListConfirmedWithdrawalIntentsResult = {
   intents: WithdrawalIntentReviewProjection[];
   limit: number;
 };
@@ -1944,6 +1950,86 @@ export class WithdrawalIntentsService {
         chainId: this.productChainId,
         status: TransactionIntentStatus.broadcast,
         policyDecision: PolicyDecision.approved
+      },
+      orderBy: {
+        createdAt: "asc"
+      },
+      take: limit,
+      include: {
+        asset: {
+          select: {
+            id: true,
+            symbol: true,
+            displayName: true,
+            decimals: true,
+            chainId: true
+          }
+        },
+        sourceWallet: {
+          select: {
+            id: true,
+            address: true
+          }
+        },
+        customerAccount: {
+          select: {
+            id: true,
+            customerId: true,
+            customer: {
+              select: {
+                id: true,
+                supabaseUserId: true,
+                email: true,
+                firstName: true,
+                lastName: true
+              }
+            }
+          }
+        },
+        blockchainTransactions: {
+          orderBy: {
+            createdAt: "desc"
+          },
+          take: 1,
+          select: {
+            id: true,
+            txHash: true,
+            status: true,
+            fromAddress: true,
+            toAddress: true,
+            createdAt: true,
+            updatedAt: true,
+            confirmedAt: true
+          }
+        }
+      }
+    });
+
+    return {
+      intents: intents.map((intent) => this.mapIntentReviewProjection(intent)),
+      limit
+    };
+  }
+
+  async listConfirmedWithdrawalIntentsReadyToSettle(
+    query: ListConfirmedWithdrawalIntentsDto
+  ): Promise<ListConfirmedWithdrawalIntentsResult> {
+    const limit = query.limit ?? 20;
+
+    const intents = await this.prismaService.transactionIntent.findMany({
+      where: {
+        intentType: TransactionIntentType.withdrawal,
+        chainId: this.productChainId,
+        status: TransactionIntentStatus.confirmed,
+        policyDecision: PolicyDecision.approved,
+        ledgerJournal: {
+          is: null
+        },
+        blockchainTransactions: {
+          some: {
+            status: BlockchainTransactionStatus.confirmed
+          }
+        }
       },
       orderBy: {
         createdAt: "asc"

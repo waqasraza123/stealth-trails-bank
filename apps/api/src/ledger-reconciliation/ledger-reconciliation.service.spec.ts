@@ -107,6 +107,12 @@ function createService() {
       create: jest.fn(),
       findMany: jest.fn()
     },
+    reviewCase: {
+      update: jest.fn()
+    },
+    reviewCaseEvent: {
+      create: jest.fn()
+    },
     $transaction: jest.fn()
   } as unknown as PrismaService;
 
@@ -194,7 +200,10 @@ describe("LedgerReconciliationService", () => {
         scope: "customer_balance",
         customerAccountId: "account_1"
       },
-      "ops_1"
+      {
+        actorType: "operator",
+        actorId: "ops_1"
+      }
     );
 
     expect(prismaService.ledgerReconciliationMismatch.update).toHaveBeenCalledWith(
@@ -446,5 +455,157 @@ describe("LedgerReconciliationService", () => {
     );
     expect(result.scanRun.status).toBe("succeeded");
     expect(result.result.activeMismatchCount).toBe(1);
+  });
+
+  it("records worker-triggered mismatch audit events with worker actor type", async () => {
+    const { service, prismaService } = createService();
+
+    jest
+      .spyOn(service as any, "buildTransactionIntentCandidates")
+      .mockResolvedValue([]);
+    jest.spyOn(service as any, "buildBalanceCandidates").mockResolvedValue([
+      {
+        mismatchKey: "customer_balance:account_1:asset_1",
+        scope: LedgerReconciliationMismatchScope.customer_balance,
+        severity: LedgerReconciliationMismatchSeverity.critical,
+        recommendedAction:
+          LedgerReconciliationMismatchRecommendedAction.open_review_case,
+        reasonCode: "customer_asset_balance_projection_unrepairable",
+        summary: "Projection cannot be repaired safely.",
+        chainId: 8453,
+        customerId: "customer_1",
+        customerAccountId: "account_1",
+        transactionIntentId: null,
+        assetId: "asset_1",
+        linkedReviewCaseId: null,
+        latestSnapshot: {
+          scope: "customer_balance"
+        }
+      }
+    ]);
+
+    (prismaService.ledgerReconciliationMismatch.findMany as jest.Mock)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([buildMismatchRecord()]);
+    (prismaService.ledgerReconciliationMismatch.create as jest.Mock).mockResolvedValue(
+      buildMismatchRecord()
+    );
+    (prismaService.auditEvent.create as jest.Mock).mockResolvedValue(undefined);
+
+    await service.scanMismatches(
+      {
+        scope: "customer_balance",
+        customerAccountId: "account_1"
+      },
+      {
+        actorType: "worker",
+        actorId: "worker_1"
+      }
+    );
+
+    expect(prismaService.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          actorType: "worker",
+          actorId: "worker_1",
+          action: "ledger_reconciliation.mismatch.opened"
+        })
+      })
+    );
+  });
+
+  it("auto-resolves an active linked reconciliation review case when a mismatch clears", async () => {
+    const { service, prismaService } = createService();
+
+    jest
+      .spyOn(service as any, "buildTransactionIntentCandidates")
+      .mockResolvedValue([]);
+    jest.spyOn(service as any, "buildBalanceCandidates").mockResolvedValue([]);
+
+    const existingMismatch = buildMismatchRecord({
+      linkedReviewCaseId: "review_case_1",
+      linkedReviewCase: {
+        id: "review_case_1",
+        type: ReviewCaseType.reconciliation_review,
+        status: ReviewCaseStatus.in_progress,
+        assignedOperatorId: "ops_2",
+        updatedAt: new Date("2026-04-06T00:06:00.000Z")
+      }
+    });
+    const resolvedMismatch = buildMismatchRecord({
+      status: LedgerReconciliationMismatchStatus.resolved,
+      recommendedAction: LedgerReconciliationMismatchRecommendedAction.none,
+      linkedReviewCaseId: "review_case_1",
+      linkedReviewCase: existingMismatch.linkedReviewCase,
+      resolvedAt: new Date("2026-04-06T00:10:00.000Z"),
+      updatedAt: new Date("2026-04-06T00:10:00.000Z")
+    });
+
+    (prismaService.ledgerReconciliationMismatch.findMany as jest.Mock)
+      .mockResolvedValueOnce([existingMismatch])
+      .mockResolvedValueOnce([]);
+
+    const transaction = {
+      ledgerReconciliationMismatch: {
+        update: jest.fn().mockResolvedValue(resolvedMismatch)
+      },
+      reviewCase: {
+        update: jest.fn().mockResolvedValue(undefined)
+      },
+      reviewCaseEvent: {
+        create: jest.fn().mockResolvedValue(undefined)
+      },
+      auditEvent: {
+        create: jest.fn().mockResolvedValue(undefined)
+      }
+    };
+
+    (prismaService.$transaction as jest.Mock).mockImplementation(
+      async (callback: (client: typeof transaction) => Promise<unknown>) =>
+        callback(transaction)
+    );
+
+    const result = await service.scanMismatches(
+      {
+        scope: "customer_balance",
+        customerAccountId: "account_1"
+      },
+      {
+        actorType: "operator",
+        actorId: "ops_1"
+      }
+    );
+
+    expect(transaction.reviewCase.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: "review_case_1"
+        },
+        data: expect.objectContaining({
+          status: ReviewCaseStatus.resolved
+        })
+      })
+    );
+    expect(transaction.reviewCaseEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          reviewCaseId: "review_case_1",
+          actorType: "operator",
+          actorId: "ops_1",
+          eventType: "resolved"
+        })
+      })
+    );
+    expect(transaction.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          targetType: "ReviewCase",
+          targetId: "review_case_1",
+          action: "review_case.resolved"
+        })
+      })
+    );
+    expect(result.autoResolvedCount).toBe(1);
+    expect(result.activeMismatchCount).toBe(0);
   });
 });

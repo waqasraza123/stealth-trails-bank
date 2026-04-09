@@ -14,6 +14,7 @@ import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { ConfirmWithdrawalIntentDto } from "./dto/confirm-withdrawal-intent.dto";
 import { FailWithdrawalIntentExecutionDto } from "./dto/fail-withdrawal-intent-execution.dto";
 import { ListBroadcastWithdrawalIntentsDto } from "./dto/list-broadcast-withdrawal-intents.dto";
+import { ListConfirmedWithdrawalIntentsDto } from "./dto/list-confirmed-withdrawal-intents.dto";
 import { ListQueuedWithdrawalIntentsDto } from "./dto/list-queued-withdrawal-intents.dto";
 import { RecordWithdrawalBroadcastDto } from "./dto/record-withdrawal-broadcast.dto";
 import { SettleConfirmedWithdrawalIntentDto } from "./dto/settle-confirmed-withdrawal-intent.dto";
@@ -70,6 +71,30 @@ export class WithdrawalIntentsWorkerController {
     return {
       status: "success",
       message: "Broadcast withdrawal requests retrieved successfully.",
+      data: result
+    };
+  }
+
+  @Get("withdrawal-requests/confirmed-ready-to-settle")
+  async listConfirmedWithdrawalIntentsReadyToSettle(
+    @Query(
+      new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
+    query: ListConfirmedWithdrawalIntentsDto
+  ): Promise<CustomJsonResponse> {
+    const result =
+      await this.withdrawalIntentsService.listConfirmedWithdrawalIntentsReadyToSettle(
+        query
+      );
+
+    return {
+      status: "success",
+      message:
+        "Confirmed withdrawal requests ready to settle retrieved successfully.",
       data: result
     };
   }

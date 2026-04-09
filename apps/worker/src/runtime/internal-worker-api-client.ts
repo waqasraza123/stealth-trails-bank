@@ -128,6 +128,20 @@ export function createInternalWorkerApiClient(runtime: WorkerRuntime) {
       );
     },
 
+    async listConfirmedDepositIntentsReadyToSettle(
+      limit: number
+    ): Promise<ListIntentsResult> {
+      return readResponseData(
+        httpClient.get<ApiEnvelope<ListIntentsResult>>(
+          "/transaction-intents/internal/worker/deposit-requests/confirmed-ready-to-settle",
+          {
+            params: { limit }
+          }
+        ),
+        baseUrl
+      );
+    },
+
     async recordDepositBroadcast(
       intentId: string,
       payload: RecordBroadcastPayload
@@ -198,6 +212,20 @@ export function createInternalWorkerApiClient(runtime: WorkerRuntime) {
       return readResponseData(
         httpClient.get<ApiEnvelope<ListIntentsResult>>(
           "/transaction-intents/internal/worker/withdrawal-requests/broadcast",
+          {
+            params: { limit }
+          }
+        ),
+        baseUrl
+      );
+    },
+
+    async listConfirmedWithdrawalIntentsReadyToSettle(
+      limit: number
+    ): Promise<ListIntentsResult> {
+      return readResponseData(
+        httpClient.get<ApiEnvelope<ListIntentsResult>>(
+          "/transaction-intents/internal/worker/withdrawal-requests/confirmed-ready-to-settle",
           {
             params: { limit }
           }

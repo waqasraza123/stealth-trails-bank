@@ -96,6 +96,8 @@ export type WorkerIterationMetrics = {
   queuedWithdrawalCount: number;
   broadcastDepositCount: number;
   broadcastWithdrawalCount: number;
+  confirmedDepositReadyToSettleCount: number;
+  confirmedWithdrawalReadyToSettleCount: number;
   depositBroadcastRecordedCount: number;
   withdrawalBroadcastRecordedCount: number;
   depositConfirmedCount: number;

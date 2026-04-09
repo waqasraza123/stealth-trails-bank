@@ -19,6 +19,7 @@ import {
   Prisma,
   ReviewCaseStatus,
   ReviewCaseType,
+  ReviewCaseEventType,
   TransactionIntentStatus,
   TransactionIntentType
 } from "@prisma/client";
@@ -453,6 +454,11 @@ type ScanTriggerContext =
       workerId?: never;
     };
 
+type ReconciliationActor = {
+  actorType: "operator" | "worker" | "system";
+  actorId: string | null;
+};
+
 @Injectable()
 export class LedgerReconciliationService {
   private readonly productChainId: number;
@@ -674,7 +680,7 @@ export class LedgerReconciliationService {
   }
 
   private async appendMismatchAuditEvent(
-    actorType: "operator" | "system",
+    actorType: "operator" | "worker" | "system",
     actorId: string | null,
     action: string,
     mismatch: {
@@ -708,6 +714,80 @@ export class LedgerReconciliationService {
         } as Prisma.InputJsonValue
       }
     });
+  }
+
+  private async resolveLinkedReviewCaseForResolvedMismatch(
+    transaction: Prisma.TransactionClient,
+    mismatch: MismatchRecord,
+    actor: ReconciliationActor
+  ): Promise<string | null> {
+    const linkedReviewCase = mismatch.linkedReviewCase;
+
+    if (
+      !linkedReviewCase ||
+      linkedReviewCase.type !== ReviewCaseType.reconciliation_review ||
+      (linkedReviewCase.status !== ReviewCaseStatus.open &&
+        linkedReviewCase.status !== ReviewCaseStatus.in_progress)
+    ) {
+      return null;
+    }
+
+    const resolvedAt = new Date();
+    const resolutionNote =
+      "Automatically resolved after the linked ledger reconciliation mismatch cleared.";
+
+    await transaction.reviewCase.update({
+      where: {
+        id: linkedReviewCase.id
+      },
+      data: {
+        status: ReviewCaseStatus.resolved,
+        resolvedAt,
+        assignedOperatorId:
+          linkedReviewCase.assignedOperatorId ??
+          (actor.actorType === "operator" ? actor.actorId : null)
+      }
+    });
+
+    await transaction.reviewCaseEvent.create({
+      data: {
+        reviewCaseId: linkedReviewCase.id,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        eventType: ReviewCaseEventType.resolved,
+        note: resolutionNote,
+        metadata: {
+          previousStatus: linkedReviewCase.status,
+          newStatus: ReviewCaseStatus.resolved,
+          resolutionSource: "ledger_reconciliation_scan",
+          mismatchId: mismatch.id,
+          mismatchKey: mismatch.mismatchKey
+        } as Prisma.InputJsonValue
+      }
+    });
+
+    await transaction.auditEvent.create({
+      data: {
+        customerId: mismatch.customerId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        action: "review_case.resolved",
+        targetType: "ReviewCase",
+        targetId: linkedReviewCase.id,
+        metadata: {
+          previousStatus: linkedReviewCase.status,
+          newStatus: ReviewCaseStatus.resolved,
+          resolutionSource: "ledger_reconciliation_scan",
+          reviewCaseType: linkedReviewCase.type,
+          transactionIntentId: mismatch.transactionIntentId,
+          customerAccountId: mismatch.customerAccountId,
+          mismatchId: mismatch.id,
+          mismatchKey: mismatch.mismatchKey
+        } as Prisma.InputJsonValue
+      }
+    });
+
+    return linkedReviewCase.id;
   }
 
   private async buildTransactionIntentCandidates(
@@ -1223,7 +1303,10 @@ export class LedgerReconciliationService {
     mismatchKey: string,
     operatorId: string
   ): Promise<MismatchRecord> {
-    await this.scanMismatches(query, operatorId);
+    await this.scanMismatches(query, {
+      actorType: "operator",
+      actorId: operatorId
+    });
     const refreshed = await this.fetchOpenMismatchByKey(mismatchKey);
 
     if (refreshed) {
@@ -1249,7 +1332,7 @@ export class LedgerReconciliationService {
 
   async scanMismatches(
     query: ScanLedgerReconciliationDto,
-    operatorId: string
+    actor: ReconciliationActor
   ): Promise<ScanLedgerReconciliationResult> {
     this.ensureSupportedScanQuery(query);
 
@@ -1305,8 +1388,8 @@ export class LedgerReconciliationService {
         existingByKey.set(candidate.mismatchKey, created);
 
         await this.appendMismatchAuditEvent(
-          "operator",
-          operatorId,
+          actor.actorType,
+          actor.actorId,
           "ledger_reconciliation.mismatch.opened",
           {
             id: created.id,
@@ -1374,8 +1457,8 @@ export class LedgerReconciliationService {
         reopenedCount += 1;
 
         await this.appendMismatchAuditEvent(
-          "operator",
-          operatorId,
+          actor.actorType,
+          actor.actorId,
           "ledger_reconciliation.mismatch.reopened",
           {
             id: updated.id,
@@ -1404,41 +1487,59 @@ export class LedgerReconciliationService {
         continue;
       }
 
-      const resolved = await this.prismaService.ledgerReconciliationMismatch.update({
-        where: {
-          id: existing.id
-        },
-        data: {
-          status: LedgerReconciliationMismatchStatus.resolved,
-          recommendedAction: LedgerReconciliationMismatchRecommendedAction.none,
-          resolvedAt: new Date(),
-          resolvedByOperatorId: null,
-          resolutionNote: "Automatically resolved by reconciliation scan.",
-          resolutionMetadata: {
-            resolvedBy: "system_reconciliation_scan"
-          } as Prisma.InputJsonValue
-        },
-        include: mismatchInclude
-      });
+      const resolved = await this.prismaService.$transaction(
+        async (transaction) => {
+          const updatedMismatch =
+            await transaction.ledgerReconciliationMismatch.update({
+              where: {
+                id: existing.id
+              },
+              data: {
+                status: LedgerReconciliationMismatchStatus.resolved,
+                recommendedAction: LedgerReconciliationMismatchRecommendedAction.none,
+                resolvedAt: new Date(),
+                resolvedByOperatorId: null,
+                resolutionNote: "Automatically resolved by reconciliation scan.",
+                resolutionMetadata: {
+                  resolvedBy: "system_reconciliation_scan"
+                } as Prisma.InputJsonValue
+              },
+              include: mismatchInclude
+            });
+
+          const resolvedReviewCaseId =
+            await this.resolveLinkedReviewCaseForResolvedMismatch(
+              transaction,
+              updatedMismatch,
+              actor
+            );
+
+          await this.appendMismatchAuditEvent(
+            actor.actorType,
+            actor.actorId,
+            "ledger_reconciliation.mismatch.resolved_by_scan",
+            {
+              id: updatedMismatch.id,
+              customerId: updatedMismatch.customerId ?? null,
+              customerAccountId: updatedMismatch.customerAccountId ?? null,
+              transactionIntentId: updatedMismatch.transactionIntentId ?? null,
+              assetId: updatedMismatch.assetId ?? null,
+              reasonCode: updatedMismatch.reasonCode,
+              scope: updatedMismatch.scope,
+              recommendedAction: updatedMismatch.recommendedAction
+            },
+            resolvedReviewCaseId
+              ? {
+                  resolvedReviewCaseId
+                }
+              : null
+          );
+
+          return updatedMismatch;
+        }
+      );
 
       autoResolvedCount += 1;
-
-      await this.appendMismatchAuditEvent(
-        "system",
-        null,
-        "ledger_reconciliation.mismatch.resolved_by_scan",
-        {
-          id: resolved.id,
-          customerId: resolved.customerId ?? null,
-          customerAccountId: resolved.customerAccountId ?? null,
-          transactionIntentId: resolved.transactionIntentId ?? null,
-          assetId: resolved.assetId ?? null,
-          reasonCode: resolved.reasonCode,
-          scope: resolved.scope,
-          recommendedAction: resolved.recommendedAction
-        },
-        null
-      );
     }
 
     const activeMismatches = await this.prismaService.ledgerReconciliationMismatch.findMany({
@@ -1493,7 +1594,10 @@ export class LedgerReconciliationService {
     });
 
     try {
-      const result = await this.scanMismatches(query, scanActorId);
+      const result = await this.scanMismatches(query, {
+        actorType: trigger.triggerSource,
+        actorId: scanActorId
+      });
 
       const completedAt = new Date();
       const updatedRun = await this.prismaService.ledgerReconciliationScanRun.update({

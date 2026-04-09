@@ -15,6 +15,7 @@ import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { ConfirmDepositIntentDto } from "./dto/confirm-deposit-intent.dto";
 import { FailDepositIntentExecutionDto } from "./dto/fail-deposit-intent-execution.dto";
 import { ListBroadcastDepositIntentsDto } from "./dto/list-broadcast-deposit-intents.dto";
+import { ListConfirmedDepositIntentsDto } from "./dto/list-confirmed-deposit-intents.dto";
 import { ListQueuedDepositIntentsDto } from "./dto/list-queued-deposit-intents.dto";
 import { RecordDepositBroadcastDto } from "./dto/record-deposit-broadcast.dto";
 import { SettleConfirmedDepositIntentDto } from "./dto/settle-confirmed-deposit-intent.dto";
@@ -124,6 +125,25 @@ export class TransactionIntentsWorkerController {
     return {
       status: "success",
       message: "Broadcast deposit requests retrieved successfully.",
+      data: result
+    };
+  }
+
+  @Get("deposit-requests/confirmed-ready-to-settle")
+  async listConfirmedDepositIntentsReadyToSettle(
+    @Query(new ValidationPipe({ transform: true }))
+    query: ListConfirmedDepositIntentsDto
+  ): Promise<CustomJsonResponse> {
+    const result = await this.attachAssetExecutionMetadata(
+      await this.transactionIntentsService.listConfirmedDepositIntentsReadyToSettle(
+        query
+      )
+    );
+
+    return {
+      status: "success",
+      message:
+        "Confirmed deposit requests ready to settle retrieved successfully.",
       data: result
     };
   }

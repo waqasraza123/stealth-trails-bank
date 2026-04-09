@@ -23,6 +23,7 @@ import { DecideDepositIntentDto } from "./dto/decide-deposit-intent.dto";
 import { FailDepositIntentExecutionDto } from "./dto/fail-deposit-intent-execution.dto";
 import { ListApprovedDepositIntentsDto } from "./dto/list-approved-deposit-intents.dto";
 import { ListBroadcastDepositIntentsDto } from "./dto/list-broadcast-deposit-intents.dto";
+import { ListConfirmedDepositIntentsDto } from "./dto/list-confirmed-deposit-intents.dto";
 import { ListMyTransactionIntentsDto } from "./dto/list-my-transaction-intents.dto";
 import { ListPendingDepositIntentsDto } from "./dto/list-pending-deposit-intents.dto";
 import { ListQueuedDepositIntentsDto } from "./dto/list-queued-deposit-intents.dto";
@@ -209,6 +210,11 @@ type FailDepositIntentExecutionResult = {
 };
 
 type ListBroadcastDepositIntentsResult = {
+  intents: DepositIntentReviewProjection[];
+  limit: number;
+};
+
+type ListConfirmedDepositIntentsResult = {
   intents: DepositIntentReviewProjection[];
   limit: number;
 };
@@ -1830,6 +1836,86 @@ export class TransactionIntentsService {
         chainId: this.productChainId,
         status: TransactionIntentStatus.broadcast,
         policyDecision: PolicyDecision.approved
+      },
+      orderBy: {
+        createdAt: "asc"
+      },
+      take: limit,
+      include: {
+        asset: {
+          select: {
+            id: true,
+            symbol: true,
+            displayName: true,
+            decimals: true,
+            chainId: true
+          }
+        },
+        destinationWallet: {
+          select: {
+            id: true,
+            address: true
+          }
+        },
+        customerAccount: {
+          select: {
+            id: true,
+            customerId: true,
+            customer: {
+              select: {
+                id: true,
+                supabaseUserId: true,
+                email: true,
+                firstName: true,
+                lastName: true
+              }
+            }
+          }
+        },
+        blockchainTransactions: {
+          orderBy: {
+            createdAt: "desc"
+          },
+          take: 1,
+          select: {
+            id: true,
+            txHash: true,
+            status: true,
+            fromAddress: true,
+            toAddress: true,
+            createdAt: true,
+            updatedAt: true,
+            confirmedAt: true
+          }
+        }
+      }
+    });
+
+    return {
+      intents: intents.map((intent) => this.mapIntentReviewProjection(intent)),
+      limit
+    };
+  }
+
+  async listConfirmedDepositIntentsReadyToSettle(
+    query: ListConfirmedDepositIntentsDto
+  ): Promise<ListConfirmedDepositIntentsResult> {
+    const limit = query.limit ?? 20;
+
+    const intents = await this.prismaService.transactionIntent.findMany({
+      where: {
+        intentType: TransactionIntentType.deposit,
+        chainId: this.productChainId,
+        status: TransactionIntentStatus.confirmed,
+        policyDecision: PolicyDecision.approved,
+        ledgerJournal: {
+          is: null
+        },
+        blockchainTransactions: {
+          some: {
+            status: BlockchainTransactionStatus.confirmed
+          }
+        }
       },
       orderBy: {
         createdAt: "asc"

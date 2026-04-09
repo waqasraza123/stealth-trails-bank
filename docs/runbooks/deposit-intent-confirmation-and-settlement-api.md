@@ -45,6 +45,24 @@ Expected behavior:
   - `policyDecision = approved`
 - includes latest blockchain transaction
 
+## List confirmed deposit intents ready for settlement recovery
+
+Endpoint:
+
+```text
+GET /transaction-intents/internal/worker/deposit-requests/confirmed-ready-to-settle?limit=20
+```
+
+Expected behavior:
+
+- returns deposit intents with:
+  - `status = confirmed`
+  - `policyDecision = approved`
+  - latest blockchain transaction status = `confirmed`
+  - no existing `LedgerJournal`
+- sorts oldest first
+- lets the worker recover intents stranded after confirmation if a prior settle call failed or timed out
+
 ## Confirm a broadcast deposit intent
 
 Endpoint:

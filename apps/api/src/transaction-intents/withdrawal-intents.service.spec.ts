@@ -161,6 +161,53 @@ describe("WithdrawalIntentsService", () => {
     );
   });
 
+  it("lists confirmed withdrawals that are ready to settle", async () => {
+    const { service, prismaService } = createService();
+
+    (prismaService.transactionIntent.findMany as jest.Mock).mockResolvedValue([
+      buildInternalIntentRecord({
+        status: TransactionIntentStatus.confirmed,
+        policyDecision: PolicyDecision.approved,
+        blockchainTransactions: [
+          {
+            id: "tx_1",
+            txHash:
+              "0x1111111111111111111111111111111111111111111111111111111111111111",
+            status: BlockchainTransactionStatus.confirmed,
+            fromAddress: "0x0000000000000000000000000000000000000def",
+            toAddress: "0x0000000000000000000000000000000000000abc",
+            createdAt: new Date("2026-04-01T00:05:00.000Z"),
+            updatedAt: new Date("2026-04-01T00:05:00.000Z"),
+            confirmedAt: new Date("2026-04-01T00:05:00.000Z")
+          }
+        ]
+      })
+    ]);
+
+    const result = await service.listConfirmedWithdrawalIntentsReadyToSettle({
+      limit: 5
+    });
+
+    expect(result.limit).toBe(5);
+    expect(result.intents).toHaveLength(1);
+    expect(result.intents[0]?.status).toBe(TransactionIntentStatus.confirmed);
+    expect(prismaService.transactionIntent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: TransactionIntentStatus.confirmed,
+          policyDecision: PolicyDecision.approved,
+          chainId: 8453,
+          blockchainTransactions: {
+            some: {
+              status: BlockchainTransactionStatus.confirmed
+            }
+          }
+        }),
+        take: 5
+      })
+    );
+  });
+
   it("reuses an idempotent withdrawal intent when the request matches", async () => {
     const { service } = createService();
 

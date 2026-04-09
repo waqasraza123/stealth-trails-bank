@@ -218,6 +218,43 @@ describe("TransactionIntentsService", () => {
     expect(transactionClient.auditEvent.create).toHaveBeenCalled();
   });
 
+  it("lists confirmed deposits that are ready to settle", async () => {
+    const { service, prismaService } = createService();
+
+    prismaService.transactionIntent.findMany.mockResolvedValue([
+      createInternalIntentRecord({
+        status: TransactionIntentStatus.confirmed,
+        policyDecision: PolicyDecision.approved,
+        blockchainStatus: BlockchainTransactionStatus.confirmed,
+        txHash:
+          "0x1111111111111111111111111111111111111111111111111111111111111111"
+      })
+    ]);
+
+    const result = await service.listConfirmedDepositIntentsReadyToSettle({
+      limit: 5
+    });
+
+    expect(result.limit).toBe(5);
+    expect(result.intents).toHaveLength(1);
+    expect(result.intents[0]?.status).toBe(TransactionIntentStatus.confirmed);
+    expect(prismaService.transactionIntent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: TransactionIntentStatus.confirmed,
+          policyDecision: PolicyDecision.approved,
+          chainId: 8453,
+          blockchainTransactions: {
+            some: {
+              status: BlockchainTransactionStatus.confirmed
+            }
+          }
+        }),
+        take: 5
+      })
+    );
+  });
+
   it("reuses an idempotent deposit intent when the request matches", async () => {
     const { service, prismaService } = createService();
 

@@ -48,6 +48,8 @@ function createEmptyIterationMetrics(): WorkerIterationMetrics {
     queuedWithdrawalCount: 0,
     broadcastDepositCount: 0,
     broadcastWithdrawalCount: 0,
+    confirmedDepositReadyToSettleCount: 0,
+    confirmedWithdrawalReadyToSettleCount: 0,
     depositBroadcastRecordedCount: 0,
     withdrawalBroadcastRecordedCount: 0,
     depositConfirmedCount: 0,
@@ -103,11 +105,33 @@ export class WorkerOrchestrator {
     if (this.deps.runtime.executionMode === "synthetic") {
       await this.processBroadcastDepositsSynthetic(broadcastDeposits, metrics);
       await this.processBroadcastWithdrawalsSynthetic(broadcastWithdrawals, metrics);
-      return metrics;
+    } else {
+      await this.processBroadcastDepositsMonitor(broadcastDeposits, metrics);
+      await this.processBroadcastWithdrawalsMonitor(broadcastWithdrawals, metrics);
     }
 
-    await this.processBroadcastDepositsMonitor(broadcastDeposits, metrics);
-    await this.processBroadcastWithdrawalsMonitor(broadcastWithdrawals, metrics);
+    const confirmedDepositsReadyToSettle =
+      await this.deps.internalApiClient.listConfirmedDepositIntentsReadyToSettle(
+        this.deps.runtime.batchLimit
+      );
+    const confirmedWithdrawalsReadyToSettle =
+      await this.deps.internalApiClient.listConfirmedWithdrawalIntentsReadyToSettle(
+        this.deps.runtime.batchLimit
+      );
+
+    metrics.confirmedDepositReadyToSettleCount =
+      confirmedDepositsReadyToSettle.intents.length;
+    metrics.confirmedWithdrawalReadyToSettleCount =
+      confirmedWithdrawalsReadyToSettle.intents.length;
+
+    await this.processConfirmedDepositsReadyToSettle(
+      confirmedDepositsReadyToSettle,
+      metrics
+    );
+    await this.processConfirmedWithdrawalsReadyToSettle(
+      confirmedWithdrawalsReadyToSettle,
+      metrics
+    );
 
     return metrics;
   }
@@ -319,6 +343,46 @@ export class WorkerOrchestrator {
           this.deps.internalApiClient.confirmWithdrawalIntent(intentId, payload),
         settleIntent: (intentId, payload) =>
           this.deps.internalApiClient.settleWithdrawalIntent(intentId, payload)
+      });
+    }
+  }
+
+  private async processConfirmedDepositsReadyToSettle(
+    result: ListIntentsResult,
+    metrics: WorkerIterationMetrics
+  ): Promise<void> {
+    for (const intent of result.intents) {
+      await this.deps.internalApiClient.settleDepositIntent(intent.id, {
+        note:
+          "Recovered settlement from confirmed backlog after prior confirmation succeeded."
+      });
+      metrics.depositSettledCount += 1;
+      this.deps.logger.info("confirmed_intent_settled_from_recovery_backlog", {
+        intentType: "deposit",
+        intentId: intent.id,
+        assetSymbol: intent.asset.symbol,
+        requestedAmount: intent.requestedAmount,
+        txHash: intent.latestBlockchainTransaction?.txHash ?? null
+      });
+    }
+  }
+
+  private async processConfirmedWithdrawalsReadyToSettle(
+    result: ListIntentsResult,
+    metrics: WorkerIterationMetrics
+  ): Promise<void> {
+    for (const intent of result.intents) {
+      await this.deps.internalApiClient.settleWithdrawalIntent(intent.id, {
+        note:
+          "Recovered settlement from confirmed backlog after prior confirmation succeeded."
+      });
+      metrics.withdrawalSettledCount += 1;
+      this.deps.logger.info("confirmed_intent_settled_from_recovery_backlog", {
+        intentType: "withdrawal",
+        intentId: intent.id,
+        assetSymbol: intent.asset.symbol,
+        requestedAmount: intent.requestedAmount,
+        txHash: intent.latestBlockchainTransaction?.txHash ?? null
       });
     }
   }

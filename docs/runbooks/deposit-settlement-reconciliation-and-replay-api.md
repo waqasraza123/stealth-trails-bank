@@ -82,6 +82,7 @@ Expected behavior:
 - writes audit metadata showing:
   - `reconciliationReplay = true`
   - `replayReason = deposit_settlement_reconciliation`
+- if the targeted reconciliation scan confirms the mismatch is gone, any linked open `reconciliation_review` case is automatically resolved with matching audit trail
 
 ## Manual review cases
 
