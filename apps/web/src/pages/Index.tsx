@@ -17,6 +17,11 @@ import { useT } from "@/i18n/use-t";
 import { useMyBalances } from "@/hooks/balances/useMyBalances";
 import { useMyTransactionHistory } from "@/hooks/transactions/useMyTransactionHistory";
 import {
+  formatRelativeTimeLabel,
+  getTransactionConfidenceTone,
+  isTimestampOlderThan
+} from "@stealth-trails-bank/ui-foundation";
+import {
   formatDateLabel,
   formatIntentAmount,
   formatIntentStatusLabel,
@@ -27,7 +32,6 @@ import {
   resolveIntentAddress
 } from "@/lib/customer-finance";
 import { useUserStore } from "@/stores/userStore";
-import { getTransactionConfidenceTone } from "@stealth-trails-bank/ui-foundation";
 
 function hasPendingBalance(value: string): boolean {
   return Number(value) > 0;
@@ -45,6 +49,15 @@ const Index = () => {
   const pendingAssetCount = balances.filter((balance) =>
     hasPendingBalance(balance.pendingBalance)
   ).length;
+  const latestBalanceUpdate = balances
+    .map((balance) => balance.updatedAt)
+    .sort((left, right) => Date.parse(right) - Date.parse(left))[0];
+  const latestIntentUpdate = intents
+    .map((intent) => intent.updatedAt)
+    .sort((left, right) => Date.parse(right) - Date.parse(left))[0];
+  const staleOperationalData =
+    isTimestampOlderThan(latestBalanceUpdate, 24) ||
+    isTimestampOlderThan(latestIntentUpdate, 24);
 
   return (
     <Layout>
@@ -93,6 +106,25 @@ const Index = () => {
                     </p>
                   </div>
                 </div>
+
+                {(latestBalanceUpdate || latestIntentUpdate) ? (
+                  <div
+                    className={`rounded-[1.4rem] border p-4 text-sm ${
+                      staleOperationalData
+                        ? "border-amber-200 bg-amber-50 text-amber-900"
+                        : "border-slate-200 bg-white/80 text-slate-700"
+                    }`}
+                    role="status"
+                  >
+                    {staleOperationalData
+                      ? locale === "ar"
+                        ? "تظهر آخر لقطة تشغيلية أقدم من المتوقع. راجع الإيداعات المعلقة أو أعد التحميل إذا استمر التأخير."
+                        : "The latest operational snapshot is older than expected. Review pending money movement or refresh if the delay continues."
+                      : locale === "ar"
+                        ? `آخر تحديث للأرصدة ${latestBalanceUpdate ? formatRelativeTimeLabel(latestBalanceUpdate, locale) : "غير متاح"} وآخر تحديث للمعاملات ${latestIntentUpdate ? formatRelativeTimeLabel(latestIntentUpdate, locale) : "غير متاح"}.`
+                        : `Balances refreshed ${latestBalanceUpdate ? formatRelativeTimeLabel(latestBalanceUpdate, locale) : "not available"} and transaction state refreshed ${latestIntentUpdate ? formatRelativeTimeLabel(latestIntentUpdate, locale) : "not available"}.`}
+                  </div>
+                ) : null}
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-[1.4rem] border border-slate-200 bg-white/80 p-4">

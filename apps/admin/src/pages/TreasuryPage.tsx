@@ -1,8 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { getTreasuryOverview } from "@/lib/api";
 import { formatCount, formatDateTime, shortenValue } from "@/lib/format";
-import { MetricCard, SectionPanel } from "@/components/console/primitives";
-import { useConfiguredSessionGuard } from "./shared";
+import {
+  AdminStatusBadge,
+  ErrorState,
+  InlineNotice,
+  LoadingState,
+  MetricCard,
+  SectionPanel
+} from "@/components/console/primitives";
+import { mapStatusToTone, useConfiguredSessionGuard } from "./shared";
 
 export function TreasuryPage() {
   const { session, fallback } = useConfiguredSessionGuard();
@@ -18,11 +25,21 @@ export function TreasuryPage() {
   }
 
   if (treasuryQuery.isLoading) {
-    return <p>Loading treasury visibility...</p>;
+    return (
+      <LoadingState
+        title="Loading treasury visibility"
+        description="Wallet coverage, worker posture, and treasury-linked activity are loading."
+      />
+    );
   }
 
   if (treasuryQuery.isError) {
-    return <p>Failed to load treasury visibility.</p>;
+    return (
+      <ErrorState
+        title="Treasury visibility unavailable"
+        description="Treasury coverage and wallet inventory could not be loaded."
+      />
+    );
   }
 
   const treasury = treasuryQuery.data!;
@@ -33,6 +50,13 @@ export function TreasuryPage() {
         title="Treasury visibility"
         description="Wallet coverage, operational inventory, and recent treasury-linked activity."
       >
+        <InlineNotice
+          title="Coverage posture"
+          description={`Coverage is ${treasury.coverage.status}. Generated ${formatDateTime(
+            treasury.generatedAt
+          )}.`}
+          tone={mapStatusToTone(treasury.coverage.status)}
+        />
         <div className="admin-metrics-grid compact">
           <MetricCard
             label="Treasury wallets"
@@ -62,7 +86,12 @@ export function TreasuryPage() {
               <div key={wallet.id} className="admin-list-row">
                 <strong>{shortenValue(wallet.address)}</strong>
                 <span>{wallet.kind}</span>
-                <span>{wallet.status}</span>
+                <span>
+                  <AdminStatusBadge
+                    label={wallet.status}
+                    tone={mapStatusToTone(wallet.status)}
+                  />
+                </span>
               </div>
             ))}
           </div>

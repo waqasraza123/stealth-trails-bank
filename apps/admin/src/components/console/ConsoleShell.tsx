@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { Activity, Search, ShieldCheck } from "lucide-react";
+import { Search, ShieldCheck } from "lucide-react";
 import { ReactNode } from "react";
 
 type ConsoleShellProps = {
@@ -8,7 +8,10 @@ type ConsoleShellProps = {
   heading: string;
   description: string;
   healthLabel: string;
+  healthTone: "neutral" | "positive" | "warning" | "critical" | "technical";
   incidentCount: number;
+  operatorLabel: string;
+  environmentLabel: string;
   topActions: ReactNode;
   sidebar: ReactNode;
   children: ReactNode;
@@ -20,7 +23,10 @@ export function ConsoleShell({
   heading,
   description,
   healthLabel,
+  healthTone,
   incidentCount,
+  operatorLabel,
+  environmentLabel,
   topActions,
   sidebar,
   children
@@ -67,22 +73,24 @@ export function ConsoleShell({
               <div className="admin-system-strip">
                 <div>
                   <span className="label">System health</span>
-                  <strong>{healthLabel}</strong>
+                  <strong>
+                    <span className="admin-status-badge" data-tone={healthTone}>
+                      {healthLabel}
+                    </span>
+                  </strong>
                 </div>
                 <div>
                   <span className="label">Active incidents</span>
                   <strong>{incidentCount}</strong>
                 </div>
                 <div>
-                  <span className="label">Jump</span>
-                  <strong>
-                    <Search className="inline-block h-4 w-4" /> Palette ready
-                  </strong>
+                  <span className="label">Operator</span>
+                  <strong>{operatorLabel}</strong>
                 </div>
                 <div>
-                  <span className="label">Mode</span>
+                  <span className="label">Environment</span>
                   <strong>
-                    <Activity className="inline-block h-4 w-4" /> Live
+                    <Search className="inline-block h-4 w-4" /> {environmentLabel}
                   </strong>
                 </div>
               </div>

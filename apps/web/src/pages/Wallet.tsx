@@ -9,6 +9,7 @@ import DepositCard from "./wallet/DepositCard";
 import WithdrawCard from "./wallet/WithdrawCard";
 import { useUserStore } from "@/stores/userStore";
 import { formatDateLabel, formatTokenAmount } from "@/lib/customer-finance";
+import { formatRelativeTimeLabel, isTimestampOlderThan } from "@stealth-trails-bank/ui-foundation";
 
 const Wallet = () => {
   const t = useT();
@@ -17,6 +18,10 @@ const Wallet = () => {
   const supportedAssetsQuery = useSupportedAssets();
   const balancesQuery = useMyBalances();
   const balances = balancesQuery.data?.balances ?? [];
+  const latestBalanceUpdate = balances
+    .map((balance) => balance.updatedAt)
+    .sort((left, right) => Date.parse(right) - Date.parse(left))[0];
+  const staleBalanceData = isTimestampOlderThan(latestBalanceUpdate, 24);
 
   return (
     <Layout>
@@ -68,8 +73,42 @@ const Wallet = () => {
                 </div>
               </div>
 
+              {latestBalanceUpdate ? (
+                <div
+                  className={`rounded-[1.4rem] border p-4 text-sm ${
+                    staleBalanceData
+                      ? "border-amber-200 bg-amber-50 text-amber-900"
+                      : "border-slate-200 bg-white/80 text-slate-700"
+                  }`}
+                  role="status"
+                >
+                  {staleBalanceData
+                    ? locale === "ar"
+                      ? `تأخر آخر تحديث للأرصدة. آخر مزامنة كانت ${formatDateLabel(
+                          latestBalanceUpdate,
+                          locale
+                        )} (${formatRelativeTimeLabel(latestBalanceUpdate, locale)}).`
+                      : `Balance data is older than expected. Last synced ${formatDateLabel(
+                          latestBalanceUpdate,
+                          locale
+                        )} (${formatRelativeTimeLabel(latestBalanceUpdate, locale)}).`
+                    : locale === "ar"
+                      ? `آخر مزامنة للأرصدة ${formatDateLabel(
+                          latestBalanceUpdate,
+                          locale
+                        )} (${formatRelativeTimeLabel(latestBalanceUpdate, locale)}).`
+                      : `Balances last synced ${formatDateLabel(
+                          latestBalanceUpdate,
+                          locale
+                        )} (${formatRelativeTimeLabel(latestBalanceUpdate, locale)}).`}
+                </div>
+              ) : null}
+
               {balancesQuery.isError ? (
-                <div className="rounded-[1.4rem] border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                <div
+                  className="rounded-[1.4rem] border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+                  role="alert"
+                >
                   {balancesQuery.error instanceof Error
                     ? balancesQuery.error.message
                     : t("wallet.balancesError")}
@@ -104,7 +143,8 @@ const Wallet = () => {
                         </div>
                       </div>
                       <p className="mt-3 text-xs uppercase tracking-[0.12em] text-slate-500">
-                        {formatDateLabel(balance.updatedAt, locale)}
+                        {formatDateLabel(balance.updatedAt, locale)} ·{" "}
+                        {formatRelativeTimeLabel(balance.updatedAt, locale)}
                       </p>
                     </div>
                   ))}

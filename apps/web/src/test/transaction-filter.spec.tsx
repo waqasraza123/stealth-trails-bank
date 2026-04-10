@@ -31,7 +31,9 @@ describe("transaction filter", () => {
     });
 
     await user.click(screen.getByRole("button", { name: /^Type$/i }));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Deposit" }));
+    const depositItem = screen.getByRole("menuitemcheckbox", { name: "Deposit" });
+    await user.click(depositItem);
+    await user.keyboard("{Escape}");
 
     await waitFor(() => {
       expect(onFilterChange).toHaveBeenLastCalledWith(
@@ -43,7 +45,9 @@ describe("transaction filter", () => {
     });
 
     await user.click(screen.getByRole("button", { name: /^Status$/i }));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "settled" }));
+    const settledItem = screen.getByRole("menuitemcheckbox", { name: "settled" });
+    await user.click(settledItem);
+    await user.keyboard("{Escape}");
 
     await waitFor(() => {
       expect(onFilterChange).toHaveBeenLastCalledWith(

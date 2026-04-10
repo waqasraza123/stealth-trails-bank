@@ -19,12 +19,13 @@ export function TimelineList({ events, emptyLabel }: TimelineListProps) {
   }
 
   return (
-    <div className="stb-timeline">
+    <div className="stb-timeline" role="list">
       {events.map((event) => (
         <div
           key={event.id}
           className="stb-timeline-item"
           data-tone={event.tone ?? "neutral"}
+          role="listitem"
         >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-1">

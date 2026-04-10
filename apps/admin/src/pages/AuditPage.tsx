@@ -1,9 +1,13 @@
 import { useDeferredValue, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listAuditEvents } from "@/lib/api";
-import { formatDateTime, formatName, shortenValue } from "@/lib/format";
-import { SectionPanel } from "@/components/console/primitives";
-import { useConfiguredSessionGuard } from "./shared";
+import {
+  ErrorState,
+  LoadingState,
+  SectionPanel,
+  TimelinePanel
+} from "@/components/console/primitives";
+import { mapAuditEntriesToTimeline, useConfiguredSessionGuard } from "./shared";
 
 export function AuditPage() {
   const { session, fallback } = useConfiguredSessionGuard();
@@ -21,11 +25,21 @@ export function AuditPage() {
   }
 
   if (auditQuery.isLoading) {
-    return <p>Loading audit trail...</p>;
+    return (
+      <LoadingState
+        title="Loading audit trail"
+        description="Structured event history is loading with actor, target, and timestamp detail."
+      />
+    );
   }
 
   if (auditQuery.isError) {
-    return <p>Failed to load audit trail.</p>;
+    return (
+      <ErrorState
+        title="Audit trail unavailable"
+        description="Audit history could not be loaded for the current operator session."
+      />
+    );
   }
 
   return (
@@ -41,22 +55,26 @@ export function AuditPage() {
         />
       }
     >
-      <div className="admin-list-card">
-        <div className="admin-list">
-          {auditQuery.data!.events.map((event) => (
-            <div key={event.id} className="admin-list-row">
-              <strong>{event.action}</strong>
-              <span>{event.targetType}</span>
-              <span>{shortenValue(event.targetId)}</span>
-              <span>
-                {event.customer
-                  ? formatName(event.customer.firstName, event.customer.lastName)
-                  : formatDateTime(event.createdAt)}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+      <TimelinePanel
+        title="Search results"
+        description="Timeline-first audit history across customer, operator, and system actions."
+        events={mapAuditEntriesToTimeline(
+          auditQuery.data!.events.map((event) => ({
+            id: event.id,
+            actorType: event.actorType,
+            actorId: event.actorId,
+            action: event.action,
+            targetType: event.targetType,
+            targetId: event.targetId,
+            metadata: event.metadata,
+            createdAt: event.createdAt
+          }))
+        )}
+        emptyState={{
+          title: "No audit events matched",
+          description: "Adjust the search term to inspect a different slice of system history."
+        }}
+      />
     </SectionPanel>
   );
 }

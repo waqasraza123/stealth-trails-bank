@@ -28,6 +28,7 @@ import { OperationsPage } from "@/pages/OperationsPage";
 import { QueuesPage } from "@/pages/QueuesPage";
 import { ReconciliationPage } from "@/pages/ReconciliationPage";
 import { TreasuryPage } from "@/pages/TreasuryPage";
+import { buildSystemHealthTone } from "@/pages/shared";
 
 const runtimeConfig = loadWebRuntimeConfig(import.meta.env);
 
@@ -55,8 +56,13 @@ function App() {
   return (
     <AdminI18nProvider>
       <QueryClientProvider client={queryClient}>
-        <OperatorSessionProvider serverUrl={runtimeConfig.serverUrl}>
-          <BrowserRouter>
+          <OperatorSessionProvider serverUrl={runtimeConfig.serverUrl}>
+          <BrowserRouter
+            future={{
+              v7_startTransition: true,
+              v7_relativeSplatPath: true
+            }}
+          >
             <AdminConsole />
           </BrowserRouter>
         </OperatorSessionProvider>
@@ -113,7 +119,19 @@ function AdminConsole() {
       heading={t("hero.title")}
       description={t("hero.description")}
       healthLabel={getSystemHealthLabel(systemHealth, locale)}
+      healthTone={buildSystemHealthTone(
+        operationsStatusQuery.data,
+        releaseReadinessQuery.data?.overallStatus === "critical"
+      )}
       incidentCount={operationsStatusQuery.data?.incidentSafety.openOversightIncidentCount ?? 0}
+      operatorLabel={
+        configuredSession
+          ? `${configuredSession.operatorId} · ${configuredSession.operatorRole}`
+          : locale === "ar"
+            ? "جلسة غير محفوظة"
+            : "Session not saved"
+      }
+      environmentLabel={configuredSession ? configuredSession.baseUrl : runtimeConfig.serverUrl}
       topActions={<LanguageSwitcher />}
       sidebar={<SessionCard />}
     >

@@ -1,8 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { getOperationsStatus, getReleaseReadinessSummary } from "@/lib/api";
 import { formatCount, formatDateTime } from "@/lib/format";
-import { MetricCard, SectionPanel } from "@/components/console/primitives";
-import { useConfiguredSessionGuard } from "./shared";
+import {
+  AdminStatusBadge,
+  ErrorState,
+  InlineNotice,
+  LoadingState,
+  MetricCard,
+  SectionPanel
+} from "@/components/console/primitives";
+import { mapStatusToTone, useConfiguredSessionGuard } from "./shared";
 
 export function OperationsPage() {
   const { session, fallback } = useConfiguredSessionGuard();
@@ -24,11 +31,21 @@ export function OperationsPage() {
   }
 
   if (operationsQuery.isLoading || releaseReadinessQuery.isLoading) {
-    return <p>Loading operator overview...</p>;
+    return (
+      <LoadingState
+        title="Loading operator overview"
+        description="Backlog, health, incident, and launch-readiness summaries are loading."
+      />
+    );
   }
 
   if (operationsQuery.isError || releaseReadinessQuery.isError) {
-    return <p>Failed to load operations overview.</p>;
+    return (
+      <ErrorState
+        title="Operations overview unavailable"
+        description="The command surface could not load its latest health and readiness summaries."
+      />
+    );
   }
 
   const operations = operationsQuery.data!;
@@ -71,12 +88,24 @@ export function OperationsPage() {
         <div className="admin-two-column">
           <div className="admin-list-card">
             <h3>Readiness summary</h3>
-            <p>{release.overallStatus}</p>
+            <p>
+              <AdminStatusBadge
+                label={release.overallStatus}
+                tone={mapStatusToTone(release.overallStatus)}
+              />
+            </p>
             <p className="admin-copy">
               {formatCount(release.summary.passedCheckCount)} passed /{" "}
               {formatCount(release.summary.failedCheckCount)} failed /{" "}
               {formatCount(release.summary.pendingCheckCount)} pending
             </p>
+            {release.overallStatus === "critical" ? (
+              <InlineNotice
+                title="Launch gate is blocked"
+                description="Evidence failures currently prevent a clean release decision."
+                tone="critical"
+              />
+            ) : null}
           </div>
           <div className="admin-list-card">
             <h3>Recent alerts</h3>

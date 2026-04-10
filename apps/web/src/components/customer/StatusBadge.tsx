@@ -12,7 +12,12 @@ export function StatusBadge({
   className
 }: StatusBadgeProps) {
   return (
-    <span className={cn("stb-status-badge", className)} data-tone={tone}>
+    <span
+      aria-label={`Status: ${label}`}
+      className={cn("stb-status-badge", className)}
+      data-tone={tone}
+      role="status"
+    >
       {label}
     </span>
   );

@@ -4,6 +4,8 @@ export type SystemHealthStatus =
   | "blocked"
   | "launch_ineligible";
 
+export type PresentationLocale = "en" | "ar";
+
 export type TransactionConfidenceStatus =
   | "submitted"
   | "under_review"
@@ -146,7 +148,7 @@ export function inferSystemHealthStatus(input: {
 
 export function getSystemHealthLabel(
   status: SystemHealthStatus,
-  locale: "en" | "ar" = "en"
+  locale: PresentationLocale = "en"
 ): string {
   return systemHealthLabelCatalog[locale][status];
 }
@@ -179,6 +181,64 @@ export function formatReferenceValue(
   }
 
   return `${value.slice(0, size)}...${value.slice(-size)}`;
+}
+
+export function isTimestampOlderThan(
+  value: string | null | undefined,
+  maxAgeHours: number,
+  now = Date.now()
+): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const parsed = Date.parse(value);
+
+  if (Number.isNaN(parsed)) {
+    return false;
+  }
+
+  return now - parsed > maxAgeHours * 60 * 60 * 1000;
+}
+
+export function formatRelativeTimeLabel(
+  value: string | null | undefined,
+  locale: PresentationLocale = "en",
+  now = Date.now()
+): string {
+  if (!value) {
+    return locale === "ar" ? "غير متاح" : "Not available";
+  }
+
+  const parsed = Date.parse(value);
+
+  if (Number.isNaN(parsed)) {
+    return locale === "ar" ? "غير متاح" : "Not available";
+  }
+
+  const deltaMinutes = Math.max(0, Math.round((now - parsed) / 60000));
+
+  if (deltaMinutes < 1) {
+    return locale === "ar" ? "الآن" : "Just now";
+  }
+
+  if (deltaMinutes < 60) {
+    return locale === "ar"
+      ? `منذ ${deltaMinutes} دقيقة`
+      : `${deltaMinutes}m ago`;
+  }
+
+  const deltaHours = Math.round(deltaMinutes / 60);
+
+  if (deltaHours < 24) {
+    return locale === "ar"
+      ? `منذ ${deltaHours} ساعة`
+      : `${deltaHours}h ago`;
+  }
+
+  const deltaDays = Math.round(deltaHours / 24);
+
+  return locale === "ar" ? `منذ ${deltaDays} يوم` : `${deltaDays}d ago`;
 }
 
 export function buildIntentTimeline(input: {
