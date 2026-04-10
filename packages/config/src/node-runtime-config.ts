@@ -620,17 +620,20 @@ export type BlockchainWalletRuntimeConfig = {
 export type BlockchainContractReadRuntimeConfig = {
   readonly rpcUrl: string;
   readonly stakingContractAddress: string;
+  readonly loanContractAddress: string;
 };
 
 export type OptionalBlockchainContractReadRuntimeConfig = {
   readonly environment: ApiRuntimeEnvironment;
   readonly rpcUrl: string;
   readonly stakingContractAddress: string | null;
+  readonly loanContractAddress: string | null;
 };
 
 export type BlockchainContractWriteRuntimeConfig = {
   readonly rpcUrl: string;
   readonly stakingContractAddress: string;
+  readonly loanContractAddress: string;
   readonly ethereumPrivateKey: string;
 };
 
@@ -638,6 +641,7 @@ export type OptionalBlockchainContractWriteRuntimeConfig = {
   readonly environment: ApiRuntimeEnvironment;
   readonly rpcUrl: string;
   readonly stakingContractAddress: string | null;
+  readonly loanContractAddress: string | null;
   readonly ethereumPrivateKey: string | null;
 };
 
@@ -962,7 +966,8 @@ export function loadBlockchainContractReadRuntimeConfig(
     stakingContractAddress: readRequiredRuntimeEnv(
       env,
       "STAKING_CONTRACT_ADDRESS"
-    )
+    ),
+    loanContractAddress: readRequiredRuntimeEnv(env, "LOAN_CONTRACT_ADDRESS")
   };
 }
 
@@ -977,7 +982,8 @@ export function loadOptionalBlockchainContractReadRuntimeConfig(
     stakingContractAddress: readOptionalRuntimeEnv(
       env,
       "STAKING_CONTRACT_ADDRESS"
-    ) ?? null
+    ) ?? null,
+    loanContractAddress: readOptionalRuntimeEnv(env, "LOAN_CONTRACT_ADDRESS") ?? null
   };
 }
 
@@ -990,6 +996,7 @@ export function loadBlockchainContractWriteRuntimeConfig(
       env,
       "STAKING_CONTRACT_ADDRESS"
     ),
+    loanContractAddress: readRequiredRuntimeEnv(env, "LOAN_CONTRACT_ADDRESS"),
     ethereumPrivateKey: readRequiredRuntimeEnv(env, "ETHEREUM_PRIVATE_KEY")
   };
 }
@@ -1006,6 +1013,7 @@ export function loadOptionalBlockchainContractWriteRuntimeConfig(
       env,
       "STAKING_CONTRACT_ADDRESS"
     ) ?? null,
+    loanContractAddress: readOptionalRuntimeEnv(env, "LOAN_CONTRACT_ADDRESS") ?? null,
     ethereumPrivateKey: readOptionalRuntimeEnv(env, "ETHEREUM_PRIVATE_KEY") ?? null
   };
 }

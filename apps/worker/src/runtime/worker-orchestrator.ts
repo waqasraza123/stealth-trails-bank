@@ -59,6 +59,17 @@ function createEmptyIterationMetrics(): WorkerIterationMetrics {
     depositFailedCount: 0,
     withdrawalFailedCount: 0,
     manualWithdrawalBacklogCount: 0,
+    awaitingFundingLoanCount: 0,
+    fundedLoanCount: 0,
+    dueLoanInstallmentCount: 0,
+    autopayLoanSweepCount: 0,
+    autopayLoanSuccessCount: 0,
+    autopayLoanFailureCount: 0,
+    valuationRefreshCandidateCount: 0,
+    valuationRefreshCount: 0,
+    graceExpiredLoanCount: 0,
+    defaultEscalatedLoanCount: 0,
+    liquidationCandidateCount: 0,
     reEscalatedCriticalAlertCount: 0
   };
 }
@@ -133,7 +144,106 @@ export class WorkerOrchestrator {
       metrics
     );
 
+    const awaitingFundingLoans =
+      await this.deps.internalApiClient.listAwaitingFundingLoans(
+        this.deps.runtime.batchLimit
+      );
+    metrics.awaitingFundingLoanCount = awaitingFundingLoans.agreements.length;
+    await this.processAwaitingFundingLoans(awaitingFundingLoans.agreements, metrics);
+
+    const dueInstallments =
+      await this.deps.internalApiClient.listDueLoanInstallments(
+        this.deps.runtime.batchLimit
+      );
+    metrics.dueLoanInstallmentCount = dueInstallments.installments.length;
+    await this.processDueLoanInstallments(dueInstallments.installments, metrics);
+
+    const valuationMonitorLoans =
+      await this.deps.internalApiClient.listValuationMonitorLoans(
+        this.deps.runtime.batchLimit
+      );
+    metrics.valuationRefreshCandidateCount = valuationMonitorLoans.agreements.length;
+    await this.processLoanValuationRefreshes(valuationMonitorLoans.agreements, metrics);
+
+    const graceExpiredLoans =
+      await this.deps.internalApiClient.listGracePeriodExpiredLoans(
+        this.deps.runtime.batchLimit
+      );
+    metrics.graceExpiredLoanCount = graceExpiredLoans.agreements.length;
+    await this.processExpiredGracePeriodLoans(graceExpiredLoans.agreements, metrics);
+
+    const liquidationCandidates =
+      await this.deps.internalApiClient.listLoanLiquidationCandidates(
+        this.deps.runtime.batchLimit
+      );
+    metrics.liquidationCandidateCount = liquidationCandidates.agreements.length;
+    if (liquidationCandidates.agreements.length > 0) {
+      this.deps.logger.warn("loan_liquidation_candidates_detected", {
+        count: liquidationCandidates.agreements.length,
+        loanAgreementIds: liquidationCandidates.agreements.map(
+          (agreement) => agreement.loanAgreementId
+        )
+      });
+    }
+
     return metrics;
+  }
+
+  private async processAwaitingFundingLoans(
+    agreements: Array<{ loanAgreementId: string }>,
+    metrics: WorkerIterationMetrics
+  ): Promise<void> {
+    for (const agreement of agreements) {
+      await this.deps.internalApiClient.fundLoanAgreement(agreement.loanAgreementId);
+      metrics.fundedLoanCount += 1;
+      this.deps.logger.info("loan_funding_completed", {
+        loanAgreementId: agreement.loanAgreementId
+      });
+    }
+  }
+
+  private async processDueLoanInstallments(
+    installments: Array<{ loanAgreementId: string }>,
+    metrics: WorkerIterationMetrics
+  ): Promise<void> {
+    const uniqueAgreementIds = Array.from(
+      new Set(installments.map((installment) => installment.loanAgreementId))
+    );
+
+    for (const loanAgreementId of uniqueAgreementIds) {
+      const result = await this.deps.internalApiClient.runLoanAutopay(loanAgreementId);
+      if (!result.attempted) {
+        continue;
+      }
+
+      metrics.autopayLoanSweepCount += 1;
+
+      if (result.succeeded) {
+        metrics.autopayLoanSuccessCount += 1;
+      } else {
+        metrics.autopayLoanFailureCount += 1;
+      }
+    }
+  }
+
+  private async processLoanValuationRefreshes(
+    agreements: Array<{ loanAgreementId: string }>,
+    metrics: WorkerIterationMetrics
+  ): Promise<void> {
+    for (const agreement of agreements) {
+      await this.deps.internalApiClient.refreshLoanValuation(agreement.loanAgreementId);
+      metrics.valuationRefreshCount += 1;
+    }
+  }
+
+  private async processExpiredGracePeriodLoans(
+    agreements: Array<{ loanAgreementId: string }>,
+    metrics: WorkerIterationMetrics
+  ): Promise<void> {
+    for (const agreement of agreements) {
+      await this.deps.internalApiClient.escalateLoanDefault(agreement.loanAgreementId);
+      metrics.defaultEscalatedLoanCount += 1;
+    }
   }
 
   private logQueuedBacklog(

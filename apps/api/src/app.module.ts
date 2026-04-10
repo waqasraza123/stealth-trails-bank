@@ -6,6 +6,7 @@ import { CustomerAccountOperationsModule } from "./customer-account-operations/c
 import { CustomerBalancesModule } from "./customer-balances/customer-balances.module";
 import { EthereumModule } from "./ethereum/ethereum.module";
 import { LedgerReconciliationModule } from "./ledger-reconciliation/ledger-reconciliation.module";
+import { LoansModule } from "./loans/loans.module";
 import { OperationsMonitoringModule } from "./operations-monitoring/operations-monitoring.module";
 import { OversightIncidentsModule } from "./oversight-incidents/oversight-incidents.module";
 import { PoolsModule } from "./pools/pools.module";
@@ -25,6 +26,7 @@ import { UserModule } from "./user/user.module";
     PoolsModule,
     StakingPoolModule,
     EthereumModule,
+    LoansModule,
     LedgerReconciliationModule,
     OperationsMonitoringModule,
     SupportedAssetsModule,

@@ -24,6 +24,7 @@ import { AlertsPage } from "@/pages/AlertsPage";
 import { AuditPage } from "@/pages/AuditPage";
 import { AccountsPage } from "@/pages/AccountsPage";
 import { LaunchReadinessPage } from "@/pages/LaunchReadinessPage";
+import { LoansPage } from "@/pages/LoansPage";
 import { OperationsPage } from "@/pages/OperationsPage";
 import { QueuesPage } from "@/pages/QueuesPage";
 import { ReconciliationPage } from "@/pages/ReconciliationPage";
@@ -45,6 +46,7 @@ const navItems = [
   { label: "Operations Overview", path: "/operations" },
   { label: "Queues", path: "/queues" },
   { label: "Accounts & Reviews", path: "/accounts" },
+  { label: "Lending", path: "/lending" },
   { label: "Reconciliation", path: "/reconciliation" },
   { label: "Treasury", path: "/treasury" },
   { label: "Alerts & Incidents", path: "/alerts" },
@@ -140,6 +142,7 @@ function AdminConsole() {
         <Route path="/operations" element={<OperationsPage />} />
         <Route path="/queues" element={<QueuesPage />} />
         <Route path="/accounts" element={<AccountsPage />} />
+        <Route path="/lending" element={<LoansPage />} />
         <Route path="/reconciliation" element={<ReconciliationPage />} />
         <Route path="/treasury" element={<TreasuryPage />} />
         <Route path="/alerts" element={<AlertsPage />} />

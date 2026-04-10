@@ -156,7 +156,7 @@ export const Layout = ({ children }: LayoutProps) => {
               className="rounded-full border-slate-200 bg-white/80 px-5"
             >
               <Link to="/loans">
-                {locale === "ar" ? "القروض لاحقاً" : "Loans later"}
+                {locale === "ar" ? "القروض المُدارة" : "Managed loans"}
               </Link>
             </Button>
           </div>

@@ -601,6 +601,48 @@ button {
   color: var(--admin-accent);
 }
 
+.admin-textarea {
+  width: 100%;
+  min-height: 7rem;
+  resize: vertical;
+  border: 1px solid var(--admin-line-strong);
+  border-radius: 16px;
+  background: white;
+  padding: 0.9rem 1rem;
+  font: inherit;
+}
+
+.admin-action-group {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.admin-button {
+  border: 1px solid var(--admin-line-strong);
+  border-radius: 14px;
+  background: white;
+  color: var(--admin-ink);
+  padding: 0.85rem 1rem;
+  font-weight: 700;
+}
+
+.admin-button--positive {
+  border-color: rgba(17, 128, 106, 0.18);
+  background: #e7f7f1;
+  color: var(--admin-accent);
+}
+
+.admin-button--critical {
+  border-color: rgba(161, 56, 56, 0.18);
+  background: #ffebea;
+  color: var(--admin-danger);
+}
+
+.admin-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .admin-status-badge {
   display: inline-flex;
   align-items: center;

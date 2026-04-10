@@ -29,6 +29,12 @@ import type {
   PlatformAlertGovernanceMutationResult,
   PlatformAlertRouteResult,
   RetryPlatformAlertDeliveriesResult,
+  LoanAgreementList,
+  LoanAgreementWorkspace,
+  LoanApplicationList,
+  LoanApplicationWorkspace,
+  LoanMutationResult,
+  LoanOperationsSummary,
   OversightMutationResult,
   OversightNoteMutationResult,
   OversightRestrictionMutationResult,
@@ -100,6 +106,157 @@ export async function getTreasuryOverview(
     method: "GET",
     url: "/treasury/internal/overview",
     params
+  });
+}
+
+export async function getLoanOperationsSummary(
+  session: OperatorSession
+): Promise<LoanOperationsSummary> {
+  return requestData(session, {
+    method: "GET",
+    url: "/loans/internal/summary"
+  });
+}
+
+export async function listLoanApplications(
+  session: OperatorSession,
+  params: Record<string, string | number | undefined>
+): Promise<LoanApplicationList> {
+  return requestData(session, {
+    method: "GET",
+    url: "/loans/internal/applications",
+    params
+  });
+}
+
+export async function getLoanApplicationWorkspace(
+  session: OperatorSession,
+  loanApplicationId: string
+): Promise<LoanApplicationWorkspace> {
+  return requestData(session, {
+    method: "GET",
+    url: `/loans/internal/applications/${loanApplicationId}/workspace`
+  });
+}
+
+export async function requestLoanEvidence(
+  session: OperatorSession,
+  loanApplicationId: string,
+  note?: string
+): Promise<LoanMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/loans/internal/applications/${loanApplicationId}/request-more-evidence`,
+    data: note ? { note } : {}
+  });
+}
+
+export async function approveLoanApplication(
+  session: OperatorSession,
+  loanApplicationId: string,
+  note?: string
+): Promise<LoanMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/loans/internal/applications/${loanApplicationId}/approve`,
+    data: note ? { note } : {}
+  });
+}
+
+export async function rejectLoanApplication(
+  session: OperatorSession,
+  loanApplicationId: string,
+  note?: string
+): Promise<LoanMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/loans/internal/applications/${loanApplicationId}/reject`,
+    data: note ? { note } : {}
+  });
+}
+
+export async function placeLoanAccountRestriction(
+  session: OperatorSession,
+  loanApplicationId: string,
+  note?: string,
+  reasonCode?: string
+): Promise<LoanMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/loans/internal/applications/${loanApplicationId}/place-account-restriction`,
+    data: {
+      ...(note ? { note } : {}),
+      ...(reasonCode ? { reasonCode } : {})
+    }
+  });
+}
+
+export async function listLoanAgreements(
+  session: OperatorSession,
+  params: Record<string, string | number | undefined>
+): Promise<LoanAgreementList> {
+  return requestData(session, {
+    method: "GET",
+    url: "/loans/internal/agreements",
+    params
+  });
+}
+
+export async function getLoanAgreementWorkspace(
+  session: OperatorSession,
+  loanAgreementId: string
+): Promise<LoanAgreementWorkspace> {
+  return requestData(session, {
+    method: "GET",
+    url: `/loans/internal/agreements/${loanAgreementId}/workspace`
+  });
+}
+
+export async function startLoanLiquidationReview(
+  session: OperatorSession,
+  loanAgreementId: string,
+  note?: string
+): Promise<LoanMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/loans/internal/agreements/${loanAgreementId}/start-liquidation-review`,
+    data: note ? { note } : {}
+  });
+}
+
+export async function approveLoanLiquidation(
+  session: OperatorSession,
+  loanAgreementId: string,
+  note?: string
+): Promise<LoanMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/loans/internal/agreements/${loanAgreementId}/approve-liquidation`,
+    data: note ? { note } : {}
+  });
+}
+
+export async function executeLoanLiquidation(
+  session: OperatorSession,
+  loanAgreementId: string,
+  note?: string
+): Promise<LoanMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/loans/internal/agreements/${loanAgreementId}/execute-liquidation`,
+    data: note ? { note } : {}
+  });
+}
+
+export async function closeLoanAgreement(
+  session: OperatorSession,
+  loanAgreementId: string,
+  note?: string
+): Promise<LoanMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/loans/internal/agreements/${loanAgreementId}/close`,
+    data: note ? { note } : {}
   });
 }
 

@@ -15,6 +15,20 @@ export const STAKING_CONTRACT_ABI = [
   "function arePoolDepositsPaused(uint256 poolId) external view returns (bool)"
 ] as const;
 
+export const LOAN_BOOK_ABI = [
+  "function createLoan(address borrower, address borrowAsset, address collateralAsset, uint256 principalAmount, uint256 collateralAmount, uint256 serviceFeeAmount, uint256 installmentAmount, uint256 installmentCount, uint256 termMonths, bool autopayEnabled) external returns (uint256)",
+  "function lockCollateral(uint256 loanId, uint256 amount) external payable",
+  "function fundLoan(uint256 loanId, uint256 firstDueAt) external payable",
+  "function recordRepayment(uint256 loanId, uint256 amount) external payable",
+  "function startGracePeriod(uint256 loanId, uint256 gracePeriodEndsAt) external",
+  "function markDefaulted(uint256 loanId) external",
+  "function startLiquidationReview(uint256 loanId) external",
+  "function approveLiquidation(uint256 loanId) external",
+  "function executeLiquidation(uint256 loanId, uint256 recoveredAmount, uint256 shortfallAmount) external",
+  "function releaseCollateral(uint256 loanId) external",
+  "function loans(uint256 loanId) external view returns (address borrower, address borrowAsset, address collateralAsset, uint256 principalAmount, uint256 collateralAmount, uint256 serviceFeeAmount, uint256 outstandingPrincipalAmount, uint256 outstandingServiceFeeAmount, uint256 installmentAmount, uint256 installmentCount, uint256 termMonths, uint256 nextDueAt, bool autopayEnabled, uint8 state, uint8 collateralState)"
+] as const;
+
 export const STAKING_EVENT_ABI = [
   "event PoolCreated(uint256 poolId, uint256 rewardRate, uint256 externalPoolId)",
   "event Deposited(address indexed user, uint256 poolId, uint256 amount)"
@@ -67,6 +81,20 @@ export function createErc20TransferContract(
   signer: ethers.Signer
 ): ethers.Contract {
   return new ethers.Contract(contractAddress, ERC20_TRANSFER_ABI, signer);
+}
+
+export function createLoanBookReadContract(
+  contractAddress: string,
+  providerOrSigner: ethers.Signer | ethers.providers.Provider
+): ethers.Contract {
+  return new ethers.Contract(contractAddress, LOAN_BOOK_ABI, providerOrSigner);
+}
+
+export function createLoanBookWriteContract(
+  contractAddress: string,
+  signer: ethers.Signer
+): ethers.Contract {
+  return new ethers.Contract(contractAddress, LOAN_BOOK_ABI, signer);
 }
 
 export function formatEthAmount(value: ethers.BigNumberish): string {

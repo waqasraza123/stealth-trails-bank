@@ -222,12 +222,12 @@ export const webMessages = {
     }
   },
   loans: {
-    title: "Loans & Savings",
+    title: "Managed lending",
     description:
-      "Truthful availability surface for capital products in the managed customer portal.",
-    alertTitle: "Customer self-service lending is not enabled",
+      "Production lending for real customers, with governed origination, collateralized funding, and explicit servicing states.",
+    alertTitle: "Managed lending is not available yet",
     alertDescription:
-      "The current customer API exposes balances, account lifecycle, wallet linkage, and ledger history. It does not expose loan origination, repayment schedules, savings products, APYs, or customer application workflows, so the old mocked forms were removed."
+      "Eligibility depends on account state, managed wallet custody, and supported collateral balances."
   },
   profile: {
     title: "Customer Profile",

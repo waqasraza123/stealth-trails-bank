@@ -176,7 +176,7 @@ test("synthetic mode records broadcasts and settles them", async () => {
       rpcUrl: null,
       depositSignerPrivateKey: null
     },
-    internalApiClient: client,
+    internalApiClient: client as never,
     rpcClient: null,
     depositBroadcaster: null,
     logger: createLogger()
@@ -286,7 +286,7 @@ test("monitor mode confirms and settles broadcast intents with enough confirmati
       rpcUrl: "https://rpc.example.com",
       depositSignerPrivateKey: null
     },
-    internalApiClient: client,
+    internalApiClient: client as never,
     rpcClient: {
       async getBlockNumber() {
         return 101n;
@@ -424,7 +424,7 @@ test("worker settles confirmed recovery backlog after the broadcast pass", async
       rpcUrl: "https://rpc.example.com",
       depositSignerPrivateKey: null
     },
-    internalApiClient: client,
+    internalApiClient: client as never,
     rpcClient: {
       async getBlockNumber() {
         return 101n;
@@ -537,7 +537,7 @@ test("monitor mode waits when a broadcast intent does not yet have enough confir
       rpcUrl: "https://rpc.example.com",
       depositSignerPrivateKey: null
     },
-    internalApiClient: client,
+    internalApiClient: client as never,
     rpcClient: {
       async getBlockNumber() {
         return 101n;
@@ -638,7 +638,7 @@ test("managed mode broadcasts queued deposits and leaves withdrawals for manual 
       depositSignerPrivateKey:
         "0x59c6995e998f97a5a0044966f094538c5f6d4e07f16b8ad8cc7658f0f1b0f9d8"
     },
-    internalApiClient: client,
+    internalApiClient: client as never,
     rpcClient: {
       async getBlockNumber() {
         return 100n;
@@ -755,7 +755,7 @@ test("managed mode permanently fails malformed deposit intents", async () => {
       depositSignerPrivateKey:
         "0x59c6995e998f97a5a0044966f094538c5f6d4e07f16b8ad8cc7658f0f1b0f9d8"
     },
-    internalApiClient: client,
+    internalApiClient: client as never,
     rpcClient: {
       async getBlockNumber() {
         return 100n;
@@ -864,7 +864,7 @@ test("monitor mode warns and skips broadcast intents that are missing a tx hash"
       async triggerCriticalAlertReEscalationSweep() {
         throw new Error("platform alert re-escalation is handled outside the orchestrator");
       }
-    },
+    } as never,
     rpcClient: {
       async getBlockNumber() {
         throw new Error("missing tx hash should return before block lookup");
@@ -974,7 +974,7 @@ test("monitor mode marks reverted withdrawal receipts as failed", async () => {
       async triggerCriticalAlertReEscalationSweep() {
         throw new Error("platform alert re-escalation is handled outside the orchestrator");
       }
-    },
+    } as never,
     rpcClient: {
       async getBlockNumber() {
         return 101n;
@@ -1092,7 +1092,7 @@ test("monitor mode marks reverted deposit receipts as failed", async () => {
       async triggerCriticalAlertReEscalationSweep() {
         throw new Error("platform alert re-escalation is handled outside the orchestrator");
       }
-    },
+    } as never,
     rpcClient: {
       async getBlockNumber() {
         return 101n;
@@ -1209,7 +1209,7 @@ test("monitor mode confirms and settles withdrawal intents with enough confirmat
       async triggerCriticalAlertReEscalationSweep() {
         throw new Error("platform alert re-escalation is handled outside the orchestrator");
       }
-    },
+    } as never,
     rpcClient: {
       async getBlockNumber() {
         return 101n;
@@ -1325,7 +1325,7 @@ test("monitor mode requires an rpc client once broadcast intents need confirmati
       async triggerCriticalAlertReEscalationSweep() {
         throw new Error("platform alert re-escalation is handled outside the orchestrator");
       }
-    },
+    } as never,
     rpcClient: null,
     depositBroadcaster: null,
     logger: createLogger()
@@ -1406,7 +1406,7 @@ test("monitor mode logs queued backlog when an external broadcaster is still res
       async triggerCriticalAlertReEscalationSweep() {
         throw new Error("platform alert re-escalation is handled outside the orchestrator");
       }
-    },
+    } as never,
     rpcClient: {
       async getBlockNumber() {
         return 100n;
@@ -1506,7 +1506,7 @@ test("managed mode logs retryable deposit broadcaster failures without marking t
       async triggerCriticalAlertReEscalationSweep() {
         throw new Error("platform alert re-escalation is handled outside the orchestrator");
       }
-    },
+    } as never,
     rpcClient: {
       async getBlockNumber() {
         return 100n;
@@ -1601,7 +1601,7 @@ test("managed mode requires a deposit broadcaster when queued deposits exist", a
       async triggerCriticalAlertReEscalationSweep() {
         throw new Error("platform alert re-escalation is handled outside the orchestrator");
       }
-    },
+    } as never,
     rpcClient: {
       async getBlockNumber() {
         return 100n;

@@ -1,163 +1,189 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useMyBalances } from "@/hooks/balances/useMyBalances";
-import { useMyTransactionHistory } from "@/hooks/transactions/useMyTransactionHistory";
-import { useGetUser } from "@/hooks/user/useGetUser";
 import Loans from "@/pages/Loans";
-import { useUserStore } from "@/stores/userStore";
+import {
+  useCreateLoanApplication,
+  useLoansDashboard,
+  usePreviewLoanQuote,
+  useSetLoanAutopay
+} from "@/hooks/loans/useLoans";
 import { renderWithRouter } from "@/test/render-with-router";
 
-const mockUseGetUser = vi.mocked(useGetUser);
-const mockUseMyBalances = vi.mocked(useMyBalances);
-const mockUseMyTransactionHistory = vi.mocked(useMyTransactionHistory);
+const mockUseLoansDashboard = vi.mocked(useLoansDashboard);
+const mockUsePreviewLoanQuote = vi.mocked(usePreviewLoanQuote);
+const mockUseCreateLoanApplication = vi.mocked(useCreateLoanApplication);
+const mockUseSetLoanAutopay = vi.mocked(useSetLoanAutopay);
 
-vi.mock("@/hooks/user/useGetUser", () => ({
-  useGetUser: vi.fn()
-}));
-
-vi.mock("@/hooks/balances/useMyBalances", () => ({
-  useMyBalances: vi.fn()
-}));
-
-vi.mock("@/hooks/transactions/useMyTransactionHistory", () => ({
-  useMyTransactionHistory: vi.fn()
+vi.mock("@/hooks/loans/useLoans", () => ({
+  useLoansDashboard: vi.fn(),
+  usePreviewLoanQuote: vi.fn(),
+  useCreateLoanApplication: vi.fn(),
+  useSetLoanAutopay: vi.fn()
 }));
 
 describe("loans page", () => {
   beforeEach(() => {
-    localStorage.clear();
-    useUserStore.setState({
-      token: "test-token",
-      user: {
-        id: 1,
-        firstName: "Amina",
-        lastName: "Rahman",
-        email: "amina@example.com",
-        supabaseUserId: "supabase_1",
-        ethereumAddress: "0x1111222233334444555566667777888899990000"
-      }
-    });
+    mockUsePreviewLoanQuote.mockReturnValue({
+      data: null,
+      error: null,
+      isPending: false,
+      mutateAsync: vi.fn()
+    } as never);
 
-    mockUseGetUser.mockReturnValue({
-      data: {
-        id: 1,
-        customerId: "customer_1",
-        supabaseUserId: "supabase_1",
-        email: "amina@example.com",
-        firstName: "Amina",
-        lastName: "Rahman",
-        ethereumAddress: "0x1111222233334444555566667777888899990000",
-        accountStatus: "active",
-        activatedAt: "2026-04-01T10:00:00.000Z",
-        restrictedAt: null,
-        frozenAt: null,
-        closedAt: null
-      },
-      isLoading: false,
-      isError: false,
-      error: null
-    } as ReturnType<typeof useGetUser>);
+    mockUseCreateLoanApplication.mockReturnValue({
+      error: null,
+      isPending: false,
+      mutateAsync: vi.fn()
+    } as never);
 
-    mockUseMyBalances.mockReturnValue({
+    mockUseSetLoanAutopay.mockReturnValue({
+      error: null,
+      isPending: false,
+      mutateAsync: vi.fn()
+    } as never);
+
+    mockUseLoansDashboard.mockReturnValue({
       data: {
-        customerAccountId: "account_1",
-        balances: [
+        account: {
+          customerId: "customer_1",
+          customerAccountId: "account_1",
+          email: "amina@example.com",
+          walletAddress: "0x1111222233334444555566667777888899990000",
+          accountStatus: "active",
+          walletStatus: "active",
+          custodyType: "platform_managed"
+        },
+        eligibility: {
+          eligible: true,
+          accountReady: true,
+          custodyReady: true,
+          anyCollateralReady: true,
+          reasons: [],
+          borrowingCapacity: {
+            ETH: "1.5",
+            USDC: "7500"
+          }
+        },
+        policyPacks: [
           {
-            asset: {
-              id: "asset_eth",
-              symbol: "ETH",
-              displayName: "Ethereum",
-              decimals: 18,
-              chainId: 1
-            },
-            availableBalance: "1.500000",
-            pendingBalance: "0",
-            updatedAt: "2026-04-05T09:00:00.000Z"
-          },
+            jurisdiction: "usa",
+            displayName: "United States",
+            disclosureTitle: "US lending disclosure",
+            disclosureBody: "Interest-free lending with a fixed service fee.",
+            serviceFeeRateBps: 275,
+            warningLtvBps: 6800,
+            liquidationLtvBps: 8000,
+            gracePeriodDays: 10
+          }
+        ],
+        supportedBorrowAssets: ["ETH", "USDC"],
+        supportedCollateralAssets: ["ETH", "USDC"],
+        balances: [],
+        applications: [
           {
-            asset: {
-              id: "asset_usdc",
+            id: "loan_application_1",
+            status: "submitted",
+            jurisdiction: "usa",
+            requestedBorrowAmount: "1000",
+            requestedCollateralAmount: "1600",
+            requestedTermMonths: 6,
+            serviceFeeAmount: "27.5",
+            borrowAsset: {
               symbol: "USDC",
-              displayName: "USD Coin",
-              decimals: 6,
-              chainId: 1
+              displayName: "USD Coin"
             },
-            availableBalance: "0",
-            pendingBalance: "10",
-            updatedAt: "2026-04-05T09:10:00.000Z"
-          }
-        ]
-      },
-      isLoading: false,
-      isError: false,
-      error: null
-    } as ReturnType<typeof useMyBalances>);
-
-    mockUseMyTransactionHistory.mockReturnValue({
-      data: {
-        limit: 10,
-        intents: [
-          {
-            id: "intent_1",
-            asset: {
-              id: "asset_eth",
+            collateralAsset: {
               symbol: "ETH",
-              displayName: "Ethereum",
-              decimals: 18,
-              chainId: 1
+              displayName: "Ethereum"
             },
-            sourceWalletAddress: null,
-            destinationWalletAddress: "0x1111222233334444555566667777888899990000",
-            externalAddress: null,
-            intentType: "deposit",
-            status: "settled",
-            policyDecision: "approved",
-            requestedAmount: "1.25",
-            settledAmount: "1.25",
-            failureCode: null,
-            failureReason: null,
-            createdAt: "2026-04-05T10:30:00.000Z",
-            updatedAt: "2026-04-05T10:30:00.000Z",
-            latestBlockchainTransaction: null
+            submittedAt: "2026-04-10T00:00:00.000Z",
+            reviewedAt: null,
+            note: null,
+            linkedLoanAgreementId: "loan_agreement_1",
+            timeline: [
+              {
+                id: "loan_event_1",
+                label: "Submitted",
+                tone: "technical",
+                timestamp: "2026-04-10T00:00:00.000Z",
+                description: "Customer submitted a managed lending application."
+              }
+            ]
+          }
+        ],
+        agreements: [
+          {
+            id: "loan_agreement_1",
+            status: "active",
+            jurisdiction: "usa",
+            principalAmount: "1000",
+            collateralAmount: "1600",
+            serviceFeeAmount: "27.5",
+            outstandingPrincipalAmount: "1000",
+            outstandingServiceFeeAmount: "27.5",
+            outstandingTotalAmount: "1027.5",
+            installmentAmount: "171.25",
+            installmentCount: 6,
+            termMonths: 6,
+            autopayEnabled: true,
+            borrowAsset: {
+              symbol: "USDC",
+              displayName: "USD Coin"
+            },
+            collateralAsset: {
+              symbol: "ETH",
+              displayName: "Ethereum"
+            },
+            nextDueAt: "2026-05-10T00:00:00.000Z",
+            fundedAt: "2026-04-11T00:00:00.000Z",
+            activatedAt: "2026-04-11T00:00:00.000Z",
+            gracePeriodEndsAt: null,
+            statementReferences: [],
+            collateralPositions: [],
+            installments: [
+              {
+                id: "installment_1",
+                installmentNumber: 1,
+                dueAt: "2026-05-10T00:00:00.000Z",
+                status: "due",
+                scheduledPrincipalAmount: "166.66",
+                scheduledServiceFeeAmount: "4.58",
+                scheduledTotalAmount: "171.25",
+                paidTotalAmount: "0"
+              }
+            ],
+            liquidationCases: [],
+            timeline: [
+              {
+                id: "loan_event_2",
+                label: "Funded",
+                tone: "positive",
+                timestamp: "2026-04-11T00:00:00.000Z",
+                description: "Funding workflow completed and the agreement is active."
+              }
+            ],
+            notice: "Your loan is active and being serviced on its disclosed installment schedule."
           }
         ]
       },
-      isLoading: false,
-      isError: false,
-      error: null
-    } as ReturnType<typeof useMyTransactionHistory>);
+      error: null,
+      isLoading: false
+    } as never);
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it("replaces mocked capital-product forms with truthful API-backed availability data", () => {
+  it("renders the real lending workspace instead of the old placeholder", () => {
     renderWithRouter(<Loans />);
 
-    expect(
-      screen.getByRole("heading", { name: /loans & savings/i })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/customer self-service lending is not enabled/i)
-    ).toBeInTheDocument();
-    expect(screen.getAllByText("2").length).toBeGreaterThanOrEqual(2);
-    expect(
-      screen.getByText("Latest recorded activity")
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: /loans & savings/i })
-    ).toBeInTheDocument();
-    expect(screen.getAllByText("Deposit").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/\+1.25 ETH/i)).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /apply now/i })
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /open savings account/i })
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /add to savings/i })
-    ).not.toBeInTheDocument();
+    expect(screen.getByText(/^Managed lending$/i)).toBeInTheDocument();
+    expect(screen.getByText(/account is eligible for managed lending/i)).toBeInTheDocument();
+    expect(screen.getByText(/new loan application/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^Selected agreement$/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^Application tracker$/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/USDC/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/loans & savings/i)).not.toBeInTheDocument();
   });
 });

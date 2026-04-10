@@ -567,6 +567,261 @@ export type TreasuryOverview = {
   }>;
 };
 
+export type LoanOperationsSummary = {
+  applicationBacklog: Array<{
+    status: string;
+    count: number;
+  }>;
+  agreementStates: Array<{
+    status: string;
+    count: number;
+  }>;
+  liquidationStates: Array<{
+    status: string;
+    count: number;
+  }>;
+  policyPacks: Array<{
+    jurisdiction: string;
+    displayName: string;
+    disclosureTitle: string;
+    disclosureBody: string;
+    serviceFeeRateBps: number;
+    warningLtvBps: number;
+    liquidationLtvBps: number;
+    gracePeriodDays: number;
+  }>;
+};
+
+export type LoanApplicationList = {
+  applications: Array<{
+    id: string;
+    status: string;
+    jurisdiction: string;
+    requestedBorrowAmount: string;
+    requestedCollateralAmount: string;
+    requestedTermMonths: number;
+    serviceFeeAmount: string;
+    customer: {
+      customerId: string;
+      customerAccountId: string;
+      email: string;
+      firstName: string | null;
+      lastName: string | null;
+    };
+    borrowAsset: {
+      symbol: string;
+      displayName: string;
+    };
+    collateralAsset: {
+      symbol: string;
+      displayName: string;
+    };
+    linkedLoanAgreementId: string | null;
+    submittedAt: string;
+    updatedAt: string;
+  }>;
+  totalCount: number;
+  limit: number;
+};
+
+export type LoanAgreementList = {
+  agreements: Array<{
+    id: string;
+    status: string;
+    jurisdiction: string;
+    principalAmount: string;
+    collateralAmount: string;
+    outstandingTotalAmount: string;
+    autopayEnabled: boolean;
+    nextDueAt: string | null;
+    customer: {
+      customerId: string;
+      customerAccountId: string;
+      email: string;
+      firstName: string | null;
+      lastName: string | null;
+    };
+    borrowAsset: string;
+    collateralAsset: string;
+    collateralStatus: string | null;
+    liquidationStatus: string | null;
+  }>;
+  totalCount: number;
+  limit: number;
+};
+
+export type LoanApplicationWorkspace = {
+  application: {
+    id: string;
+    status: string;
+    jurisdiction: string;
+    requestedBorrowAmount: string;
+    requestedCollateralAmount: string;
+    requestedTermMonths: number;
+    serviceFeeAmount: string;
+    autopayEnabled: boolean;
+    quoteSnapshot: JsonValue;
+    submittedAt: string;
+    reviewedAt: string | null;
+    reviewedByOperatorId: string | null;
+    reviewedByOperatorRole: string | null;
+    decisionNote: string | null;
+    customer: {
+      customerId: string;
+      customerAccountId: string;
+      status: string;
+      email: string;
+      firstName: string | null;
+      lastName: string | null;
+    };
+    borrowAsset: {
+      symbol: string;
+      displayName: string;
+      chainId: number;
+      decimals: number;
+    };
+    collateralAsset: {
+      symbol: string;
+      displayName: string;
+      chainId: number;
+      decimals: number;
+    };
+  };
+  linkedLoanAgreement: {
+    id: string;
+    status: string;
+    principalAmount: string;
+    outstandingTotalAmount: string;
+    nextDueAt: string | null;
+  } | null;
+  timeline: Array<{
+    id: string;
+    label: string;
+    tone: "neutral" | "positive" | "warning" | "critical" | "technical";
+    timestamp: string;
+    description: string;
+  }>;
+};
+
+export type LoanAgreementWorkspace = {
+  agreement: {
+    id: string;
+    applicationId: string;
+    status: string;
+    jurisdiction: string;
+    principalAmount: string;
+    collateralAmount: string;
+    serviceFeeAmount: string;
+    outstandingTotalAmount: string;
+    contractLoanId: string | null;
+    contractAddress: string | null;
+    activationTransactionHash: string | null;
+    autopayEnabled: boolean;
+    nextDueAt: string | null;
+    gracePeriodEndsAt: string | null;
+    delinquentAt: string | null;
+    defaultedAt: string | null;
+    liquidationStartedAt: string | null;
+    customer: {
+      customerId: string;
+      customerAccountId: string;
+      status: string;
+      email: string;
+      firstName: string | null;
+      lastName: string | null;
+    };
+    borrowAsset: {
+      symbol: string;
+      displayName: string;
+    };
+    collateralAsset: {
+      symbol: string;
+      displayName: string;
+    };
+  };
+  installments: Array<{
+    id: string;
+    installmentNumber: number;
+    dueAt: string;
+    status: string;
+    scheduledTotalAmount: string;
+    paidTotalAmount: string;
+    lastAutopayAttemptAt: string | null;
+  }>;
+  collateralPositions: Array<{
+    id: string;
+    amount: string;
+    status: string;
+    walletAddress: string | null;
+    currentValuationUsd: string | null;
+    latestLtvBps: number | null;
+  }>;
+  valuations: Array<{
+    id: string;
+    priceUsd: string;
+    collateralValueUsd: string;
+    principalValueUsd: string;
+    ltvBps: number;
+    observedAt: string;
+  }>;
+  repayments: Array<{
+    id: string;
+    status: string;
+    amount: string;
+    principalAppliedAmount: string;
+    serviceFeeAppliedAmount: string;
+    failureReason: string | null;
+    autopayAttempted: boolean;
+    autopaySucceeded: boolean;
+    createdAt: string;
+    settledAt: string | null;
+  }>;
+  statements: Array<{
+    id: string;
+    referenceId: string;
+    statementDate: string;
+  }>;
+  liquidationCases: Array<{
+    id: string;
+    status: string;
+    reasonCode: string;
+    note: string | null;
+    executionTransactionHash: string | null;
+    recoveredAmount: string | null;
+    shortfallAmount: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  timeline: Array<{
+    id: string;
+    label: string;
+    tone: "neutral" | "positive" | "warning" | "critical" | "technical";
+    timestamp: string;
+    description: string;
+  }>;
+};
+
+export type LoanMutationResult =
+  | {
+      loanApplicationId: string;
+      status: string;
+      loanAgreementId?: string;
+      contractLoanId?: string | null;
+      reused?: boolean;
+    }
+  | {
+      customerAccountId: string;
+      status: string;
+    }
+  | {
+      liquidationCaseId: string;
+      status: string;
+    }
+  | {
+      loanAgreementId: string;
+      status: string;
+    };
+
 export type OperationsStatus = {
   generatedAt: string;
   alertSummary: {

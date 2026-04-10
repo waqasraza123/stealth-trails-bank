@@ -65,6 +65,9 @@ model CustomerAccount {
   assetBalances                   CustomerAssetBalance[]
   incidentPackageReleases         CustomerAccountIncidentPackageRelease[]
   ledgerReconciliationMismatches  LedgerReconciliationMismatch[]
+  loanApplications                LoanApplication[]
+  loanAgreements                  LoanAgreement[]
+  loanStatements                  LoanStatement[]
 }
 
 model Wallet {
@@ -107,6 +110,12 @@ model Asset {
   ledgerJournals     LedgerJournal[]
   customerBalances   CustomerAssetBalance[]
   ledgerReconciliationMismatches LedgerReconciliationMismatch[]
+  requestedBorrowLoanApplications LoanApplication[] @relation("RequestedBorrowAsset")
+  requestedCollateralLoanApplications LoanApplication[] @relation("RequestedCollateralAsset")
+  borrowedLoanAgreements LoanAgreement[] @relation("LoanBorrowAsset")
+  collateralizedLoanAgreements LoanAgreement[] @relation("LoanCollateralAsset")
+  loanCollateralPositions LoanCollateralPosition[]
+  loanRepaymentEvents LoanRepaymentEvent[] @relation("LoanRepaymentAsset")
 }
 
 model TransactionIntent {
@@ -482,11 +491,22 @@ enum LedgerAccountType {
   asset_inbound_clearing
   asset_outbound_clearing
   customer_asset_liability
+  loan_principal_receivable
+  loan_service_fee_receivable
+  loan_service_fee_income
+  loan_collateral_custody
+  loan_liquidation_clearing
 }
 
 enum LedgerJournalType {
   deposit_settlement
   withdrawal_settlement
+  loan_disbursement
+  loan_repayment
+  loan_service_fee_accrual
+  loan_collateral_lock
+  loan_collateral_release
+  loan_liquidation
 }
 
 enum LedgerPostingDirection {
@@ -574,6 +594,290 @@ model WorkerRuntimeHeartbeat {
   @@index([lastIterationStatus, lastHeartbeatAt])
   @@index([executionMode, lastHeartbeatAt])
   @@index([lastReconciliationScanStatus, lastHeartbeatAt])
+}
+
+model LoanApplication {
+  id                       String            @id @default(cuid())
+  customerAccountId        String
+  customerAccount          CustomerAccount   @relation(fields: [customerAccountId], references: [id])
+  status                   LoanLifecycleStatus @default(submitted)
+  jurisdiction             LoanJurisdictionCode
+  requestedBorrowAssetId   String
+  requestedBorrowAsset     Asset             @relation("RequestedBorrowAsset", fields: [requestedBorrowAssetId], references: [id])
+  requestedCollateralAssetId String
+  requestedCollateralAsset Asset             @relation("RequestedCollateralAsset", fields: [requestedCollateralAssetId], references: [id])
+  requestedBorrowAmount    Decimal           @db.Decimal(36, 18)
+  requestedCollateralAmount Decimal          @db.Decimal(36, 18)
+  requestedTermMonths      Int
+  serviceFeeAmount         Decimal           @db.Decimal(36, 18)
+  autopayEnabled           Boolean           @default(true)
+  submittedAt              DateTime?         @default(now())
+  reviewedAt               DateTime?
+  reviewedByOperatorId     String?
+  reviewedByOperatorRole   String?
+  decisionNote             String?
+  failureReason            String?
+  quoteSnapshot            Json
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+  loanAgreement            LoanAgreement?
+  events                   LoanEvent[]
+
+  @@index([customerAccountId, status, updatedAt])
+  @@index([jurisdiction, status, updatedAt])
+  @@index([requestedBorrowAssetId, status])
+  @@index([requestedCollateralAssetId, status])
+}
+
+model LoanAgreement {
+  id                        String               @id @default(cuid())
+  applicationId             String               @unique
+  application               LoanApplication      @relation(fields: [applicationId], references: [id])
+  customerAccountId         String
+  customerAccount           CustomerAccount      @relation(fields: [customerAccountId], references: [id])
+  status                    LoanLifecycleStatus  @default(awaiting_funding)
+  jurisdiction              LoanJurisdictionCode
+  borrowAssetId             String
+  borrowAsset               Asset                @relation("LoanBorrowAsset", fields: [borrowAssetId], references: [id])
+  collateralAssetId         String
+  collateralAsset           Asset                @relation("LoanCollateralAsset", fields: [collateralAssetId], references: [id])
+  principalAmount           Decimal              @db.Decimal(36, 18)
+  collateralAmount          Decimal              @db.Decimal(36, 18)
+  serviceFeeAmount          Decimal              @db.Decimal(36, 18)
+  totalRepayableAmount      Decimal              @db.Decimal(36, 18)
+  outstandingPrincipalAmount Decimal            @db.Decimal(36, 18)
+  outstandingServiceFeeAmount Decimal           @db.Decimal(36, 18)
+  outstandingTotalAmount    Decimal              @db.Decimal(36, 18)
+  installmentAmount         Decimal              @db.Decimal(36, 18)
+  installmentCount          Int
+  termMonths                Int
+  autopayEnabled            Boolean              @default(true)
+  contractLoanId            String?              @unique
+  contractAddress           String?
+  activationTransactionHash String?
+  approvedAt                DateTime?
+  fundedAt                  DateTime?
+  activatedAt               DateTime?
+  gracePeriodEndsAt         DateTime?
+  delinquentAt              DateTime?
+  defaultedAt               DateTime?
+  liquidationStartedAt      DateTime?
+  closedAt                  DateTime?
+  nextDueAt                 DateTime?
+  disclosureSnapshot        Json
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+  installments              LoanInstallment[]
+  repayments                LoanRepaymentEvent[]
+  collateralPositions       LoanCollateralPosition[]
+  valuationSnapshots        LoanValuationSnapshot[]
+  liquidationCases          LoanLiquidationCase[]
+  statements                LoanStatement[]
+  events                    LoanEvent[]
+
+  @@index([customerAccountId, status, updatedAt])
+  @@index([status, nextDueAt])
+  @@index([jurisdiction, status, updatedAt])
+  @@index([borrowAssetId, status])
+  @@index([collateralAssetId, status])
+}
+
+model LoanInstallment {
+  id                         String               @id @default(cuid())
+  loanAgreementId            String
+  loanAgreement              LoanAgreement        @relation(fields: [loanAgreementId], references: [id])
+  installmentNumber          Int
+  dueAt                      DateTime
+  status                     LoanInstallmentStatus @default(scheduled)
+  scheduledPrincipalAmount   Decimal              @db.Decimal(36, 18)
+  scheduledServiceFeeAmount  Decimal              @db.Decimal(36, 18)
+  scheduledTotalAmount       Decimal              @db.Decimal(36, 18)
+  paidPrincipalAmount        Decimal              @default(0) @db.Decimal(36, 18)
+  paidServiceFeeAmount       Decimal              @default(0) @db.Decimal(36, 18)
+  paidTotalAmount            Decimal              @default(0) @db.Decimal(36, 18)
+  lastAutopayAttemptAt       DateTime?
+  createdAt                  DateTime             @default(now())
+  updatedAt                  DateTime             @updatedAt
+  repayments                 LoanRepaymentEvent[]
+
+  @@unique([loanAgreementId, installmentNumber])
+  @@index([loanAgreementId, dueAt])
+  @@index([status, dueAt])
+}
+
+model LoanRepaymentEvent {
+  id                         String                @id @default(cuid())
+  loanAgreementId            String
+  loanAgreement              LoanAgreement         @relation(fields: [loanAgreementId], references: [id])
+  installmentId              String?
+  installment                LoanInstallment?      @relation(fields: [installmentId], references: [id])
+  assetId                    String
+  asset                      Asset                 @relation("LoanRepaymentAsset", fields: [assetId], references: [id])
+  status                     LoanRepaymentStatus   @default(scheduled)
+  amount                     Decimal               @db.Decimal(36, 18)
+  principalAppliedAmount     Decimal               @default(0) @db.Decimal(36, 18)
+  serviceFeeAppliedAmount    Decimal               @default(0) @db.Decimal(36, 18)
+  autopayAttempted           Boolean               @default(false)
+  autopaySucceeded           Boolean               @default(false)
+  failureReason              String?
+  createdAt                  DateTime              @default(now())
+  settledAt                  DateTime?
+
+  @@index([loanAgreementId, createdAt])
+  @@index([installmentId, createdAt])
+  @@index([status, createdAt])
+}
+
+model LoanCollateralPosition {
+  id                        String               @id @default(cuid())
+  loanAgreementId           String
+  loanAgreement             LoanAgreement        @relation(fields: [loanAgreementId], references: [id])
+  assetId                   String
+  asset                     Asset                @relation(fields: [assetId], references: [id])
+  amount                    Decimal              @db.Decimal(36, 18)
+  status                    LoanCollateralStatus @default(pending_lock)
+  walletAddress             String?
+  currentValuationUsd       Decimal?             @db.Decimal(36, 18)
+  latestLtvBps              Int?
+  lockedAt                  DateTime?
+  releasedAt                DateTime?
+  seizedAt                  DateTime?
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+  valuationSnapshots        LoanValuationSnapshot[]
+
+  @@index([loanAgreementId, status, updatedAt])
+  @@index([assetId, status])
+}
+
+model LoanValuationSnapshot {
+  id                        String            @id @default(cuid())
+  loanAgreementId           String
+  loanAgreement             LoanAgreement     @relation(fields: [loanAgreementId], references: [id])
+  collateralPositionId      String?
+  collateralPosition        LoanCollateralPosition? @relation(fields: [collateralPositionId], references: [id])
+  priceUsd                  Decimal           @db.Decimal(36, 18)
+  collateralValueUsd        Decimal           @db.Decimal(36, 18)
+  principalValueUsd         Decimal           @db.Decimal(36, 18)
+  ltvBps                    Int
+  warningLtvBps             Int
+  liquidationLtvBps         Int
+  observedAt                DateTime
+  createdAt                 DateTime          @default(now())
+
+  @@index([loanAgreementId, observedAt])
+  @@index([collateralPositionId, observedAt])
+}
+
+model LoanLiquidationCase {
+  id                        String                @id @default(cuid())
+  loanAgreementId           String
+  loanAgreement             LoanAgreement         @relation(fields: [loanAgreementId], references: [id])
+  status                    LoanLiquidationStatus @default(review_requested)
+  reasonCode                String
+  requestedByOperatorId     String?
+  approvedByOperatorId      String?
+  executedByOperatorId      String?
+  note                      String?
+  executionTransactionHash  String?
+  recoveredAmount           Decimal?              @db.Decimal(36, 18)
+  shortfallAmount           Decimal?              @db.Decimal(36, 18)
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+
+  @@index([loanAgreementId, status, updatedAt])
+  @@index([status, updatedAt])
+}
+
+model LoanStatement {
+  id                        String            @id @default(cuid())
+  loanAgreementId           String
+  loanAgreement             LoanAgreement     @relation(fields: [loanAgreementId], references: [id])
+  customerAccountId         String
+  customerAccount           CustomerAccount   @relation(fields: [customerAccountId], references: [id])
+  referenceId               String            @unique
+  statementDate             DateTime
+  summarySnapshot           Json
+  createdAt                 DateTime          @default(now())
+
+  @@index([loanAgreementId, statementDate])
+  @@index([customerAccountId, statementDate])
+}
+
+model LoanEvent {
+  id                        String            @id @default(cuid())
+  loanApplicationId         String?
+  loanApplication           LoanApplication?  @relation(fields: [loanApplicationId], references: [id])
+  loanAgreementId           String?
+  loanAgreement             LoanAgreement?    @relation(fields: [loanAgreementId], references: [id])
+  actorType                 String
+  actorId                   String?
+  actorRole                 String?
+  eventType                 String
+  note                      String?
+  metadata                  Json?
+  createdAt                 DateTime          @default(now())
+
+  @@index([loanApplicationId, createdAt])
+  @@index([loanAgreementId, createdAt])
+  @@index([eventType, createdAt])
+}
+
+enum LoanJurisdictionCode {
+  saudi_arabia
+  uae
+  usa
+}
+
+enum LoanLifecycleStatus {
+  draft_application
+  submitted
+  under_review
+  approved
+  rejected
+  awaiting_funding
+  active
+  grace_period
+  delinquent
+  defaulted
+  liquidating
+  closed
+}
+
+enum LoanCollateralStatus {
+  pending_lock
+  locked
+  margin_warning
+  liquidation_review
+  liquidating
+  released
+  seized
+}
+
+enum LoanInstallmentStatus {
+  scheduled
+  due
+  partial
+  paid
+  missed
+  waived
+}
+
+enum LoanRepaymentStatus {
+  scheduled
+  processing
+  settled
+  failed
+  cancelled
+}
+
+enum LoanLiquidationStatus {
+  review_requested
+  approved
+  executing
+  executed
+  cancelled
+  closed
 }
 
 model PlatformAlert {

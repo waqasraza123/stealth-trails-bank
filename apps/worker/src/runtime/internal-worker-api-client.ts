@@ -6,6 +6,8 @@ import type {
   CriticalAlertReEscalationSweepResult,
   FailIntentPayload,
   ListIntentsResult,
+  ListWorkerLoanAgreementsResult,
+  ListWorkerLoanInstallmentsResult,
   RecordBroadcastPayload,
   SettleIntentPayload,
   TrackedLedgerReconciliationScanResult,
@@ -201,6 +203,104 @@ export function createInternalWorkerApiClient(runtime: WorkerRuntime) {
           {
             params: { limit }
           }
+        ),
+        baseUrl
+      );
+    },
+
+    async listAwaitingFundingLoans(
+      limit: number
+    ): Promise<ListWorkerLoanAgreementsResult> {
+      return readResponseData(
+        httpClient.get<ApiEnvelope<ListWorkerLoanAgreementsResult>>(
+          "/loans/internal/worker/agreements/awaiting-funding",
+          { params: { limit } }
+        ),
+        baseUrl
+      );
+    },
+
+    async fundLoanAgreement(loanAgreementId: string): Promise<void> {
+      await readResponseData(
+        httpClient.post<ApiEnvelope<{ loanAgreementId: string }>>(
+          `/loans/internal/worker/agreements/${loanAgreementId}/fund`
+        ),
+        baseUrl
+      );
+    },
+
+    async listDueLoanInstallments(
+      limit: number
+    ): Promise<ListWorkerLoanInstallmentsResult> {
+      return readResponseData(
+        httpClient.get<ApiEnvelope<ListWorkerLoanInstallmentsResult>>(
+          "/loans/internal/worker/installments/due",
+          { params: { limit } }
+        ),
+        baseUrl
+      );
+    },
+
+    async runLoanAutopay(
+      loanAgreementId: string
+    ): Promise<{ loanAgreementId: string; attempted: boolean; succeeded?: boolean }> {
+      return readResponseData(
+        httpClient.post<
+          ApiEnvelope<{ loanAgreementId: string; attempted: boolean; succeeded?: boolean }>
+        >(`/loans/internal/worker/agreements/${loanAgreementId}/run-autopay`),
+        baseUrl
+      );
+    },
+
+    async listValuationMonitorLoans(
+      limit: number
+    ): Promise<ListWorkerLoanAgreementsResult> {
+      return readResponseData(
+        httpClient.get<ApiEnvelope<ListWorkerLoanAgreementsResult>>(
+          "/loans/internal/worker/agreements/valuation-monitor",
+          { params: { limit } }
+        ),
+        baseUrl
+      );
+    },
+
+    async refreshLoanValuation(loanAgreementId: string): Promise<void> {
+      await readResponseData(
+        httpClient.post<ApiEnvelope<{ loanAgreementId: string }>>(
+          `/loans/internal/worker/agreements/${loanAgreementId}/refresh-valuation`
+        ),
+        baseUrl
+      );
+    },
+
+    async listGracePeriodExpiredLoans(
+      limit: number
+    ): Promise<ListWorkerLoanAgreementsResult> {
+      return readResponseData(
+        httpClient.get<ApiEnvelope<ListWorkerLoanAgreementsResult>>(
+          "/loans/internal/worker/agreements/grace-period-expired",
+          { params: { limit } }
+        ),
+        baseUrl
+      );
+    },
+
+    async escalateLoanDefault(loanAgreementId: string): Promise<void> {
+      await readResponseData(
+        httpClient.post<ApiEnvelope<{ loanAgreementId: string }>>(
+          `/loans/internal/worker/agreements/${loanAgreementId}/escalate-default`
+        ),
+        baseUrl
+      );
+    },
+
+    async listLoanLiquidationCandidates(
+      limit: number
+    ): Promise<ListWorkerLoanAgreementsResult> {
+      return readResponseData(
+        httpClient.get<ApiEnvelope<ListWorkerLoanAgreementsResult>>(
+          "/loans/internal/worker/agreements/liquidation-candidates",
+          { params: { limit } }
         ),
         baseUrl
       );

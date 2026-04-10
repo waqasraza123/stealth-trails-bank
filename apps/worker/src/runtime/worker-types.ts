@@ -37,6 +37,36 @@ export type ListIntentsResult = {
   limit: number;
 };
 
+export type WorkerLoanAgreementProjection = {
+  loanAgreementId: string;
+  customerEmail: string;
+  status: string;
+  collateralStatus: string | null;
+  latestLtvBps?: number | null;
+  gracePeriodEndsAt?: string | null;
+};
+
+export type ListWorkerLoanAgreementsResult = {
+  agreements: WorkerLoanAgreementProjection[];
+  limit: number;
+};
+
+export type WorkerLoanInstallmentProjection = {
+  id: string;
+  loanAgreementId: string;
+  installmentNumber: number;
+  dueAt: string;
+  status: string;
+  amount: string;
+  assetSymbol: string;
+  customerEmail: string;
+};
+
+export type ListWorkerLoanInstallmentsResult = {
+  installments: WorkerLoanInstallmentProjection[];
+  limit: number;
+};
+
 export type RecordBroadcastPayload = {
   txHash: string;
   fromAddress?: string;
@@ -107,6 +137,17 @@ export type WorkerIterationMetrics = {
   depositFailedCount: number;
   withdrawalFailedCount: number;
   manualWithdrawalBacklogCount: number;
+  awaitingFundingLoanCount: number;
+  fundedLoanCount: number;
+  dueLoanInstallmentCount: number;
+  autopayLoanSweepCount: number;
+  autopayLoanSuccessCount: number;
+  autopayLoanFailureCount: number;
+  valuationRefreshCandidateCount: number;
+  valuationRefreshCount: number;
+  graceExpiredLoanCount: number;
+  defaultEscalatedLoanCount: number;
+  liquidationCandidateCount: number;
   reEscalatedCriticalAlertCount: number;
 };
 
