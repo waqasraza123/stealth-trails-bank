@@ -53,13 +53,43 @@ test("internal worker api client issues every worker request against the expecte
         params: options?.params
       });
 
-      if (url.includes("queued") || url.includes("broadcast") || url.includes("confirmed-ready-to-settle")) {
+      if (
+        url.includes("queued") ||
+        url.includes("broadcast") ||
+        url.includes("confirmed-ready-to-settle")
+      ) {
         return Promise.resolve({
           data: {
             status: "success",
             message: "ok",
             data: {
               intents: [],
+              limit: 20
+            }
+          }
+        });
+      }
+
+      if (url.includes("/loans/internal/worker/agreements")) {
+        return Promise.resolve({
+          data: {
+            status: "success",
+            message: "ok",
+            data: {
+              agreements: [],
+              limit: 20
+            }
+          }
+        });
+      }
+
+      if (url.includes("/loans/internal/worker/installments/due")) {
+        return Promise.resolve({
+          data: {
+            status: "success",
+            message: "ok",
+            data: {
+              installments: [],
               limit: 20
             }
           }
@@ -105,6 +135,20 @@ test("internal worker api client issues every worker request against the expecte
             message: "ok",
             data: {
               count: 0
+            }
+          }
+        });
+      }
+
+      if (url.includes("/loans/internal/worker/agreements/") && url.endsWith("/run-autopay")) {
+        return Promise.resolve({
+          data: {
+            status: "success",
+            message: "ok",
+            data: {
+              loanAgreementId: "loan_1",
+              attempted: true,
+              succeeded: true
             }
           }
         });
@@ -165,6 +209,16 @@ test("internal worker api client issues every worker request against the expecte
       failureReason: "reverted"
     });
 
+    await client.listAwaitingFundingLoans(20);
+    await client.fundLoanAgreement("loan_1");
+    await client.listDueLoanInstallments(20);
+    await client.runLoanAutopay("loan_1");
+    await client.listValuationMonitorLoans(20);
+    await client.refreshLoanValuation("loan_1");
+    await client.listGracePeriodExpiredLoans(20);
+    await client.escalateLoanDefault("loan_1");
+    await client.listLoanLiquidationCandidates(20);
+
     await client.reportWorkerHeartbeat({
       environment: "development",
       executionMode: "synthetic",
@@ -185,6 +239,17 @@ test("internal worker api client issues every worker request against the expecte
         depositFailedCount: 0,
         withdrawalFailedCount: 0,
         manualWithdrawalBacklogCount: 0,
+        awaitingFundingLoanCount: 0,
+        fundedLoanCount: 0,
+        dueLoanInstallmentCount: 0,
+        autopayLoanSweepCount: 0,
+        autopayLoanSuccessCount: 0,
+        autopayLoanFailureCount: 0,
+        valuationRefreshCandidateCount: 0,
+        valuationRefreshCount: 0,
+        graceExpiredLoanCount: 0,
+        defaultEscalatedLoanCount: 0,
+        liquidationCandidateCount: 0,
         reEscalatedCriticalAlertCount: 0
       }
     });
@@ -212,6 +277,15 @@ test("internal worker api client issues every worker request against the expecte
         "post:/transaction-intents/internal/worker/withdrawal-requests/withdrawal_1/confirm",
         "post:/transaction-intents/internal/worker/withdrawal-requests/withdrawal_1/settle",
         "post:/transaction-intents/internal/worker/withdrawal-requests/withdrawal_1/fail",
+        "get:/loans/internal/worker/agreements/awaiting-funding",
+        "post:/loans/internal/worker/agreements/loan_1/fund",
+        "get:/loans/internal/worker/installments/due",
+        "post:/loans/internal/worker/agreements/loan_1/run-autopay",
+        "get:/loans/internal/worker/agreements/valuation-monitor",
+        "post:/loans/internal/worker/agreements/loan_1/refresh-valuation",
+        "get:/loans/internal/worker/agreements/grace-period-expired",
+        "post:/loans/internal/worker/agreements/loan_1/escalate-default",
+        "get:/loans/internal/worker/agreements/liquidation-candidates",
         "post:/operations/internal/worker/heartbeat",
         "post:/ledger/internal/worker/reconciliation/scan",
         "post:/operations/internal/worker/alerts/re-escalate-critical"
