@@ -295,11 +295,40 @@ Prove the release candidate before any real launch posture.
 - contract tests and invariants
 - backend integration tests
 - end-to-end finance flows
+- critical-feature end-to-end expansion across customer and admin critical paths
 - threat model
 - secret handling review
 - role review
 - restore and rollback drills
 - launch checklist
+
+### Tracked Workstream: Critical-Feature End-to-End Expansion
+
+This roadmap now explicitly includes the critical Playwright expansion captured in:
+
+- `docs/architecture/critical-feature-e2e-plan.md`
+
+That workstream is part of Phase 12 because release readiness is not proven by unit and integration coverage alone. The repo also needs deterministic end-to-end proof across the customer money-movement paths and the operator-governed control surfaces that can block, approve, repair, or escalate financial state.
+
+The implementation direction for this workstream is:
+
+- split Playwright into workflow-oriented specs instead of broad app-level specs
+- use deterministic mocked-network projects for edge-case breadth
+- keep a smaller live-stack smoke layer for real boot and wiring confidence
+- cover critical customer flows: auth, routing, dashboard state, wallet deposit and withdrawal, transactions, and yield policy behavior
+- cover critical admin flows: operator session, routed shell, health visibility, queues, accounts and restrictions, reconciliation, alerts, and launch-readiness approvals
+- keep placeholder or non-critical surfaces to truthful smoke or placeholder coverage only
+
+### Phase 12 Acceptance Addendum for End-to-End Coverage
+
+Phase 12 is not complete until the critical-feature end-to-end plan is materially implemented and exercised with:
+
+- at least one happy-path and one degraded or failure-path test for each critical workflow family
+- validation-block and backend-failure coverage for customer money-movement actions
+- success and mutation-failure coverage for governed admin actions
+- explicit redirect and compatibility coverage for customer route transitions such as `/staking` to `/yield`
+- RTL and locale persistence coverage in both customer and admin suites
+- a small live-stack smoke layer that proves the root dev or CI wiring still boots and renders the critical shells
 
 ### Exit Criteria
 - critical risks are addressed

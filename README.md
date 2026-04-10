@@ -26,7 +26,7 @@ The repository already includes real backend foundation for:
 - operator queueing, settlement reconciliation, and incident package release governance
 - async worker runtime with synthetic, monitor, and managed execution modes
 - worker heartbeat, scheduled reconciliation scanning, and scan history reporting
-- customer web flows backed by real APIs for auth, dashboard, wallet, profile, staking, and transaction history
+- customer web flows backed by real APIs for auth, dashboard, wallet, profile, yield, and transaction history
 - internal admin console for review, oversight, hold-release, and export-governance workflows
 - durable audit trails across those implemented workflow slices
 
@@ -84,7 +84,7 @@ The direction of the repo is intentional:
 
 The implemented slices today go beyond the initial deposit path and now cover:
 
-1. customer auth, account lookup, balances, wallet, staking, and transaction history reads
+1. customer auth, account lookup, balances, wallet, yield, and transaction history reads
 2. deposit and withdrawal intent request flows with operator review paths
 3. queueing, replay, reconciliation, and settlement handling across transaction intent slices
 4. internal review cases, manual resolution governance, and oversight incident workflows
@@ -183,6 +183,7 @@ Use these docs first when working in the repo:
 
 - `docs/architecture/target-system.md`
 - `docs/architecture/production-roadmap.md`
+- `docs/architecture/critical-feature-e2e-plan.md`
 - `docs/architecture/data-model-target.md`
 - `docs/architecture/schema-transition-plan.md`
 
