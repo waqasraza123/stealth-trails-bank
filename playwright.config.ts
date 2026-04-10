@@ -48,7 +48,8 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "pnpm --filter @stealth-trails-bank/web exec vite --host 127.0.0.1 --port 4173",
+      command:
+        "pnpm --filter @stealth-trails-bank/web build && pnpm --filter @stealth-trails-bank/web exec vite preview --host 127.0.0.1 --port 4173 --strictPort",
       url: webUrl,
       reuseExistingServer: true,
       stdout: "pipe",
@@ -56,7 +57,7 @@ export default defineConfig({
     },
     {
       command:
-        "pnpm --filter @stealth-trails-bank/admin exec vite --host 127.0.0.1 --port 4174",
+        "pnpm --filter @stealth-trails-bank/admin build && pnpm --filter @stealth-trails-bank/admin exec vite preview --host 127.0.0.1 --port 4174 --strictPort",
       url: adminUrl,
       reuseExistingServer: true,
       stdout: "pipe",
