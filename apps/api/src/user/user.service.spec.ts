@@ -21,6 +21,10 @@ describe("UserService.getUserById", () => {
     const prismaService = {
       user: {
         findFirst: jest.fn().mockResolvedValue(options.legacyUser)
+      },
+      customer: {
+        findUnique: jest.fn(),
+        update: jest.fn()
       }
     };
 
@@ -77,6 +81,11 @@ describe("UserService.getUserById", () => {
       email: "legacy@example.com",
       firstName: "Legacy",
       lastName: "User",
+      passwordHash: "hashed",
+      depositEmailNotificationsEnabled: true,
+      withdrawalEmailNotificationsEnabled: true,
+      loanEmailNotificationsEnabled: true,
+      productUpdateEmailNotificationsEnabled: false,
       createdAt: new Date("2026-03-29T00:00:00.000Z"),
       updatedAt: new Date("2026-03-29T00:10:00.000Z")
     },
@@ -118,6 +127,13 @@ describe("UserService.getUserById", () => {
     expect(result.ethereumAddress).toBe("0xwallet");
     expect(result.customerId).toBe("customer_1");
     expect(result.id).toBe(7);
+    expect(result.passwordRotationAvailable).toBe(true);
+    expect(result.notificationPreferences).toEqual({
+      depositEmails: true,
+      withdrawalEmails: true,
+      loanEmails: true,
+      productUpdateEmails: false
+    });
   });
 
   it("falls back to legacy ethereumAddress when wallet projection is missing", async () => {
@@ -133,6 +149,7 @@ describe("UserService.getUserById", () => {
 
     expect(result.ethereumAddress).toBe("0xlegacy");
     expect(result.customerId).toBe("customer_1");
+    expect(result.passwordRotationAvailable).toBe(true);
   });
 
   it("returns the legacy profile when the customer projection is missing", async () => {
@@ -157,7 +174,9 @@ describe("UserService.getUserById", () => {
       activatedAt: null,
       restrictedAt: null,
       frozenAt: null,
-      closedAt: null
+      closedAt: null,
+      passwordRotationAvailable: false,
+      notificationPreferences: null
     });
   });
 
@@ -172,5 +191,71 @@ describe("UserService.getUserById", () => {
     await expect(service.getUserById("missing_user")).rejects.toBeInstanceOf(
       NotFoundException
     );
+  });
+
+  it("updates customer notification preferences", async () => {
+    const { service, prismaService } = createService({
+      legacyUser,
+      customerProjectionResult: customerProjection,
+      walletProjectionResult: walletProjection
+    });
+
+    prismaService.customer.findUnique.mockResolvedValue({
+      id: "customer_1"
+    });
+    prismaService.customer.update.mockResolvedValue({
+      depositEmailNotificationsEnabled: false,
+      withdrawalEmailNotificationsEnabled: true,
+      loanEmailNotificationsEnabled: false,
+      productUpdateEmailNotificationsEnabled: true
+    });
+
+    const result = await service.updateNotificationPreferences("supabase_1", {
+      depositEmails: false,
+      withdrawalEmails: true,
+      loanEmails: false,
+      productUpdateEmails: true
+    });
+
+    expect(prismaService.customer.update).toHaveBeenCalledWith({
+      where: { id: "customer_1" },
+      data: {
+        depositEmailNotificationsEnabled: false,
+        withdrawalEmailNotificationsEnabled: true,
+        loanEmailNotificationsEnabled: false,
+        productUpdateEmailNotificationsEnabled: true
+      },
+      select: {
+        depositEmailNotificationsEnabled: true,
+        withdrawalEmailNotificationsEnabled: true,
+        loanEmailNotificationsEnabled: true,
+        productUpdateEmailNotificationsEnabled: true
+      }
+    });
+    expect(result).toEqual({
+      depositEmails: false,
+      withdrawalEmails: true,
+      loanEmails: false,
+      productUpdateEmails: true
+    });
+  });
+
+  it("throws when notification preferences are updated for a missing customer", async () => {
+    const { service, prismaService } = createService({
+      legacyUser,
+      customerProjectionResult: customerProjection,
+      walletProjectionResult: walletProjection
+    });
+
+    prismaService.customer.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.updateNotificationPreferences("missing_user", {
+        depositEmails: true,
+        withdrawalEmails: true,
+        loanEmails: true,
+        productUpdateEmails: false
+      })
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

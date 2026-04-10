@@ -40,6 +40,11 @@ export type CustomerAccountProjection = {
     email: string;
     firstName: string | null;
     lastName: string | null;
+    passwordHash: string | null;
+    depositEmailNotificationsEnabled: boolean;
+    withdrawalEmailNotificationsEnabled: boolean;
+    loanEmailNotificationsEnabled: boolean;
+    productUpdateEmailNotificationsEnabled: boolean;
     createdAt: Date;
     updatedAt: Date;
   };
@@ -93,6 +98,10 @@ type SignUpResponseData = {
 type LoginResponseData = {
   token: string;
   user: PublicLoggedInUser;
+};
+
+type UpdatePasswordResponseData = {
+  passwordRotationAvailable: boolean;
 };
 
 type SharedLoginBootstrapResult = {
@@ -467,6 +476,14 @@ export class AuthService {
         email: customer.email,
         firstName: customer.firstName,
         lastName: customer.lastName,
+        passwordHash: customer.passwordHash,
+        depositEmailNotificationsEnabled:
+          customer.depositEmailNotificationsEnabled,
+        withdrawalEmailNotificationsEnabled:
+          customer.withdrawalEmailNotificationsEnabled,
+        loanEmailNotificationsEnabled: customer.loanEmailNotificationsEnabled,
+        productUpdateEmailNotificationsEnabled:
+          customer.productUpdateEmailNotificationsEnabled,
         createdAt: customer.createdAt,
         updatedAt: customer.updatedAt
       },
@@ -503,6 +520,75 @@ export class AuthService {
     } catch {
       throw new UnauthorizedException("Invalid or expired token.");
     }
+  }
+
+  async updatePassword(
+    supabaseUserId: string,
+    currentPassword: string,
+    newPassword: string
+  ): Promise<CustomJsonResponse<UpdatePasswordResponseData>> {
+    if (newPassword === currentPassword) {
+      throw new BadRequestException(
+        "New password must be different from the current password."
+      );
+    }
+
+    const customer = await this.prismaService.customer.findUnique({
+      where: { supabaseUserId },
+      select: {
+        id: true,
+        supabaseUserId: true,
+        passwordHash: true
+      }
+    });
+
+    if (!customer?.passwordHash) {
+      throw new BadRequestException(
+        "Password rotation is not available for this account."
+      );
+    }
+
+    const passwordValid = await bcrypt.compare(
+      currentPassword,
+      customer.passwordHash
+    );
+
+    if (!passwordValid) {
+      throw new UnauthorizedException("Current password is incorrect.");
+    }
+
+    const nextPasswordHash = await bcrypt.hash(newPassword, 12);
+
+    await this.prismaService.$transaction(async (transaction) => {
+      await transaction.customer.update({
+        where: { id: customer.id },
+        data: {
+          passwordHash: nextPasswordHash
+        }
+      });
+
+      await transaction.auditEvent.create({
+        data: {
+          customerId: customer.id,
+          actorType: "customer",
+          actorId: customer.supabaseUserId,
+          action: "customer_account.password_rotated",
+          targetType: "Customer",
+          targetId: customer.id,
+          metadata: {
+            passwordRotationAvailable: true
+          } as Prisma.InputJsonValue
+        }
+      });
+    });
+
+    return {
+      status: "success",
+      message: "Password updated successfully.",
+      data: {
+        passwordRotationAvailable: true
+      }
+    };
   }
 
   async signUp(

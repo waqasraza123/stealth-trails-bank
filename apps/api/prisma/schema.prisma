@@ -27,6 +27,10 @@ model Customer {
   firstName          String?
   lastName           String?
   passwordHash       String?
+  depositEmailNotificationsEnabled       Boolean             @default(true)
+  withdrawalEmailNotificationsEnabled    Boolean             @default(true)
+  loanEmailNotificationsEnabled          Boolean             @default(true)
+  productUpdateEmailNotificationsEnabled Boolean             @default(false)
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   accounts           CustomerAccount[]

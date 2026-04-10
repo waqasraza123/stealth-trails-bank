@@ -1,3 +1,4 @@
+import type { CustomerNotificationPreferences } from "@stealth-trails-bank/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
@@ -8,6 +9,8 @@ export interface User {
   email: string;
   supabaseUserId: string;
   ethereumAddress: string;
+  passwordRotationAvailable?: boolean;
+  notificationPreferences?: CustomerNotificationPreferences | null;
 }
 
 interface UserState {

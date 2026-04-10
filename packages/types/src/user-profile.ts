@@ -7,6 +7,13 @@ export type AccountLifecycleStatusValue =
   | "frozen"
   | "closed";
 
+export type CustomerNotificationPreferences = {
+  depositEmails: boolean;
+  withdrawalEmails: boolean;
+  loanEmails: boolean;
+  productUpdateEmails: boolean;
+};
+
 export type UserProfileProjection = {
   id: number | null;
   customerId: string | null;
@@ -20,4 +27,6 @@ export type UserProfileProjection = {
   restrictedAt: string | null;
   frozenAt: string | null;
   closedAt: string | null;
+  passwordRotationAvailable: boolean;
+  notificationPreferences: CustomerNotificationPreferences | null;
 };

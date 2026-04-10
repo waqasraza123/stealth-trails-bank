@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Request,
   UnauthorizedException,
@@ -14,6 +15,7 @@ import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { SignUpDto } from "./dto/sign-up.dto";
+import { UpdatePasswordDto } from "./dto/update-password.dto";
 
 type AuthenticatedRequest = {
   user: {
@@ -42,6 +44,19 @@ export class AuthController {
     @Body(new ValidationPipe()) loginDto: LoginDto
   ): Promise<CustomJsonResponse> {
     return this.authService.login(loginDto.email, loginDto.password);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch("password")
+  async updatePassword(
+    @Body(new ValidationPipe()) updatePasswordDto: UpdatePasswordDto,
+    @Request() request: AuthenticatedRequest
+  ): Promise<CustomJsonResponse> {
+    return this.authService.updatePassword(
+      request.user.id,
+      updatePasswordDto.currentPassword,
+      updatePasswordDto.newPassword
+    );
   }
 
   @UseGuards(JwtAuthGuard)

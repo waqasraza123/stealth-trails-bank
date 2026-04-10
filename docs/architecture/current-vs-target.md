@@ -66,7 +66,7 @@ Examples:
 - transaction history is backed by API reads
 - profile uses customer account data
 - staking surfaces use the current backend contract/product routes
-- loans remains a constrained placeholder surface rather than a finished product path
+- loans now expose a real managed lending workflow with customer, operator, and worker coverage
 
 #### Target
 Every customer-facing financial page must be backed by real APIs and truthful read models.

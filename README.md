@@ -42,7 +42,7 @@ The system still needs broader production coverage in areas such as:
 - generalized ledger coverage across more money flows
 - deeper reconciliation, replay, and operator repair safety
 - fuller custody execution coverage for withdrawals and treasury operations
-- completion of remaining customer UI gaps such as loans and security settings
+- completion of remaining customer settings and release-hardening gaps
 - broader internal admin coverage for treasury, reconciliation, and audit operations
 - broader observability, incident tooling, and release hardening
 

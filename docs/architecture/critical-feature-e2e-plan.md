@@ -34,6 +34,7 @@ Replace broad app-level specs with workflow-oriented specs:
 
 - `auth-and-routing.spec.ts`
 - `dashboard.spec.ts`
+- `profile-security.spec.ts`
 - `wallet-deposits.spec.ts`
 - `wallet-withdrawals.spec.ts`
 - `transactions.spec.ts`
@@ -98,6 +99,15 @@ Use a small shared scenario vocabulary so coverage stays readable:
 - stale balance or timestamp notice appears
 - API failure renders shell with inline error state
 - RTL render keeps direction and refs safe
+
+### Customer profile and security
+
+- password rotation succeeds for customer-backed accounts
+- confirm-password mismatch is blocked client-side
+- password rotation API failure renders visible error feedback
+- notification preference save succeeds and persists the updated state
+- notification preference failure preserves the draft state
+- legacy-only profiles render a read-only settings state
 
 ### Wallet deposit flow
 
@@ -219,7 +229,7 @@ This plan is considered materially implemented when:
 
 The following stay intentionally out of the deep edge-case matrix unless they later become state-critical:
 
-- `Loans`, which only needs truthful placeholder and redirect coverage
+- `Loans`, which now has a truthful managed-lending surface and only needs selective workflow smoke until it becomes part of the release-critical matrix
 - purely presentational summaries such as treasury, audit, or operations overviews when they do not dispatch governed state changes
 
 ## Assumptions

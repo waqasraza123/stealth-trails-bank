@@ -17,7 +17,9 @@ function mapUserProfileToStoreUser(profile: UserProfileProjection): User {
     lastName: profile.lastName,
     email: profile.email,
     supabaseUserId: profile.supabaseUserId,
-    ethereumAddress: profile.ethereumAddress
+    ethereumAddress: profile.ethereumAddress,
+    passwordRotationAvailable: profile.passwordRotationAvailable,
+    notificationPreferences: profile.notificationPreferences
   };
 }
 

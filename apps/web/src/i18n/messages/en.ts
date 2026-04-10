@@ -237,7 +237,7 @@ export const webMessages = {
       "The customer profile projection could not be loaded.",
     securityTitle: "Truthful managed-account security surface",
     securityDescription:
-      "This page shows real account identity, lifecycle status, and wallet linkage. Fake browser wallet linking, profile-image uploads, notification toggles, and password forms have been removed until customer-safe APIs exist for them.",
+      "This page shows real account identity, lifecycle status, wallet linkage, password rotation, and customer email preferences where the managed customer projection supports them.",
     accountIdentity: "Account identity",
     customerId: "Customer ID",
     supabaseUserId: "Supabase User ID",

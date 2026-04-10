@@ -223,13 +223,44 @@ function buildYieldSnapshot(executionAvailable = false) {
   };
 }
 
+function buildProfile() {
+  return {
+    id: defaultUser.id,
+    customerId: "customer_1",
+    supabaseUserId: defaultUser.supabaseUserId,
+    email: defaultUser.email,
+    firstName: defaultUser.firstName,
+    lastName: defaultUser.lastName,
+    ethereumAddress: defaultUser.ethereumAddress,
+    accountStatus: "active",
+    activatedAt: isoAt(72),
+    restrictedAt: null,
+    frozenAt: null,
+    closedAt: null,
+    passwordRotationAvailable: true,
+    notificationPreferences: {
+      depositEmails: true,
+      withdrawalEmails: true,
+      loanEmails: true,
+      productUpdateEmails: false
+    }
+  };
+}
+
 export type WebScenario = {
   login: MockResponseSpec<{ token: string; user: typeof defaultUser }>;
+  profile: MockResponseSpec<ReturnType<typeof buildProfile>>;
   supportedAssets: MockResponseSpec<{ assets: Array<typeof ethAsset> }>;
   balances: MockResponseSpec<ReturnType<typeof buildBalances>>;
   history: MockResponseSpec<ReturnType<typeof buildHistory>>;
   deposit: MockResponseSpec<ReturnType<typeof buildDepositResult>>;
   withdrawal: MockResponseSpec<ReturnType<typeof buildWithdrawalResult>>;
+  updatePassword: MockResponseSpec<{ passwordRotationAvailable: boolean }>;
+  updateNotificationPreferences: MockResponseSpec<{
+    notificationPreferences: NonNullable<
+      ReturnType<typeof buildProfile>["notificationPreferences"]
+    >;
+  }>;
   stakingSnapshot: MockResponseSpec<ReturnType<typeof buildYieldSnapshot>>;
   stakingDeposit: MockResponseSpec<{ transactionHash: string }>;
   stakingWithdraw: MockResponseSpec<{ transactionHash: string }>;
@@ -248,6 +279,9 @@ export function buildWebScenario(
         user: defaultUser
       }
     },
+    profile: {
+      data: buildProfile()
+    },
     supportedAssets: {
       data: {
         assets: [ethAsset, usdcAsset]
@@ -264,6 +298,16 @@ export function buildWebScenario(
     },
     withdrawal: {
       data: buildWithdrawalResult()
+    },
+    updatePassword: {
+      data: {
+        passwordRotationAvailable: true
+      }
+    },
+    updateNotificationPreferences: {
+      data: {
+        notificationPreferences: buildProfile().notificationPreferences
+      }
     },
     stakingSnapshot: {
       data: buildYieldSnapshot(false)
@@ -407,6 +451,21 @@ export async function mockWebApi(
 
     if (pathname.endsWith("/auth/login") && request.method() === "POST") {
       return fulfillJson(route, resolvedScenario.login);
+    }
+
+    if (pathname.startsWith("/user/") && request.method() === "GET") {
+      return fulfillJson(route, resolvedScenario.profile);
+    }
+
+    if (pathname.endsWith("/auth/password") && request.method() === "PATCH") {
+      return fulfillJson(route, resolvedScenario.updatePassword);
+    }
+
+    if (
+      pathname.endsWith("/notification-preferences") &&
+      request.method() === "PATCH"
+    ) {
+      return fulfillJson(route, resolvedScenario.updateNotificationPreferences);
     }
 
     if (pathname.endsWith("/assets/supported") && request.method() === "GET") {

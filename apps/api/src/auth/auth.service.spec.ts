@@ -23,7 +23,11 @@ jest.mock("./auth.util", () => ({
 }));
 
 import * as bcrypt from "bcryptjs";
-import { NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  NotFoundException,
+  UnauthorizedException
+} from "@nestjs/common";
 import { AuthService } from "./auth.service";
 
 describe("AuthService", () => {
@@ -31,7 +35,8 @@ describe("AuthService", () => {
     const transaction = {
       customer: {
         findUnique: jest.fn(),
-        upsert: jest.fn()
+        upsert: jest.fn(),
+        update: jest.fn()
       },
       customerAccount: {
         upsert: jest.fn()
@@ -43,6 +48,9 @@ describe("AuthService", () => {
       wallet: {
         findUnique: jest.fn(),
         update: jest.fn(),
+        create: jest.fn()
+      },
+      auditEvent: {
         create: jest.fn()
       }
     };
@@ -282,5 +290,88 @@ describe("AuthService", () => {
       createdCustomer: true,
       createdCustomerAccount: true
     });
+  });
+
+  it("rotates the password and writes an audit event", async () => {
+    const { service, prismaService, transaction } = createService();
+    const passwordHash = await bcrypt.hash("current-pass", 4);
+
+    prismaService.customer.findUnique.mockResolvedValue({
+      id: "customer_1",
+      supabaseUserId: "supabase_1",
+      passwordHash
+    });
+    transaction.customer.update.mockResolvedValue(undefined);
+    transaction.auditEvent.create.mockResolvedValue(undefined);
+
+    const result = await service.updatePassword(
+      "supabase_1",
+      "current-pass",
+      "new-strong-pass"
+    );
+
+    expect(transaction.customer.update).toHaveBeenCalledWith({
+      where: { id: "customer_1" },
+      data: {
+        passwordHash: expect.any(String)
+      }
+    });
+    expect(transaction.auditEvent.create).toHaveBeenCalledWith({
+      data: {
+        customerId: "customer_1",
+        actorType: "customer",
+        actorId: "supabase_1",
+        action: "customer_account.password_rotated",
+        targetType: "Customer",
+        targetId: "customer_1",
+        metadata: {
+          passwordRotationAvailable: true
+        }
+      }
+    });
+    expect(result).toEqual({
+      status: "success",
+      message: "Password updated successfully.",
+      data: {
+        passwordRotationAvailable: true
+      }
+    });
+  });
+
+  it("rejects password rotation when the current password is incorrect", async () => {
+    const { service, prismaService } = createService();
+    const passwordHash = await bcrypt.hash("current-pass", 4);
+
+    prismaService.customer.findUnique.mockResolvedValue({
+      id: "customer_1",
+      supabaseUserId: "supabase_1",
+      passwordHash
+    });
+
+    await expect(
+      service.updatePassword("supabase_1", "wrong-pass", "new-strong-pass")
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it("rejects password rotation when the new password matches the current password", async () => {
+    const { service } = createService();
+
+    await expect(
+      service.updatePassword("supabase_1", "same-pass", "same-pass")
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("rejects password rotation when no customer password exists", async () => {
+    const { service, prismaService } = createService();
+
+    prismaService.customer.findUnique.mockResolvedValue({
+      id: "customer_1",
+      supabaseUserId: "supabase_1",
+      passwordHash: null
+    });
+
+    await expect(
+      service.updatePassword("supabase_1", "current-pass", "new-strong-pass")
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
