@@ -1,8 +1,35 @@
+import type { ReactElement, ReactNode } from "react";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebI18nProvider } from "@/i18n/provider";
 import { TransactionFilter } from "@/components/transactions/TransactionFilter";
+
+vi.mock("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuTrigger: ({ children }: { children: ReactElement }) => children,
+  DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuLabel: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuSeparator: () => <hr />,
+  DropdownMenuCheckboxItem: ({
+    checked,
+    children,
+    onCheckedChange
+  }: {
+    checked?: boolean;
+    children: ReactNode;
+    onCheckedChange?: () => void;
+  }) => (
+    <button
+      type="button"
+      role="menuitemcheckbox"
+      aria-checked={checked}
+      onClick={onCheckedChange}
+    >
+      {children}
+    </button>
+  )
+}));
 
 describe("transaction filter", () => {
   afterEach(() => {
@@ -33,7 +60,6 @@ describe("transaction filter", () => {
     await user.click(screen.getByRole("button", { name: /^Type$/i }));
     const depositItem = screen.getByRole("menuitemcheckbox", { name: "Deposit" });
     await user.click(depositItem);
-    await user.keyboard("{Escape}");
 
     await waitFor(() => {
       expect(onFilterChange).toHaveBeenLastCalledWith(
@@ -47,7 +73,6 @@ describe("transaction filter", () => {
     await user.click(screen.getByRole("button", { name: /^Status$/i }));
     const settledItem = screen.getByRole("menuitemcheckbox", { name: "settled" });
     await user.click(settledItem);
-    await user.keyboard("{Escape}");
 
     await waitFor(() => {
       expect(onFilterChange).toHaveBeenLastCalledWith(

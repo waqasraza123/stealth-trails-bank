@@ -6,9 +6,11 @@ node_modules/
 dist/
 dist-ssr/
 coverage/
+test-results/
 *.tsbuildinfo
 **/dist/
 **/coverage/
+**/test-results/
 **/.turbo/
 .turbo/
 

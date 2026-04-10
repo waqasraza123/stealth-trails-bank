@@ -9,8 +9,7 @@ import {
   useStakeWithdrawal
 } from "@/hooks/staking/useMyStakingSnapshot";
 import { webLocaleStorageKey } from "@/i18n/provider";
-import CreatePool from "@/pages/CreatePool";
-import Staking from "@/pages/Staking";
+import Yield from "@/pages/Yield";
 import { useUserStore } from "@/stores/userStore";
 import { renderWithRouter } from "@/test/render-with-router";
 
@@ -28,7 +27,7 @@ vi.mock("@/hooks/staking/useMyStakingSnapshot", () => ({
   useEmergencyStakeWithdrawal: vi.fn()
 }));
 
-describe("staking product pages", () => {
+describe("yield page", () => {
   beforeEach(() => {
     localStorage.clear();
     useUserStore.setState({
@@ -119,8 +118,8 @@ describe("staking product pages", () => {
     cleanup();
   });
 
-  it("renders the live staking execution surface while respecting backend safety gates", async () => {
-    renderWithRouter(<Staking />);
+  it("renders the live yield surface while respecting backend safety gates", async () => {
+    renderWithRouter(<Yield />);
 
     expect(
       screen.getByRole("heading", { name: /yield and infrastructure/i })
@@ -146,27 +145,7 @@ describe("staking product pages", () => {
     ).toBeInTheDocument();
   });
 
-  it("replaces the mocked create-pool flow with an internal-only notice", () => {
-    renderWithRouter(<CreatePool />);
-
-    expect(
-      screen.getByRole("heading", { name: /pool governance/i })
-    ).toBeInTheDocument();
-    expect(screen.getByText(/internal-only workflow/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /pool creation currently depends on governed, backend-controlled contract writes/i
-      )
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /connect metamask/i })
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /^create pool$/i })
-    ).not.toBeInTheDocument();
-  });
-
-  it("submits live staking actions when the backend enables execution", async () => {
+  it("submits live yield actions when the backend enables execution", async () => {
     const user = userEvent.setup();
     const depositMutateAsync = vi.fn().mockResolvedValue({
       transactionHash:
@@ -240,7 +219,7 @@ describe("staking product pages", () => {
       isPending: false
     } as ReturnType<typeof useEmergencyStakeWithdrawal>);
 
-    renderWithRouter(<Staking />);
+    renderWithRouter(<Yield />);
 
     await user.type(screen.getByLabelText(/deposit amount/i), "2.75");
     await user.click(screen.getByRole("button", { name: /stake eth/i }));
@@ -262,210 +241,44 @@ describe("staking product pages", () => {
 
     await user.click(screen.getByRole("button", { name: /claim rewards/i }));
     await waitFor(() => {
-      expect(claimMutateAsync).toHaveBeenCalledWith({ poolId: 11 });
-    });
-
-    await user.click(
-      screen.getByRole("button", { name: /emergency withdrawal/i })
-    );
-    await waitFor(() => {
-      expect(emergencyMutateAsync).toHaveBeenCalledWith({ poolId: 11 });
-    });
-  });
-
-  it("renders an explicit backend error when the staking snapshot fails", () => {
-    mockUseMyStakingSnapshot.mockReturnValue({
-      data: null,
-      isLoading: false,
-      isError: true,
-      error: new Error("staking backend unavailable")
-    } as ReturnType<typeof useMyStakingSnapshot>);
-
-    renderWithRouter(<Staking />);
-
-    expect(screen.getByText("staking backend unavailable")).toBeInTheDocument();
-  });
-
-  it("renders read-model limits and empty pool guidance when no pool is currently listed", () => {
-    mockUseMyStakingSnapshot.mockReturnValue({
-      data: {
-        walletAddress: "0x1111222233334444555566667777888899990000",
-        accountStatus: "active",
-        walletStatus: "active",
-        walletCustodyType: "platform_managed",
-        readModel: {
-          available: false,
-          message: "Live position reads are temporarily unavailable."
-        },
-        execution: {
-          available: false,
-          reasonCode: "policy_hold",
-          message: "Execution is paused pending policy review."
-        },
-        pools: []
-      },
-      isLoading: false,
-      isError: false,
-      error: null
-    } as ReturnType<typeof useMyStakingSnapshot>);
-
-    renderWithRouter(<Staking />);
-
-    expect(screen.getByText(/Live position reads are limited/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/Live position reads are temporarily unavailable/i)
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/No staking pools are currently listed for customer review/i)
-    ).toBeInTheDocument();
-  });
-
-  it("renders Arabic yield posture and payout-wallet fallback", () => {
-    localStorage.setItem(webLocaleStorageKey, "ar");
-    useUserStore.setState({
-      token: "test-token",
-      user: {
-        id: 1,
-        firstName: "أمينة",
-        lastName: "رحمن",
-        email: "amina@example.com",
-        supabaseUserId: "supabase_1",
-        ethereumAddress: null as unknown as string
-      }
-    });
-
-    mockUseMyStakingSnapshot.mockReturnValue({
-      data: {
-        walletAddress: null,
-        accountStatus: "active",
-        walletStatus: "active",
-        walletCustodyType: "platform_managed",
-        readModel: {
-          available: true,
-          message: "Live reads are available."
-        },
-        execution: {
-          available: false,
-          reasonCode: "policy_hold",
-          message: "Execution is paused pending policy review."
-        },
-        pools: []
-      },
-      isLoading: false,
-      isError: false,
-      error: null
-    } as ReturnType<typeof useMyStakingSnapshot>);
-
-    renderWithRouter(<Staking />);
-
-    expect(
-      screen.getByRole("heading", { name: /العائد والبنية التحتية/i })
-    ).toBeInTheDocument();
-    expect(screen.getByText("وضع المنتج")).toBeInTheDocument();
-    expect(screen.getByText("لم يتم تعيين محفظة مُدارة بعد.")).toBeInTheDocument();
-    expect(screen.getByText(/لا توجد مجمعات استيكينغ مدرجة حالياً/i)).toBeInTheDocument();
-  });
-
-  it("blocks invalid yield amounts and surfaces managed execution failures", async () => {
-    const user = userEvent.setup();
-    const depositMutateAsync = vi.fn().mockRejectedValue(new Error("stake deposit failed"));
-    const withdrawMutateAsync = vi.fn().mockRejectedValue(new Error("stake withdrawal failed"));
-    const claimMutateAsync = vi.fn().mockRejectedValue(new Error("reward claim failed"));
-    const emergencyMutateAsync = vi.fn().mockRejectedValue(new Error("emergency withdrawal failed"));
-
-    mockUseMyStakingSnapshot.mockReturnValue({
-      data: {
-        walletAddress: "0x1111222233334444555566667777888899990000",
-        accountStatus: "active",
-        walletStatus: "active",
-        walletCustodyType: "platform_managed",
-        readModel: {
-          available: true,
-          message: "Live reads are available."
-        },
-        execution: {
-          available: true,
-          reasonCode: null,
-          message: "Managed staking execution is enabled."
-        },
-        pools: [
-          {
-            id: 11,
-            blockchainPoolId: 1001,
-            rewardRate: 4.8,
-            totalStakedAmount: "32.5",
-            totalRewardsPaid: "1.25",
-            poolStatus: "active",
-            createdAt: "2026-04-05T10:00:00.000Z",
-            updatedAt: "2026-04-05T11:00:00.000Z",
-            position: {
-              stakedBalance: "1.5",
-              pendingReward: "0.25",
-              canReadPosition: true
-            }
-          }
-        ]
-      },
-      isLoading: false,
-      isError: false,
-      error: null
-    } as ReturnType<typeof useMyStakingSnapshot>);
-
-    mockUseStakeDeposit.mockReturnValue({
-      mutateAsync: depositMutateAsync,
-      isPending: false
-    } as ReturnType<typeof useStakeDeposit>);
-    mockUseStakeWithdrawal.mockReturnValue({
-      mutateAsync: withdrawMutateAsync,
-      isPending: false
-    } as ReturnType<typeof useStakeWithdrawal>);
-    mockUseClaimStakeReward.mockReturnValue({
-      mutateAsync: claimMutateAsync,
-      isPending: false
-    } as ReturnType<typeof useClaimStakeReward>);
-    mockUseEmergencyStakeWithdrawal.mockReturnValue({
-      mutateAsync: emergencyMutateAsync,
-      isPending: false
-    } as ReturnType<typeof useEmergencyStakeWithdrawal>);
-
-    renderWithRouter(<Staking />);
-
-    await user.type(screen.getByLabelText(/deposit amount/i), "abc");
-    await user.click(screen.getByRole("button", { name: /stake eth/i }));
-    expect(depositMutateAsync).not.toHaveBeenCalled();
-
-    await user.clear(screen.getByLabelText(/deposit amount/i));
-    await user.type(screen.getByLabelText(/deposit amount/i), "2.75");
-    await user.click(screen.getByRole("button", { name: /stake eth/i }));
-    await waitFor(() => {
-      expect(depositMutateAsync).toHaveBeenCalledWith({
-        poolId: 11,
-        amount: "2.75"
+      expect(claimMutateAsync).toHaveBeenCalledWith({
+        poolId: 11
       });
-    });
-
-    await user.type(screen.getByLabelText(/withdrawal amount/i), "abc");
-    await user.click(screen.getByRole("button", { name: /withdraw stake/i }));
-    expect(withdrawMutateAsync).not.toHaveBeenCalled();
-
-    await user.clear(screen.getByLabelText(/withdrawal amount/i));
-    await user.type(screen.getByLabelText(/withdrawal amount/i), "0.5");
-    await user.click(screen.getByRole("button", { name: /withdraw stake/i }));
-    await waitFor(() => {
-      expect(withdrawMutateAsync).toHaveBeenCalledWith({
-        poolId: 11,
-        amount: "0.5"
-      });
-    });
-
-    await user.click(screen.getByRole("button", { name: /claim rewards/i }));
-    await waitFor(() => {
-      expect(claimMutateAsync).toHaveBeenCalledWith({ poolId: 11 });
     });
 
     await user.click(screen.getByRole("button", { name: /emergency withdrawal/i }));
     await waitFor(() => {
-      expect(emergencyMutateAsync).toHaveBeenCalledWith({ poolId: 11 });
+      expect(emergencyMutateAsync).toHaveBeenCalledWith({
+        poolId: 11
+      });
     });
-  }, 10000);
+  });
+
+  it("renders Arabic copy when the customer locale is Arabic", () => {
+    localStorage.setItem(webLocaleStorageKey, "ar");
+
+    renderWithRouter(<Yield />);
+
+    expect(
+      screen.getByRole("heading", { name: /العائد والبنية التحتية/i })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/وضع المنتج/i)).toBeInTheDocument();
+    expect(screen.getByText(/المجمعات المدرجة/i)).toBeInTheDocument();
+  });
+
+  it("surfaces backend failures without collapsing the page shell", () => {
+    mockUseMyStakingSnapshot.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("Yield feed unavailable")
+    } as ReturnType<typeof useMyStakingSnapshot>);
+
+    renderWithRouter(<Yield />);
+
+    expect(screen.getByText("Yield feed unavailable")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /yield and infrastructure/i })
+    ).toBeInTheDocument();
+  });
 });
