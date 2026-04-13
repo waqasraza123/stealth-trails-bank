@@ -100,6 +100,14 @@ function operationsStatus(overrides: Record<string, unknown> = {}) {
       manualWithdrawalBacklogCount: 1,
       oldestQueuedIntentCreatedAt: isoAt(18)
     },
+    withdrawalExecutionHealth: {
+      status: "warning",
+      queuedManagedWithdrawalCount: 2,
+      broadcastingWithdrawalCount: 1,
+      pendingConfirmationWithdrawalCount: 1,
+      failedManagedWithdrawalCount: 0,
+      manualInterventionWithdrawalCount: 1
+    },
     chainHealth: {
       status: "healthy",
       laggingBroadcastCount: 0,
@@ -183,9 +191,9 @@ function operationsStatus(overrides: Record<string, unknown> = {}) {
 }
 
 function releaseSummary(overrides: Record<string, unknown> = {}) {
-  const evidence = {
+  const endToEndEvidence = {
     id: "evidence_1",
-    evidenceType: "e2e_finance_flows",
+    evidenceType: "end_to_end_finance_flows",
     environment: "staging",
     status: "passed",
     releaseIdentifier: "2026.04.10-rc1",
@@ -195,7 +203,7 @@ function releaseSummary(overrides: Record<string, unknown> = {}) {
     note: null,
     operatorId: "ops_e2e",
     operatorRole: "operations_admin",
-    runbookPath: "docs/runbooks/release-readiness.md",
+    runbookPath: "docs/runbooks/release-candidate-verification.md",
     evidenceLinks: [],
     evidencePayload: null,
     startedAt: isoAt(4),
@@ -205,56 +213,80 @@ function releaseSummary(overrides: Record<string, unknown> = {}) {
     updatedAt: isoAt(3)
   };
 
+  const deliveryEvidence = {
+    ...endToEndEvidence,
+    id: "evidence_2",
+    evidenceType: "platform_alert_delivery_slo",
+    summary: "Delivery target degradation surfaced through operator APIs.",
+    runbookPath: "docs/runbooks/platform-alert-delivery-targets.md",
+    observedAt: isoAt(2),
+    createdAt: isoAt(2),
+    updatedAt: isoAt(2)
+  };
+
+  const rollbackEvidence = {
+    ...endToEndEvidence,
+    id: "evidence_3",
+    evidenceType: "api_rollback_drill",
+    status: "failed",
+    summary: "API rollback evidence is stale.",
+    runbookPath: "docs/runbooks/restore-and-rollback-drills.md",
+    observedAt: isoAt(72),
+    createdAt: isoAt(72),
+    updatedAt: isoAt(72)
+  };
+
   return {
     generatedAt: isoAt(0),
     overallStatus: "warning",
     summary: {
       requiredCheckCount: 4,
-      passedCheckCount: 3,
+      passedCheckCount: 2,
       failedCheckCount: 1,
-      pendingCheckCount: 0
+      pendingCheckCount: 1
     },
     requiredChecks: [
       {
-        evidenceType: "e2e_finance_flows",
+        evidenceType: "end_to_end_finance_flows",
         label: "End-to-end finance flows",
-        description: "Mocked and live smoke coverage for critical user journeys.",
-        runbookPath: "docs/runbooks/release-readiness.md",
-        acceptedEnvironments: ["staging"],
+        description: "Repo-owned finance smoke coverage for the current release candidate.",
+        runbookPath: "docs/runbooks/release-candidate-verification.md",
+        acceptedEnvironments: ["ci", "staging"],
         status: "passed",
-        latestEvidence: evidence
+        latestEvidence: endToEndEvidence
       },
       {
-        evidenceType: "rollback_drill",
-        label: "Rollback drill",
-        description: "Recent rollback posture validation.",
-        runbookPath: "docs/runbooks/rollback.md",
-        acceptedEnvironments: ["staging"],
+        evidenceType: "platform_alert_delivery_slo",
+        label: "Platform alert delivery SLO",
+        description: "Delivery-target degradation must be visible through operator workflows.",
+        runbookPath: "docs/runbooks/platform-alert-delivery-targets.md",
+        acceptedEnvironments: ["staging", "production_like", "production"],
+        status: "passed",
+        latestEvidence: deliveryEvidence
+      },
+      {
+        evidenceType: "api_rollback_drill",
+        label: "API rollback drill",
+        description: "Recent API rollback posture validation for an accepted environment.",
+        runbookPath: "docs/runbooks/restore-and-rollback-drills.md",
+        acceptedEnvironments: ["staging", "production_like", "production"],
         status: "failed",
-        latestEvidence: {
-          ...evidence,
-          id: "evidence_2",
-          evidenceType: "rollback_drill",
-          status: "failed",
-          summary: "Rollback evidence is stale.",
-          observedAt: isoAt(72),
-          createdAt: isoAt(72),
-          updatedAt: isoAt(72)
-        }
+        latestEvidence: rollbackEvidence
+      },
+      {
+        evidenceType: "role_review",
+        label: "Role review",
+        description: "Launch roster and operator role mappings must be attested.",
+        runbookPath: "docs/security/role-review.md",
+        acceptedEnvironments: ["staging", "production_like", "production"],
+        status: "pending",
+        latestEvidence: null
       }
     ],
     recentEvidence: [
-      evidence,
-      {
-        ...evidence,
-        id: "evidence_2",
-        evidenceType: "rollback_drill",
-        status: "failed",
-        summary: "Rollback evidence is stale.",
-        observedAt: isoAt(72),
-        createdAt: isoAt(72),
-        updatedAt: isoAt(72)
-      }
+      deliveryEvidence,
+      endToEndEvidence,
+      rollbackEvidence
     ],
     ...overrides
   };
@@ -547,17 +579,38 @@ function launchApproval(status = "pending_approval") {
       overallStatus: "warning",
       summary: {
         requiredCheckCount: 4,
-        passedCheckCount: 3,
+        passedCheckCount: 2,
         failedCheckCount: 1,
-        pendingCheckCount: 0
+        pendingCheckCount: 1
       },
       requiredChecks: [
         {
-          evidenceType: "e2e_finance_flows",
+          evidenceType: "end_to_end_finance_flows",
           status: "passed",
           latestEvidenceObservedAt: isoAt(3),
           latestEvidenceEnvironment: "staging",
           latestEvidenceStatus: "passed"
+        },
+        {
+          evidenceType: "platform_alert_delivery_slo",
+          status: "passed",
+          latestEvidenceObservedAt: isoAt(2),
+          latestEvidenceEnvironment: "staging",
+          latestEvidenceStatus: "passed"
+        },
+        {
+          evidenceType: "api_rollback_drill",
+          status: "failed",
+          latestEvidenceObservedAt: isoAt(72),
+          latestEvidenceEnvironment: "staging",
+          latestEvidenceStatus: "failed"
+        },
+        {
+          evidenceType: "role_review",
+          status: "pending",
+          latestEvidenceObservedAt: null,
+          latestEvidenceEnvironment: null,
+          latestEvidenceStatus: null
         }
       ]
     },
@@ -565,9 +618,9 @@ function launchApproval(status = "pending_approval") {
       overallStatus: "blocked",
       approvalEligible: false,
       missingChecklistItems: ["finalSignoffComplete"],
-      missingEvidenceTypes: [],
-      failedEvidenceTypes: ["rollback_drill"],
-      staleEvidenceTypes: ["rollback_drill"],
+      missingEvidenceTypes: ["role_review"],
+      failedEvidenceTypes: ["api_rollback_drill"],
+      staleEvidenceTypes: ["api_rollback_drill"],
       maximumEvidenceAgeHours: 24,
       openBlockers: ["Rollback evidence is stale."],
       generatedAt: isoAt(0)
@@ -618,6 +671,8 @@ export type AdminScenario = {
   approvals: MockResponseSpec<Record<string, unknown>>;
   pendingReleases: MockResponseSpec<Record<string, unknown>>;
   releasedReleases: MockResponseSpec<Record<string, unknown>>;
+  recordEvidence: MockResponseSpec<Record<string, unknown>>;
+  requestApproval: MockResponseSpec<Record<string, unknown>>;
   approveRelease: MockResponseSpec<Record<string, unknown>>;
   rejectRelease: MockResponseSpec<Record<string, unknown>>;
 };
@@ -1021,6 +1076,60 @@ export function buildAdminScenario(
         limit: 20
       }
     },
+    recordEvidence: {
+      data: {
+        evidence: {
+          ...releaseSummary().recentEvidence[0],
+          id: "evidence_4",
+          evidenceType: "secret_handling_review",
+          environment: "production_like",
+          releaseIdentifier: "launch-2026.04.13.1",
+          rollbackReleaseIdentifier: null,
+          backupReference: null,
+          summary: "Secret handling review recorded for the current launch roster.",
+          runbookPath: "docs/security/secret-handling-review.md",
+          evidenceLinks: ["ticket/SEC-42"],
+          observedAt: isoAt(0),
+          createdAt: isoAt(0),
+          updatedAt: isoAt(0)
+        }
+      }
+    },
+    requestApproval: {
+      data: {
+        approval: {
+          ...approval,
+          id: "approval_2",
+          releaseIdentifier: "launch-2026.04.13.1",
+          environment: "production_like",
+          summary: "Launch candidate ready for governed approval.",
+          requestNote: "All evidence reviewed from the operator console.",
+          checklist: {
+            securityConfigurationComplete: true,
+            accessAndGovernanceComplete: true,
+            dataAndRecoveryComplete: true,
+            platformHealthComplete: true,
+            functionalProofComplete: true,
+            contractAndChainProofComplete: true,
+            finalSignoffComplete: true,
+            unresolvedRisksAccepted: true,
+            openBlockers: [],
+            residualRiskNote: "Residual launch risks accepted by the requester."
+          },
+          gate: {
+            overallStatus: "ready",
+            approvalEligible: true,
+            missingChecklistItems: [],
+            missingEvidenceTypes: [],
+            failedEvidenceTypes: [],
+            staleEvidenceTypes: [],
+            maximumEvidenceAgeHours: 24,
+            openBlockers: [],
+            generatedAt: isoAt(0)
+          }
+        }
+      }
+    },
     approveRelease: {
       data: approval
     },
@@ -1065,6 +1174,14 @@ export function buildAdminScenario(
           healthyWorkers: 0,
           degradedWorkers: 1,
           staleWorkers: 1
+        },
+        withdrawalExecutionHealth: {
+          status: "critical",
+          queuedManagedWithdrawalCount: 4,
+          broadcastingWithdrawalCount: 2,
+          pendingConfirmationWithdrawalCount: 3,
+          failedManagedWithdrawalCount: 1,
+          manualInterventionWithdrawalCount: 2
         },
         chainHealth: {
           status: "critical",
@@ -1161,6 +1278,16 @@ export async function mockAdminApi(
   scenario: Partial<AdminScenario> = {}
 ): Promise<void> {
   const resolved = buildAdminScenario("happy", scenario);
+  const currentEvidence = [
+    ...(((resolved.evidence.data as Record<string, unknown> | undefined)?.[
+      "evidence"
+    ] as Record<string, unknown>[] | undefined) ?? [])
+  ];
+  const currentApprovals = [
+    ...(((resolved.approvals.data as Record<string, unknown> | undefined)?.[
+      "approvals"
+    ] as Record<string, unknown>[] | undefined) ?? [])
+  ];
 
   await page.route("**/*", async (route) => {
     const request = route.request();
@@ -1355,11 +1482,47 @@ export async function mockAdminApi(
     }
 
     if (pathname.endsWith("/release-readiness/internal/evidence") && method === "GET") {
-      return fulfillJson(route, resolved.evidence);
+      return fulfillJson(route, {
+        ...resolved.evidence,
+        data: {
+          ...((resolved.evidence.data as Record<string, unknown> | undefined) ?? {}),
+          evidence: currentEvidence,
+          totalCount: currentEvidence.length
+        }
+      });
+    }
+
+    if (pathname.endsWith("/release-readiness/internal/evidence") && method === "POST") {
+      const newEvidence = (resolved.recordEvidence.data as Record<string, unknown> | undefined)
+        ?.["evidence"] as Record<string, unknown> | undefined;
+
+      if (newEvidence) {
+        currentEvidence.unshift(newEvidence);
+      }
+
+      return fulfillJson(route, resolved.recordEvidence);
     }
 
     if (pathname.endsWith("/release-readiness/internal/approvals") && method === "GET") {
-      return fulfillJson(route, resolved.approvals);
+      return fulfillJson(route, {
+        ...resolved.approvals,
+        data: {
+          ...((resolved.approvals.data as Record<string, unknown> | undefined) ?? {}),
+          approvals: currentApprovals,
+          totalCount: currentApprovals.length
+        }
+      });
+    }
+
+    if (pathname.endsWith("/release-readiness/internal/approvals") && method === "POST") {
+      const newApproval = (resolved.requestApproval.data as Record<string, unknown> | undefined)
+        ?.["approval"] as Record<string, unknown> | undefined;
+
+      if (newApproval) {
+        currentApprovals.unshift(newApproval);
+      }
+
+      return fulfillJson(route, resolved.requestApproval);
     }
 
     if (
