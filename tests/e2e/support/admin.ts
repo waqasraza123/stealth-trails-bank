@@ -693,8 +693,378 @@ function launchApproval(status = "pending_approval") {
   };
 }
 
+function cloneAdminData<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function loanTimelineEvent(
+  id: string,
+  label: string,
+  tone: "neutral" | "positive" | "warning" | "critical" | "technical",
+  description: string,
+  hoursAgo = 0
+) {
+  return {
+    id,
+    label,
+    tone,
+    timestamp: isoAt(hoursAgo),
+    description
+  };
+}
+
+function loanCustomer(status = "active") {
+  return {
+    customerId: "customer_1",
+    customerAccountId: "account_1",
+    status,
+    email: "amina@example.com",
+    firstName: "Amina",
+    lastName: "Rahman"
+  };
+}
+
+function loanPolicyPacks() {
+  return [
+    {
+      jurisdiction: "usa",
+      displayName: "United States",
+      disclosureTitle: "US managed lending disclosure",
+      disclosureBody:
+        "Collateralized lending uses a fixed service fee, explicit grace periods, and governed servicing actions.",
+      serviceFeeRateBps: 275,
+      warningLtvBps: 6800,
+      liquidationLtvBps: 8000,
+      gracePeriodDays: 10
+    },
+    {
+      jurisdiction: "uae",
+      displayName: "United Arab Emirates",
+      disclosureTitle: "UAE managed lending disclosure",
+      disclosureBody:
+        "Requests remain asset-backed with fixed disclosed fees and operator approval before activation.",
+      serviceFeeRateBps: 250,
+      warningLtvBps: 6700,
+      liquidationLtvBps: 7900,
+      gracePeriodDays: 7
+    }
+  ];
+}
+
+function buildLoanApplicationList(status = "pending_review", linkedLoanAgreementId: string | null = null) {
+  return {
+    applications: [
+      {
+        id: "loan_application_1",
+        status,
+        jurisdiction: "usa",
+        requestedBorrowAmount: "1500",
+        requestedCollateralAmount: "2400",
+        requestedTermMonths: 12,
+        serviceFeeAmount: "41.25",
+        customer: loanCustomer(),
+        borrowAsset: {
+          symbol: "USDC",
+          displayName: "USD Coin"
+        },
+        collateralAsset: {
+          symbol: "ETH",
+          displayName: "Ethereum"
+        },
+        linkedLoanAgreementId,
+        submittedAt: isoAt(24),
+        updatedAt: isoAt(2)
+      },
+      {
+        id: "loan_application_2",
+        status: "evidence_requested",
+        jurisdiction: "usa",
+        requestedBorrowAmount: "500",
+        requestedCollateralAmount: "900",
+        requestedTermMonths: 6,
+        serviceFeeAmount: "13.75",
+        customer: {
+          ...loanCustomer(),
+          email: "sameh@example.com",
+          firstName: "Sameh",
+          lastName: "Naseem"
+        },
+        borrowAsset: {
+          symbol: "USDC",
+          displayName: "USD Coin"
+        },
+        collateralAsset: {
+          symbol: "ETH",
+          displayName: "Ethereum"
+        },
+        linkedLoanAgreementId: null,
+        submittedAt: isoAt(30),
+        updatedAt: isoAt(6)
+      }
+    ],
+    totalCount: 2,
+    limit: 20
+  };
+}
+
+function buildLoanApplicationWorkspace(status = "pending_review", linkedLoanAgreementId: string | null = null) {
+  return {
+    application: {
+      id: "loan_application_1",
+      status,
+      jurisdiction: "usa",
+      requestedBorrowAmount: "1500",
+      requestedCollateralAmount: "2400",
+      requestedTermMonths: 12,
+      serviceFeeAmount: "41.25",
+      autopayEnabled: true,
+      quoteSnapshot: {
+        principalAmount: "1500",
+        collateralAmount: "2400",
+        serviceFeeAmount: "41.25",
+        totalRepayableAmount: "1541.25",
+        installmentAmount: "128.44"
+      },
+      submittedAt: isoAt(24),
+      reviewedAt: status === "pending_review" ? null : isoAt(1),
+      reviewedByOperatorId: status === "pending_review" ? null : "ops_e2e",
+      reviewedByOperatorRole: status === "pending_review" ? null : "operations_admin",
+      decisionNote:
+        status === "pending_review"
+          ? null
+          : "Operator decision captured for the lending workflow.",
+      customer: loanCustomer(),
+      borrowAsset: {
+        symbol: "USDC",
+        displayName: "USD Coin",
+        chainId: 1,
+        decimals: 6
+      },
+      collateralAsset: {
+        symbol: "ETH",
+        displayName: "Ethereum",
+        chainId: 1,
+        decimals: 18
+      }
+    },
+    linkedLoanAgreement: linkedLoanAgreementId
+      ? {
+          id: linkedLoanAgreementId,
+          status: "active",
+          principalAmount: "1500",
+          outstandingTotalAmount: "1541.25",
+          nextDueAt: isoAt(-24 * 14)
+        }
+      : null,
+    timeline: [
+      loanTimelineEvent(
+        "loan_application_event_1",
+        "Application submitted",
+        "technical",
+        "Customer submitted the lending request with governed disclosures.",
+        24
+      ),
+      loanTimelineEvent(
+        "loan_application_event_2",
+        status === "evidence_requested"
+          ? "Evidence requested"
+          : status === "approved"
+            ? "Application approved"
+            : status === "rejected"
+              ? "Application rejected"
+              : "Pending review",
+        status === "approved"
+          ? "positive"
+          : status === "rejected"
+            ? "critical"
+            : "warning",
+        status === "evidence_requested"
+          ? "Operator requested additional evidence before a decision."
+          : status === "approved"
+            ? "Operator approved the application and allowed the agreement workflow to continue."
+            : status === "rejected"
+              ? "Operator rejected the application after review."
+              : "Application is waiting for an operator decision.",
+        2
+      )
+    ]
+  };
+}
+
+function buildLoanAgreementList(status = "active", liquidationStatus: string | null = null) {
+  return {
+    agreements: [
+      {
+        id: "loan_agreement_1",
+        status,
+        jurisdiction: "usa",
+        principalAmount: "900",
+        collateralAmount: "1600",
+        outstandingTotalAmount: "924.75",
+        autopayEnabled: true,
+        nextDueAt: isoAt(-24 * 14),
+        customer: loanCustomer(),
+        borrowAsset: "USDC",
+        collateralAsset: "ETH",
+        collateralStatus: "healthy",
+        liquidationStatus
+      }
+    ],
+    totalCount: 1,
+    limit: 20
+  };
+}
+
+function buildLoanAgreementWorkspace(status = "active", liquidationStatus: string | null = null) {
+  return {
+    agreement: {
+      id: "loan_agreement_1",
+      applicationId: "loan_application_legacy",
+      status,
+      jurisdiction: "usa",
+      principalAmount: "900",
+      collateralAmount: "1600",
+      serviceFeeAmount: "24.75",
+      outstandingTotalAmount: "924.75",
+      contractLoanId: "contract_loan_1",
+      contractAddress: "0x0000000000000000000000000000000000000def",
+      activationTransactionHash:
+        "0xabc1111222233334444555566667777888899990000aaaabbbbccccdddd9999",
+      autopayEnabled: true,
+      nextDueAt: isoAt(-24 * 14),
+      gracePeriodEndsAt: null,
+      delinquentAt: null,
+      defaultedAt: null,
+      liquidationStartedAt:
+        liquidationStatus === null ? null : isoAt(1),
+      customer: loanCustomer(),
+      borrowAsset: {
+        symbol: "USDC",
+        displayName: "USD Coin"
+      },
+      collateralAsset: {
+        symbol: "ETH",
+        displayName: "Ethereum"
+      }
+    },
+    installments: [
+      {
+        id: "agreement_installment_1",
+        installmentNumber: 1,
+        dueAt: isoAt(-24 * 14),
+        status: "due",
+        scheduledTotalAmount: "102.75",
+        paidTotalAmount: "0",
+        lastAutopayAttemptAt: isoAt(2)
+      }
+    ],
+    collateralPositions: [
+      {
+        id: "agreement_collateral_1",
+        amount: "1600",
+        status: "active",
+        walletAddress: "0x1111222233334444555566667777888899990000",
+        currentValuationUsd: "1625",
+        latestLtvBps: 5691
+      }
+    ],
+    valuations: [
+      {
+        id: "agreement_valuation_1",
+        priceUsd: "1.01",
+        collateralValueUsd: "1625",
+        principalValueUsd: "924.75",
+        ltvBps: 5691,
+        observedAt: isoAt(1)
+      }
+    ],
+    repayments: [
+      {
+        id: "agreement_repayment_1",
+        status: "scheduled",
+        amount: "102.75",
+        principalAppliedAmount: "100",
+        serviceFeeAppliedAmount: "2.75",
+        failureReason: null,
+        autopayAttempted: true,
+        autopaySucceeded: false,
+        createdAt: isoAt(2),
+        settledAt: null
+      }
+    ],
+    statements: [
+      {
+        id: "statement_1",
+        referenceId: "loan-statement-2026-04",
+        statementDate: "2026-04-01"
+      }
+    ],
+    liquidationCases:
+      liquidationStatus === null
+        ? []
+        : [
+            {
+              id: "liquidation_case_1",
+              status: liquidationStatus,
+              reasonCode: "ltv_breach",
+              note: "Collateral health crossed the liquidation threshold.",
+              executionTransactionHash:
+                liquidationStatus === "executed"
+                  ? "0xfeed1111222233334444555566667777888899990000aaaabbbbccccdddd9999"
+                  : null,
+              recoveredAmount:
+                liquidationStatus === "executed" ? "924.75" : null,
+              shortfallAmount: liquidationStatus === "executed" ? "0" : null,
+              createdAt: isoAt(1),
+              updatedAt: isoAt(0)
+            }
+          ],
+    timeline: [
+      loanTimelineEvent(
+        "loan_agreement_event_1",
+        "Agreement active",
+        "positive",
+        "Funding completed and the agreement entered servicing.",
+        48
+      ),
+      ...(liquidationStatus === null
+        ? []
+        : [
+            loanTimelineEvent(
+              "loan_agreement_event_2",
+              liquidationStatus === "approved"
+                ? "Liquidation approved"
+                : liquidationStatus === "executed"
+                  ? "Liquidation executed"
+                  : "Liquidation review started",
+              liquidationStatus === "executed" ? "critical" : "warning",
+              liquidationStatus === "approved"
+                ? "Governed approval was recorded for the liquidation case."
+                : liquidationStatus === "executed"
+                  ? "Collateral liquidation completed and recovery was recorded."
+                  : "Collateral distress triggered a governed liquidation review.",
+              1
+            )
+          ])
+    ]
+  };
+}
+
 export type AdminScenario = {
   operationsStatus: MockResponseSpec<Record<string, unknown>>;
+  loanSummary: MockResponseSpec<Record<string, unknown>>;
+  loanApplications: MockResponseSpec<Record<string, unknown>>;
+  loanApplicationWorkspace: MockResponseSpec<Record<string, unknown>>;
+  requestLoanEvidence: MockResponseSpec<Record<string, unknown>>;
+  approveLoanApplication: MockResponseSpec<Record<string, unknown>>;
+  rejectLoanApplication: MockResponseSpec<Record<string, unknown>>;
+  placeLoanAccountRestriction: MockResponseSpec<Record<string, unknown>>;
+  loanAgreements: MockResponseSpec<Record<string, unknown>>;
+  loanAgreementWorkspace: MockResponseSpec<Record<string, unknown>>;
+  startLoanLiquidationReview: MockResponseSpec<Record<string, unknown>>;
+  approveLoanLiquidation: MockResponseSpec<Record<string, unknown>>;
+  executeLoanLiquidation: MockResponseSpec<Record<string, unknown>>;
+  closeLoanAgreement: MockResponseSpec<Record<string, unknown>>;
   releaseSummary: MockResponseSpec<Record<string, unknown>>;
   reviewCases: MockResponseSpec<Record<string, unknown>>;
   releaseReviews: MockResponseSpec<Record<string, unknown>>;
@@ -749,10 +1119,85 @@ export function buildAdminScenario(
   const selectedAlert = platformAlert();
   const approval = launchApproval();
   const recon = reconciliationWorkspace();
+  const loanApplications = buildLoanApplicationList();
+  const loanAgreements = buildLoanAgreementList();
 
   const base: AdminScenario = {
     operationsStatus: {
       data: operationsStatus()
+    },
+    loanSummary: {
+      data: {
+        applicationBacklog: [
+          { status: "pending_review", count: 1 },
+          { status: "evidence_requested", count: 1 }
+        ],
+        agreementStates: [{ status: "active", count: 1 }],
+        liquidationStates: [],
+        policyPacks: loanPolicyPacks()
+      }
+    },
+    loanApplications: {
+      data: loanApplications
+    },
+    loanApplicationWorkspace: {
+      data: buildLoanApplicationWorkspace()
+    },
+    requestLoanEvidence: {
+      data: {
+        loanApplicationId: "loan_application_1",
+        status: "evidence_requested"
+      }
+    },
+    approveLoanApplication: {
+      data: {
+        loanApplicationId: "loan_application_1",
+        status: "approved",
+        loanAgreementId: "loan_agreement_approved_1",
+        contractLoanId: "contract_loan_approved_1"
+      }
+    },
+    rejectLoanApplication: {
+      data: {
+        loanApplicationId: "loan_application_1",
+        status: "rejected"
+      }
+    },
+    placeLoanAccountRestriction: {
+      data: {
+        customerAccountId: "account_1",
+        status: "restricted"
+      }
+    },
+    loanAgreements: {
+      data: loanAgreements
+    },
+    loanAgreementWorkspace: {
+      data: buildLoanAgreementWorkspace()
+    },
+    startLoanLiquidationReview: {
+      data: {
+        liquidationCaseId: "liquidation_case_1",
+        status: "review_started"
+      }
+    },
+    approveLoanLiquidation: {
+      data: {
+        liquidationCaseId: "liquidation_case_1",
+        status: "approved"
+      }
+    },
+    executeLoanLiquidation: {
+      data: {
+        liquidationCaseId: "liquidation_case_1",
+        status: "executed"
+      }
+    },
+    closeLoanAgreement: {
+      data: {
+        loanAgreementId: "loan_agreement_1",
+        status: "closed"
+      }
     },
     releaseSummary: {
       data: releaseSummary()
@@ -1215,6 +1660,28 @@ export function buildAdminScenario(
   };
 
   if (kind === "empty") {
+    base.loanSummary = {
+      data: {
+        applicationBacklog: [],
+        agreementStates: [],
+        liquidationStates: [],
+        policyPacks: loanPolicyPacks()
+      }
+    };
+    base.loanApplications = {
+      data: {
+        applications: [],
+        totalCount: 0,
+        limit: 20
+      }
+    };
+    base.loanAgreements = {
+      data: {
+        agreements: [],
+        totalCount: 0,
+        limit: 20
+      }
+    };
     base.releaseReviews = {
       data: {
         reviews: [],
@@ -1276,6 +1743,21 @@ export function buildAdminScenario(
       ok: false,
       statusCode: 500,
       message: "Operations status unavailable."
+    };
+    base.loanSummary = {
+      ok: false,
+      statusCode: 500,
+      message: "Failed to load loan operations summary."
+    };
+    base.loanApplications = {
+      ok: false,
+      statusCode: 500,
+      message: "Failed to load loan applications."
+    };
+    base.loanAgreements = {
+      ok: false,
+      statusCode: 500,
+      message: "Failed to load loan agreements."
     };
     base.releaseSummary = {
       ok: false,
@@ -1360,6 +1842,71 @@ export async function mockAdminApi(
       "approvals"
     ] as Record<string, unknown>[] | undefined) ?? [])
   ];
+  const currentLoanApplications = cloneAdminData(
+    (((resolved.loanApplications.data as Record<string, unknown> | undefined)?.[
+      "applications"
+    ] as Array<Record<string, any>> | undefined) ?? [])
+  ) as Array<Record<string, any>>;
+  const currentLoanAgreements = cloneAdminData(
+    (((resolved.loanAgreements.data as Record<string, unknown> | undefined)?.[
+      "agreements"
+    ] as Array<Record<string, any>> | undefined) ?? [])
+  ) as Array<Record<string, any>>;
+  const currentLoanApplicationWorkspace = cloneAdminData(
+    ((resolved.loanApplicationWorkspace.data as Record<string, unknown> | undefined) ??
+      buildLoanApplicationWorkspace()) as Record<string, any>
+  ) as any;
+  const currentLoanAgreementWorkspace = cloneAdminData(
+    ((resolved.loanAgreementWorkspace.data as Record<string, unknown> | undefined) ??
+      buildLoanAgreementWorkspace()) as Record<string, any>
+  ) as any;
+
+  function currentLoanPolicyPacks() {
+    return (
+      ((resolved.loanSummary.data as Record<string, unknown> | undefined)?.[
+        "policyPacks"
+      ] as Record<string, unknown>[] | undefined) ?? loanPolicyPacks()
+    );
+  }
+
+  function buildLoanSummaryState() {
+    const applicationCounts = new Map<string, number>();
+    const agreementCounts = new Map<string, number>();
+    const liquidationCounts = new Map<string, number>();
+
+    for (const application of currentLoanApplications) {
+      const status = String(application.status ?? "unknown");
+      applicationCounts.set(status, (applicationCounts.get(status) ?? 0) + 1);
+    }
+
+    for (const agreement of currentLoanAgreements) {
+      const status = String(agreement.status ?? "unknown");
+      agreementCounts.set(status, (agreementCounts.get(status) ?? 0) + 1);
+      const liquidationStatus = agreement.liquidationStatus;
+      if (typeof liquidationStatus === "string" && liquidationStatus.length > 0) {
+        liquidationCounts.set(
+          liquidationStatus,
+          (liquidationCounts.get(liquidationStatus) ?? 0) + 1
+        );
+      }
+    }
+
+    return {
+      applicationBacklog: Array.from(applicationCounts.entries()).map(([status, count]) => ({
+        status,
+        count
+      })),
+      agreementStates: Array.from(agreementCounts.entries()).map(([status, count]) => ({
+        status,
+        count
+      })),
+      liquidationStates: Array.from(liquidationCounts.entries()).map(([status, count]) => ({
+        status,
+        count
+      })),
+      policyPacks: currentLoanPolicyPacks()
+    };
+  }
 
   await page.route("**/*", async (route) => {
     const request = route.request();
@@ -1368,6 +1915,482 @@ export async function mockAdminApi(
 
     if (pathname.endsWith("/operations/internal/status") && method === "GET") {
       return fulfillJson(route, resolved.operationsStatus);
+    }
+
+    if (pathname.endsWith("/loans/internal/summary") && method === "GET") {
+      if (resolved.loanSummary.ok === false) {
+        return fulfillJson(route, resolved.loanSummary);
+      }
+
+      return fulfillJson(route, {
+        ...resolved.loanSummary,
+        data: buildLoanSummaryState()
+      });
+    }
+
+    if (pathname.endsWith("/loans/internal/applications") && method === "GET") {
+      if (resolved.loanApplications.ok === false) {
+        return fulfillJson(route, resolved.loanApplications);
+      }
+
+      return fulfillJson(route, {
+        ...resolved.loanApplications,
+        data: {
+          applications: currentLoanApplications,
+          totalCount: currentLoanApplications.length,
+          limit:
+            ((resolved.loanApplications.data as Record<string, unknown> | undefined)?.[
+              "limit"
+            ] as number | undefined) ?? 20
+        }
+      });
+    }
+
+    if (/\/loans\/internal\/applications\/[^/]+\/workspace$/.test(pathname) && method === "GET") {
+      const loanApplicationId = pathname.split("/").slice(-2)[0];
+
+      if (resolved.loanApplicationWorkspace.ok === false) {
+        return fulfillJson(route, resolved.loanApplicationWorkspace);
+      }
+
+      if (
+        currentLoanApplicationWorkspace.application &&
+        currentLoanApplicationWorkspace.application.id === loanApplicationId
+      ) {
+        return fulfillJson(route, {
+          ...resolved.loanApplicationWorkspace,
+          data: currentLoanApplicationWorkspace
+        });
+      }
+
+      const selectedApplication = currentLoanApplications.find(
+        (application) => application.id === loanApplicationId
+      );
+
+      return fulfillJson(route, {
+        ...resolved.loanApplicationWorkspace,
+        data: {
+          application: selectedApplication ?? currentLoanApplicationWorkspace.application,
+          linkedLoanAgreement: null,
+          timeline: []
+        }
+      });
+    }
+
+    if (
+      /\/loans\/internal\/applications\/[^/]+\/request-more-evidence$/.test(pathname) &&
+      method === "POST"
+    ) {
+      if (resolved.requestLoanEvidence.ok === false) {
+        return fulfillJson(route, resolved.requestLoanEvidence);
+      }
+
+      const note =
+        ((request.postDataJSON() as Record<string, unknown> | null)?.note as string | undefined) ??
+        null;
+
+      currentLoanApplicationWorkspace.application.status = "evidence_requested";
+      currentLoanApplicationWorkspace.application.reviewedAt = isoAt(0);
+      currentLoanApplicationWorkspace.application.reviewedByOperatorId = "ops_e2e";
+      currentLoanApplicationWorkspace.application.reviewedByOperatorRole = "operations_admin";
+      currentLoanApplicationWorkspace.application.decisionNote = note;
+      currentLoanApplicationWorkspace.timeline.unshift(
+        loanTimelineEvent(
+          "loan_application_event_evidence",
+          "Evidence requested",
+          "warning",
+          note ?? "Operator requested additional evidence before continuing."
+        )
+      );
+
+      const currentApplication = currentLoanApplications.find(
+        (application) => application.id === "loan_application_1"
+      );
+      if (currentApplication) {
+        currentApplication.status = "evidence_requested";
+        currentApplication.updatedAt = isoAt(0);
+      }
+
+      return fulfillJson(route, {
+        ...resolved.requestLoanEvidence,
+        data: {
+          loanApplicationId: "loan_application_1",
+          status: "evidence_requested"
+        }
+      });
+    }
+
+    if (
+      /\/loans\/internal\/applications\/[^/]+\/approve$/.test(pathname) &&
+      method === "POST"
+    ) {
+      if (resolved.approveLoanApplication.ok === false) {
+        return fulfillJson(route, resolved.approveLoanApplication);
+      }
+
+      const note =
+        ((request.postDataJSON() as Record<string, unknown> | null)?.note as string | undefined) ??
+        null;
+      const newAgreementId =
+        ((resolved.approveLoanApplication.data as Record<string, unknown> | undefined)?.[
+          "loanAgreementId"
+        ] as string | undefined) ?? "loan_agreement_approved_1";
+
+      currentLoanApplicationWorkspace.application.status = "approved";
+      currentLoanApplicationWorkspace.application.reviewedAt = isoAt(0);
+      currentLoanApplicationWorkspace.application.reviewedByOperatorId = "ops_e2e";
+      currentLoanApplicationWorkspace.application.reviewedByOperatorRole = "operations_admin";
+      currentLoanApplicationWorkspace.application.decisionNote = note;
+      currentLoanApplicationWorkspace.linkedLoanAgreement = {
+        id: newAgreementId,
+        status: "active",
+        principalAmount: "1500",
+        outstandingTotalAmount: "1541.25",
+        nextDueAt: isoAt(-24 * 30)
+      };
+      currentLoanApplicationWorkspace.timeline.unshift(
+        loanTimelineEvent(
+          "loan_application_event_approved",
+          "Application approved",
+          "positive",
+          note ?? "Operator approved the application."
+        )
+      );
+
+      const currentApplication = currentLoanApplications.find(
+        (application) => application.id === "loan_application_1"
+      );
+      if (currentApplication) {
+        currentApplication.status = "approved";
+        currentApplication.updatedAt = isoAt(0);
+        currentApplication.linkedLoanAgreementId = newAgreementId;
+      }
+
+      currentLoanAgreements.unshift({
+        id: newAgreementId,
+        status: "active",
+        jurisdiction: "usa",
+        principalAmount: "1500",
+        collateralAmount: "2400",
+        outstandingTotalAmount: "1541.25",
+        autopayEnabled: true,
+        nextDueAt: isoAt(-24 * 30),
+        customer: loanCustomer(),
+        borrowAsset: "USDC",
+        collateralAsset: "ETH",
+        collateralStatus: "healthy",
+        liquidationStatus: null
+      });
+
+      return fulfillJson(route, {
+        ...resolved.approveLoanApplication,
+        data: {
+          loanApplicationId: "loan_application_1",
+          status: "approved",
+          loanAgreementId: newAgreementId,
+          contractLoanId:
+            ((resolved.approveLoanApplication.data as Record<string, unknown> | undefined)?.[
+              "contractLoanId"
+            ] as string | undefined) ?? "contract_loan_approved_1"
+        }
+      });
+    }
+
+    if (
+      /\/loans\/internal\/applications\/[^/]+\/reject$/.test(pathname) &&
+      method === "POST"
+    ) {
+      if (resolved.rejectLoanApplication.ok === false) {
+        return fulfillJson(route, resolved.rejectLoanApplication);
+      }
+
+      const note =
+        ((request.postDataJSON() as Record<string, unknown> | null)?.note as string | undefined) ??
+        null;
+
+      currentLoanApplicationWorkspace.application.status = "rejected";
+      currentLoanApplicationWorkspace.application.reviewedAt = isoAt(0);
+      currentLoanApplicationWorkspace.application.reviewedByOperatorId = "ops_e2e";
+      currentLoanApplicationWorkspace.application.reviewedByOperatorRole = "operations_admin";
+      currentLoanApplicationWorkspace.application.decisionNote = note;
+      currentLoanApplicationWorkspace.timeline.unshift(
+        loanTimelineEvent(
+          "loan_application_event_rejected",
+          "Application rejected",
+          "critical",
+          note ?? "Operator rejected the application."
+        )
+      );
+
+      const currentApplication = currentLoanApplications.find(
+        (application) => application.id === "loan_application_1"
+      );
+      if (currentApplication) {
+        currentApplication.status = "rejected";
+        currentApplication.updatedAt = isoAt(0);
+      }
+
+      return fulfillJson(route, {
+        ...resolved.rejectLoanApplication,
+        data: {
+          loanApplicationId: "loan_application_1",
+          status: "rejected"
+        }
+      });
+    }
+
+    if (
+      /\/loans\/internal\/applications\/[^/]+\/place-account-restriction$/.test(pathname) &&
+      method === "POST"
+    ) {
+      if (resolved.placeLoanAccountRestriction.ok === false) {
+        return fulfillJson(route, resolved.placeLoanAccountRestriction);
+      }
+
+      currentLoanApplicationWorkspace.application.customer.status = "restricted";
+      currentLoanApplicationWorkspace.timeline.unshift(
+        loanTimelineEvent(
+          "loan_application_event_restricted",
+          "Account restricted",
+          "critical",
+          "Governed account restriction was recorded against the customer account."
+        )
+      );
+
+      for (const application of currentLoanApplications) {
+        if (application.customer?.customerAccountId === "account_1") {
+          application.customer = {
+            ...application.customer,
+            status: "restricted"
+          };
+        }
+      }
+
+      return fulfillJson(route, {
+        ...resolved.placeLoanAccountRestriction,
+        data: {
+          customerAccountId: "account_1",
+          status: "restricted"
+        }
+      });
+    }
+
+    if (pathname.endsWith("/loans/internal/agreements") && method === "GET") {
+      if (resolved.loanAgreements.ok === false) {
+        return fulfillJson(route, resolved.loanAgreements);
+      }
+
+      return fulfillJson(route, {
+        ...resolved.loanAgreements,
+        data: {
+          agreements: currentLoanAgreements,
+          totalCount: currentLoanAgreements.length,
+          limit:
+            ((resolved.loanAgreements.data as Record<string, unknown> | undefined)?.[
+              "limit"
+            ] as number | undefined) ?? 20
+        }
+      });
+    }
+
+    if (/\/loans\/internal\/agreements\/[^/]+\/workspace$/.test(pathname) && method === "GET") {
+      const loanAgreementId = pathname.split("/").slice(-2)[0];
+
+      if (resolved.loanAgreementWorkspace.ok === false) {
+        return fulfillJson(route, resolved.loanAgreementWorkspace);
+      }
+
+      if (
+        currentLoanAgreementWorkspace.agreement &&
+        currentLoanAgreementWorkspace.agreement.id === loanAgreementId
+      ) {
+        return fulfillJson(route, {
+          ...resolved.loanAgreementWorkspace,
+          data: currentLoanAgreementWorkspace
+        });
+      }
+
+      const selectedAgreement = currentLoanAgreements.find(
+        (agreement) => agreement.id === loanAgreementId
+      );
+
+      return fulfillJson(route, {
+        ...resolved.loanAgreementWorkspace,
+        data: {
+          agreement: selectedAgreement ?? currentLoanAgreementWorkspace.agreement,
+          installments: [],
+          collateralPositions: [],
+          valuations: [],
+          repayments: [],
+          statements: [],
+          liquidationCases: [],
+          timeline: []
+        }
+      });
+    }
+
+    if (
+      /\/loans\/internal\/agreements\/[^/]+\/start-liquidation-review$/.test(pathname) &&
+      method === "POST"
+    ) {
+      if (resolved.startLoanLiquidationReview.ok === false) {
+        return fulfillJson(route, resolved.startLoanLiquidationReview);
+      }
+
+      currentLoanAgreementWorkspace.agreement.status = "liquidation_review";
+      currentLoanAgreementWorkspace.agreement.liquidationStartedAt = isoAt(0);
+      currentLoanAgreementWorkspace.liquidationCases = [
+        {
+          id: "liquidation_case_1",
+          status: "review_started",
+          reasonCode: "ltv_breach",
+          note: "Collateral health crossed the liquidation threshold.",
+          executionTransactionHash: null,
+          recoveredAmount: null,
+          shortfallAmount: null,
+          createdAt: isoAt(0),
+          updatedAt: isoAt(0)
+        }
+      ];
+      currentLoanAgreementWorkspace.timeline.unshift(
+        loanTimelineEvent(
+          "loan_agreement_event_liquidation_review",
+          "Liquidation review started",
+          "warning",
+          "Collateral distress triggered a governed liquidation review."
+        )
+      );
+
+      const currentAgreement = currentLoanAgreements.find(
+        (agreement) => agreement.id === "loan_agreement_1"
+      );
+      if (currentAgreement) {
+        currentAgreement.status = "liquidation_review";
+        currentAgreement.liquidationStatus = "review_started";
+      }
+
+      return fulfillJson(route, {
+        ...resolved.startLoanLiquidationReview,
+        data: {
+          liquidationCaseId: "liquidation_case_1",
+          status: "review_started"
+        }
+      });
+    }
+
+    if (
+      /\/loans\/internal\/agreements\/[^/]+\/approve-liquidation$/.test(pathname) &&
+      method === "POST"
+    ) {
+      if (resolved.approveLoanLiquidation.ok === false) {
+        return fulfillJson(route, resolved.approveLoanLiquidation);
+      }
+
+      currentLoanAgreementWorkspace.agreement.status = "liquidation_approved";
+      if (currentLoanAgreementWorkspace.liquidationCases[0]) {
+        currentLoanAgreementWorkspace.liquidationCases[0].status = "approved";
+        currentLoanAgreementWorkspace.liquidationCases[0].updatedAt = isoAt(0);
+      }
+      currentLoanAgreementWorkspace.timeline.unshift(
+        loanTimelineEvent(
+          "loan_agreement_event_liquidation_approved",
+          "Liquidation approved",
+          "warning",
+          "Governed approval was recorded for the liquidation case."
+        )
+      );
+
+      const currentAgreement = currentLoanAgreements.find(
+        (agreement) => agreement.id === "loan_agreement_1"
+      );
+      if (currentAgreement) {
+        currentAgreement.status = "liquidation_approved";
+        currentAgreement.liquidationStatus = "approved";
+      }
+
+      return fulfillJson(route, {
+        ...resolved.approveLoanLiquidation,
+        data: {
+          liquidationCaseId: "liquidation_case_1",
+          status: "approved"
+        }
+      });
+    }
+
+    if (
+      /\/loans\/internal\/agreements\/[^/]+\/execute-liquidation$/.test(pathname) &&
+      method === "POST"
+    ) {
+      if (resolved.executeLoanLiquidation.ok === false) {
+        return fulfillJson(route, resolved.executeLoanLiquidation);
+      }
+
+      currentLoanAgreementWorkspace.agreement.status = "liquidated";
+      if (currentLoanAgreementWorkspace.liquidationCases[0]) {
+        currentLoanAgreementWorkspace.liquidationCases[0].status = "executed";
+        currentLoanAgreementWorkspace.liquidationCases[0].executionTransactionHash =
+          "0xfeed1111222233334444555566667777888899990000aaaabbbbccccdddd9999";
+        currentLoanAgreementWorkspace.liquidationCases[0].recoveredAmount = "924.75";
+        currentLoanAgreementWorkspace.liquidationCases[0].shortfallAmount = "0";
+        currentLoanAgreementWorkspace.liquidationCases[0].updatedAt = isoAt(0);
+      }
+      currentLoanAgreementWorkspace.timeline.unshift(
+        loanTimelineEvent(
+          "loan_agreement_event_liquidation_executed",
+          "Liquidation executed",
+          "critical",
+          "Collateral liquidation completed and recovery was recorded."
+        )
+      );
+
+      const currentAgreement = currentLoanAgreements.find(
+        (agreement) => agreement.id === "loan_agreement_1"
+      );
+      if (currentAgreement) {
+        currentAgreement.status = "liquidated";
+        currentAgreement.liquidationStatus = "executed";
+      }
+
+      return fulfillJson(route, {
+        ...resolved.executeLoanLiquidation,
+        data: {
+          liquidationCaseId: "liquidation_case_1",
+          status: "executed"
+        }
+      });
+    }
+
+    if (/\/loans\/internal\/agreements\/[^/]+\/close$/.test(pathname) && method === "POST") {
+      if (resolved.closeLoanAgreement.ok === false) {
+        return fulfillJson(route, resolved.closeLoanAgreement);
+      }
+
+      currentLoanAgreementWorkspace.agreement.status = "closed";
+      currentLoanAgreementWorkspace.agreement.nextDueAt = null;
+      currentLoanAgreementWorkspace.timeline.unshift(
+        loanTimelineEvent(
+          "loan_agreement_event_closed",
+          "Agreement closed",
+          "positive",
+          "Loan agreement servicing is complete and the agreement was closed."
+        )
+      );
+
+      const currentAgreement = currentLoanAgreements.find(
+        (agreement) => agreement.id === "loan_agreement_1"
+      );
+      if (currentAgreement) {
+        currentAgreement.status = "closed";
+        currentAgreement.nextDueAt = null;
+      }
+
+      return fulfillJson(route, {
+        ...resolved.closeLoanAgreement,
+        data: {
+          loanAgreementId: "loan_agreement_1",
+          status: "closed"
+        }
+      });
     }
 
     if (pathname.endsWith("/release-readiness/internal/summary") && method === "GET") {
