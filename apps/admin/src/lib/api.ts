@@ -16,6 +16,10 @@ import type {
   LedgerReconciliationMutationResult,
   LedgerReconciliationScanRunList,
   LedgerReconciliationWorkspace,
+  LaunchClosureManifest,
+  LaunchClosureScaffoldResponse,
+  LaunchClosureStatus,
+  LaunchClosureValidationResponse,
   ManualResolutionSummary,
   OperationsStatus,
   OperatorSession,
@@ -467,6 +471,41 @@ export async function rejectReleaseReadinessApproval(
     method: "POST",
     url: `/release-readiness/internal/approvals/${approvalId}/reject`,
     data: payload
+  });
+}
+
+export async function getLaunchClosureStatus(
+  session: OperatorSession
+): Promise<LaunchClosureStatus> {
+  return requestData(session, {
+    method: "GET",
+    url: "/release-readiness/internal/launch-closure/status"
+  });
+}
+
+export async function validateLaunchClosureManifest(
+  session: OperatorSession,
+  manifest: LaunchClosureManifest
+): Promise<LaunchClosureValidationResponse> {
+  return requestData(session, {
+    method: "POST",
+    url: "/release-readiness/internal/launch-closure/validate",
+    data: {
+      manifest
+    }
+  });
+}
+
+export async function scaffoldLaunchClosurePack(
+  session: OperatorSession,
+  manifest: LaunchClosureManifest
+): Promise<LaunchClosureScaffoldResponse> {
+  return requestData(session, {
+    method: "POST",
+    url: "/release-readiness/internal/launch-closure/scaffold",
+    data: {
+      manifest
+    }
   });
 }
 

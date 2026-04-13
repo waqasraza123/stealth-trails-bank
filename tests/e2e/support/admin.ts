@@ -292,6 +292,66 @@ function releaseSummary(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function launchClosureStatus() {
+  return {
+    summaryMarkdown: [
+      "# Launch-Closure Status",
+      "",
+      "- local dry-runs are diagnostic only",
+      "- accepted launch proof must be recorded through release-readiness evidence",
+      "- governed approval remains the final dual-control gate"
+    ].join("\n")
+  };
+}
+
+function launchClosureValidation() {
+  return {
+    validation: {
+      errors: [],
+      warnings: [
+        "database_restore_drill local dry-runs are diagnostic only and do not satisfy accepted proof."
+      ]
+    },
+    summaryMarkdown: [
+      "# Launch-Closure Manifest Validation",
+      "",
+      "- Release identifier: 2026.04.10-rc1",
+      "- Environment: production_like",
+      "",
+      "## Errors",
+      "- none",
+      "",
+      "## Warnings",
+      "- database_restore_drill local dry-runs are diagnostic only and do not satisfy accepted proof."
+    ].join("\n")
+  };
+}
+
+function launchClosureScaffold() {
+  return {
+    ...launchClosureValidation(),
+    outputSubpath: "artifacts/release-launch/2026.04.10-rc1-production_like",
+    files: [
+      {
+        relativePath: "README.md",
+        content: "# Phase 12 Launch-Closure Pack\n"
+      },
+      {
+        relativePath: "execution-plan.md",
+        content: "pnpm release:readiness:probe -- \\\n  --probe platform_alert_delivery_slo\n"
+      },
+      {
+        relativePath: "approval-request.template.json",
+        content: '{\n  "releaseIdentifier": "2026.04.10-rc1"\n}\n'
+      },
+      {
+        relativePath: "evidence/08-final-governed-launch-approval.md",
+        content: "# Final Governed Launch Approval\n"
+      }
+    ]
+  };
+}
+
 function reviewWorkspace(status = "pending_review") {
   const selectedReviewCase = reviewCase(status);
 
@@ -675,6 +735,9 @@ export type AdminScenario = {
   requestApproval: MockResponseSpec<Record<string, unknown>>;
   approveRelease: MockResponseSpec<Record<string, unknown>>;
   rejectRelease: MockResponseSpec<Record<string, unknown>>;
+  launchClosureStatus: MockResponseSpec<Record<string, unknown>>;
+  validateLaunchClosure: MockResponseSpec<Record<string, unknown>>;
+  scaffoldLaunchClosure: MockResponseSpec<Record<string, unknown>>;
 };
 
 export function buildAdminScenario(
@@ -1139,6 +1202,15 @@ export function buildAdminScenario(
         status: "rejected",
         rejectionNote: "Evidence is stale."
       }
+    },
+    launchClosureStatus: {
+      data: launchClosureStatus()
+    },
+    validateLaunchClosure: {
+      data: launchClosureValidation()
+    },
+    scaffoldLaunchClosure: {
+      data: launchClosureScaffold()
     }
   };
 
@@ -1300,6 +1372,27 @@ export async function mockAdminApi(
 
     if (pathname.endsWith("/release-readiness/internal/summary") && method === "GET") {
       return fulfillJson(route, resolved.releaseSummary);
+    }
+
+    if (
+      pathname.endsWith("/release-readiness/internal/launch-closure/status") &&
+      method === "GET"
+    ) {
+      return fulfillJson(route, resolved.launchClosureStatus);
+    }
+
+    if (
+      pathname.endsWith("/release-readiness/internal/launch-closure/validate") &&
+      method === "POST"
+    ) {
+      return fulfillJson(route, resolved.validateLaunchClosure);
+    }
+
+    if (
+      pathname.endsWith("/release-readiness/internal/launch-closure/scaffold") &&
+      method === "POST"
+    ) {
+      return fulfillJson(route, resolved.scaffoldLaunchClosure);
     }
 
     if (pathname.endsWith("/review-cases/internal") && method === "GET") {

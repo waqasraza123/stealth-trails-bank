@@ -61,9 +61,19 @@ export type LaunchClosureValidationResult = {
   warnings: string[];
 };
 
-type LaunchClosurePackResult = {
+export type LaunchClosurePackResult = {
   outputDir: string;
   files: string[];
+};
+
+export type LaunchClosurePackFile = {
+  relativePath: string;
+  content: string;
+};
+
+export type LaunchClosurePackPreview = {
+  outputSubpath: string;
+  files: LaunchClosurePackFile[];
 };
 
 type LaunchClosureArtifact = {
@@ -134,13 +144,16 @@ function sanitizePathSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-");
 }
 
-function defaultOutputDir(manifest: LaunchClosureManifest, repoRoot: string): string {
+function buildOutputSubpath(manifest: LaunchClosureManifest): string {
   return path.join(
-    repoRoot,
     "artifacts",
     "release-launch",
     `${sanitizePathSegment(manifest.releaseIdentifier)}-${manifest.environment}`
   );
+}
+
+function defaultOutputDir(manifest: LaunchClosureManifest, repoRoot: string): string {
+  return path.join(repoRoot, buildOutputSubpath(manifest));
 }
 
 function jsonStringify(value: unknown): string {
@@ -882,39 +895,59 @@ export function scaffoldLaunchClosurePack(args: {
     recursive: true
   });
 
+  const preview = previewLaunchClosurePack(args.manifest);
   const files: string[] = [];
 
-  const writeArtifact = (relativePath: string, content: string) => {
-    const targetPath = path.join(outputDir, relativePath);
+  const writeArtifact = (file: LaunchClosurePackFile) => {
+    const targetPath = path.join(outputDir, file.relativePath);
     mkdirSync(path.dirname(targetPath), {
       recursive: true
     });
-    writeFileSync(targetPath, content, "utf8");
+    writeFileSync(targetPath, file.content, "utf8");
     files.push(targetPath);
   };
 
-  writeArtifact("README.md", renderPackReadme(args.manifest));
-  writeArtifact("manifest.json", jsonStringify(args.manifest));
-  writeArtifact(
-    "local-vs-accepted-status.md",
-    renderLocalVsAcceptedStatus()
-  );
-  writeArtifact("execution-plan.md", renderExecutionPlan(args.manifest));
-  writeArtifact(
-    "approval-request.template.json",
-    buildApprovalBodyTemplate(args.manifest)
-  );
-
-  for (const artifact of buildLaunchClosureArtifacts(args.manifest)) {
-    writeArtifact(
-      path.join("evidence", artifact.filename),
-      renderEvidenceTemplate(args.manifest, artifact)
-    );
+  for (const file of preview.files) {
+    writeArtifact(file);
   }
 
   return {
     outputDir,
     files
+  };
+}
+
+export function previewLaunchClosurePack(
+  manifest: LaunchClosureManifest
+): LaunchClosurePackPreview {
+  return {
+    outputSubpath: buildOutputSubpath(manifest),
+    files: [
+      {
+        relativePath: "README.md",
+        content: renderPackReadme(manifest)
+      },
+      {
+        relativePath: "manifest.json",
+        content: jsonStringify(manifest)
+      },
+      {
+        relativePath: "local-vs-accepted-status.md",
+        content: renderLocalVsAcceptedStatus()
+      },
+      {
+        relativePath: "execution-plan.md",
+        content: renderExecutionPlan(manifest)
+      },
+      {
+        relativePath: "approval-request.template.json",
+        content: buildApprovalBodyTemplate(manifest)
+      },
+      ...buildLaunchClosureArtifacts(manifest).map((artifact) => ({
+        relativePath: path.join("evidence", artifact.filename),
+        content: renderEvidenceTemplate(manifest, artifact)
+      }))
+    ]
   };
 }
 

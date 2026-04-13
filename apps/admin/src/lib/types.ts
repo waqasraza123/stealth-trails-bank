@@ -1009,6 +1009,76 @@ export type ReleaseReadinessApprovalList = {
   totalCount: number;
 };
 
+export type LaunchClosureManifest = {
+  releaseIdentifier: string;
+  environment: "staging" | "production_like" | "production";
+  baseUrls: {
+    web: string;
+    admin: string;
+    api: string;
+    restoreApi: string;
+  };
+  worker: {
+    identifier: string;
+  };
+  operator: {
+    requesterId: string;
+    requesterRole: string;
+    approverId: string;
+    approverRole: string;
+    apiKeyEnvironmentVariable: string;
+  };
+  artifacts: {
+    apiReleaseId: string;
+    workerReleaseId: string;
+    approvalRollbackReleaseId: string;
+    apiRollbackReleaseId: string;
+    workerRollbackReleaseId: string;
+    backupReference: string;
+  };
+  alerting: {
+    expectedTargetName: string;
+    expectedTargetHealthStatus: "warning" | "critical";
+    expectedMinReEscalations: number;
+    expectedAlertId?: string;
+    expectedAlertDedupeKey?: string;
+  };
+  governance: {
+    secretReviewReference: string;
+    roleReviewReference: string;
+    roleReviewRosterReference: string;
+  };
+  notes: {
+    launchSummary: string;
+    requestNote?: string;
+    residualRiskNote?: string;
+  };
+};
+
+export type LaunchClosureValidationResult = {
+  errors: string[];
+  warnings: string[];
+};
+
+export type LaunchClosurePackFile = {
+  relativePath: string;
+  content: string;
+};
+
+export type LaunchClosureStatus = {
+  summaryMarkdown: string;
+};
+
+export type LaunchClosureValidationResponse = {
+  validation: LaunchClosureValidationResult;
+  summaryMarkdown: string;
+};
+
+export type LaunchClosureScaffoldResponse = LaunchClosureValidationResponse & {
+  outputSubpath: string;
+  files: LaunchClosurePackFile[];
+};
+
 export type LedgerReconciliationWorkspace = {
   mismatch: LedgerReconciliationMismatch;
   currentSnapshot: JsonValue;

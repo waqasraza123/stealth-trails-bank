@@ -126,6 +126,63 @@ test("records evidence and requests governed approval from the launch workspace"
   await expect(page).toHaveURL(/approval=approval_2/);
 });
 
+test("validates and generates a launch-closure pack from the current release context", async ({
+  page
+}) => {
+  await mockAdminApi(page);
+
+  await page.goto("/launch-readiness");
+  await page.getByRole("button", { name: "Load current template" }).click();
+
+  const validateRequest = waitForJsonRequest(
+    page,
+    "/release-readiness/internal/launch-closure/validate"
+  );
+  await page.getByRole("button", { name: "Validate manifest" }).click();
+  await expectJsonRequest(validateRequest, {
+    manifest: {
+      releaseIdentifier: "2026.04.10-rc1",
+      environment: "production_like",
+      baseUrls: {
+        api: "http://127.0.0.1:9101"
+      },
+      operator: {
+        requesterId: "ops_e2e",
+        requesterRole: "operations_admin"
+      },
+      artifacts: {
+        approvalRollbackReleaseId: "2026.04.09"
+      },
+      notes: {
+        launchSummary: "Awaiting final operator signoff."
+      }
+    }
+  });
+  await expect(page.getByText("Manifest validated.")).toBeVisible();
+  await expect(page.getByLabel("Launch-closure validation summary")).toContainText(
+    "Launch-Closure Manifest Validation"
+  );
+
+  const scaffoldRequest = waitForJsonRequest(
+    page,
+    "/release-readiness/internal/launch-closure/scaffold"
+  );
+  await page.getByRole("button", { name: "Generate pack" }).click();
+  await expectJsonRequest(scaffoldRequest, {
+    manifest: {
+      releaseIdentifier: "2026.04.10-rc1",
+      environment: "production_like"
+    }
+  });
+  await expect(page.getByText("Launch-closure pack generated.")).toBeVisible();
+  await expect(page.getByText("artifacts/release-launch/2026.04.10-rc1-production_like")).toBeVisible();
+  await expect(page.getByText("approval-request.template.json")).toBeVisible();
+  await page.getByText("approval-request.template.json").click();
+  await expect(page.getByLabel("Generated launch-closure file content")).toContainText(
+    "\"releaseIdentifier\": \"2026.04.10-rc1\""
+  );
+});
+
 test("approves and rejects release-readiness items through governed controls", async ({
   page
 }) => {
@@ -182,6 +239,18 @@ test("shows inline approval failures while preserving workspace state", async ({
   await expect(page.getByText("Action failed")).toBeVisible();
   await expect(page.getByText("Failed to approve release readiness item.")).toBeVisible();
   await expect(page.getByText("approval_1")).toBeVisible();
+});
+
+test("surfaces manifest parsing failures before launch-closure API calls", async ({
+  page
+}) => {
+  await mockAdminApi(page);
+
+  await page.goto("/launch-readiness");
+  await page.getByLabel("Launch-closure manifest JSON").fill("{");
+  await page.getByRole("button", { name: "Validate manifest" }).click();
+
+  await expect(page.getByText("Manifest draft is not valid JSON.")).toBeVisible();
 });
 
 test("keeps governed actions unavailable when no approval is selected", async ({

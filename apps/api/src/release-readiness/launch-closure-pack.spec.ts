@@ -6,6 +6,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import {
+  previewLaunchClosurePack,
   renderLaunchClosureValidationSummary,
   scaffoldLaunchClosurePack,
   validateLaunchClosureManifest,
@@ -117,5 +118,34 @@ describe("launch-closure-pack", () => {
         recursive: true
       });
     }
+  });
+
+  it("previews launch-closure artifacts without writing files", () => {
+    const manifest = buildManifest();
+
+    const result = previewLaunchClosurePack(manifest);
+
+    expect(result.outputSubpath).toBe(
+      path.join("artifacts", "release-launch", "launch-2026.04.10.1-production_like")
+    );
+    expect(result.files).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relativePath: "README.md"
+        }),
+        expect.objectContaining({
+          relativePath: "manifest.json",
+          content: expect.stringContaining('"releaseIdentifier": "launch-2026.04.10.1"')
+        }),
+        expect.objectContaining({
+          relativePath: "execution-plan.md",
+          content: expect.stringContaining("pnpm release:readiness:probe --")
+        }),
+        expect.objectContaining({
+          relativePath: path.join("evidence", "08-final-governed-launch-approval.md"),
+          content: expect.stringContaining("dual-control launch approval")
+        })
+      ])
+    );
   });
 });

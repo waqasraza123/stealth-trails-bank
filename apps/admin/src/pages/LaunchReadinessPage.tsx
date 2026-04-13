@@ -4,14 +4,21 @@ import { useSearchParams } from "react-router-dom";
 import {
   approveReleaseReadinessApproval,
   createReleaseReadinessEvidence,
+  getLaunchClosureStatus,
   getReleaseReadinessSummary,
   listPendingReleases,
   listReleaseReadinessApprovals,
   listReleaseReadinessEvidence,
   listReleasedReleases,
   rejectReleaseReadinessApproval,
+  scaffoldLaunchClosurePack,
+  validateLaunchClosureManifest,
   requestReleaseReadinessApproval
 } from "@/lib/api";
+import type {
+  LaunchClosureManifest,
+  LaunchClosurePackFile
+} from "@/lib/types";
 import {
   formatCount,
   formatDateTime,
@@ -177,6 +184,103 @@ function parseListInput(value: string): string[] {
   ];
 }
 
+function stringifyLaunchClosureManifest(manifest: LaunchClosureManifest): string {
+  return JSON.stringify(manifest, null, 2);
+}
+
+function buildLaunchClosureManifestTemplate(args: {
+  apiBaseUrl?: string;
+  releaseIdentifier?: string | null;
+  rollbackReleaseIdentifier?: string | null;
+  summary?: string | null;
+  requesterId?: string;
+  requesterRole?: string;
+} = {}): LaunchClosureManifest {
+  const releaseIdentifier = args.releaseIdentifier?.trim() || "launch-2026.04.13.1";
+  const rollbackReleaseIdentifier =
+    args.rollbackReleaseIdentifier?.trim() || "launch-rollback-2026.04.12.4";
+  const apiBaseUrl = args.apiBaseUrl?.trim() || "https://prodlike-api.example.com";
+
+  return {
+    releaseIdentifier,
+    environment: "production_like",
+    baseUrls: {
+      web: "https://prodlike-web.example.com",
+      admin: "https://prodlike-admin.example.com",
+      api: apiBaseUrl,
+      restoreApi: "https://prodlike-restore.example.com"
+    },
+    worker: {
+      identifier: "worker-prodlike-1"
+    },
+    operator: {
+      requesterId: args.requesterId?.trim() || "ops_requester_1",
+      requesterRole: args.requesterRole?.trim() || "operations_admin",
+      approverId: "ops_approver_1",
+      approverRole: "compliance_lead",
+      apiKeyEnvironmentVariable: "INTERNAL_OPERATOR_API_KEY"
+    },
+    artifacts: {
+      apiReleaseId: `api-${releaseIdentifier}`,
+      workerReleaseId: `worker-${releaseIdentifier}`,
+      approvalRollbackReleaseId: rollbackReleaseIdentifier,
+      apiRollbackReleaseId: `api-${rollbackReleaseIdentifier}`,
+      workerRollbackReleaseId: `worker-${rollbackReleaseIdentifier}`,
+      backupReference: "snapshot-2026-04-13T09:00Z"
+    },
+    alerting: {
+      expectedTargetName: "ops-critical",
+      expectedTargetHealthStatus: "critical",
+      expectedMinReEscalations: 1,
+      expectedAlertDedupeKey: "worker:degraded:worker-prodlike-1"
+    },
+    governance: {
+      secretReviewReference: "ticket/SEC-42",
+      roleReviewReference: "ticket/GOV-12",
+      roleReviewRosterReference: "ticket/GOV-12#launch-roster"
+    },
+    notes: {
+      launchSummary:
+        args.summary?.trim() ||
+        "Production-like launch candidate ready for final governed review.",
+      requestNote: "All accepted evidence is current and checklist attestations are complete.",
+      residualRiskNote: "No accepted residual risks remain open at request time."
+    }
+  };
+}
+
+function parseLaunchClosureManifestDraft(
+  draft: string
+): LaunchClosureManifest {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(draft) as unknown;
+  } catch {
+    throw new Error("Manifest draft is not valid JSON.");
+  }
+
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+    throw new Error("Manifest draft must be a JSON object.");
+  }
+
+  return parsed as LaunchClosureManifest;
+}
+
+function downloadLaunchClosureFile(file: LaunchClosurePackFile) {
+  const blob = new Blob([file.content], {
+    type: "text/plain;charset=utf-8"
+  });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = file.relativePath.replace(/[\\/]/g, "__");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(objectUrl);
+}
+
 export function LaunchReadinessPage() {
   const { session, fallback } = useConfiguredSessionGuard();
   const queryClient = useQueryClient();
@@ -203,6 +307,20 @@ export function LaunchReadinessPage() {
     null
   );
   const [actionError, setActionError] = useState<string | null>(null);
+  const [launchClosureManifestDraft, setLaunchClosureManifestDraft] = useState(
+    stringifyLaunchClosureManifest(buildLaunchClosureManifestTemplate())
+  );
+  const [launchClosureSummary, setLaunchClosureSummary] = useState<string | null>(null);
+  const [launchClosureFlash, setLaunchClosureFlash] = useState<string | null>(null);
+  const [launchClosureError, setLaunchClosureError] = useState<string | null>(null);
+  const [launchClosureOutputSubpath, setLaunchClosureOutputSubpath] = useState<
+    string | null
+  >(null);
+  const [launchClosureFiles, setLaunchClosureFiles] = useState<LaunchClosurePackFile[]>(
+    []
+  );
+  const [selectedLaunchClosureFilePath, setSelectedLaunchClosureFilePath] =
+    useState<string | null>(null);
 
   const releaseSummaryQuery = useQuery({
     queryKey: ["launch-release-summary", session?.baseUrl],
@@ -231,6 +349,12 @@ export function LaunchReadinessPage() {
   const releasedReleasesQuery = useQuery({
     queryKey: ["released-releases", session?.baseUrl],
     queryFn: () => listReleasedReleases(session!, { limit: 20 }),
+    enabled: Boolean(session)
+  });
+
+  const launchClosureStatusQuery = useQuery({
+    queryKey: ["launch-closure-status", session?.baseUrl],
+    queryFn: () => getLaunchClosureStatus(session!),
     enabled: Boolean(session)
   });
 
@@ -417,6 +541,82 @@ export function LaunchReadinessPage() {
     }
   });
 
+  const validateLaunchClosureMutation = useMutation({
+    mutationFn: (manifest: LaunchClosureManifest) =>
+      validateLaunchClosureManifest(session!, manifest),
+    onSuccess: (result) => {
+      setLaunchClosureSummary(result.summaryMarkdown);
+      setLaunchClosureFlash("Manifest validated.");
+      setLaunchClosureError(null);
+      setLaunchClosureOutputSubpath(null);
+      setLaunchClosureFiles([]);
+      setSelectedLaunchClosureFilePath(null);
+    },
+    onError: (error) => {
+      setLaunchClosureError(
+        readApiErrorMessage(error, "Failed to validate launch-closure manifest.")
+      );
+    }
+  });
+
+  const scaffoldLaunchClosureMutation = useMutation({
+    mutationFn: (manifest: LaunchClosureManifest) =>
+      scaffoldLaunchClosurePack(session!, manifest),
+    onSuccess: (result) => {
+      setLaunchClosureSummary(result.summaryMarkdown);
+      setLaunchClosureFlash("Launch-closure pack generated.");
+      setLaunchClosureError(null);
+      setLaunchClosureOutputSubpath(result.outputSubpath);
+      setLaunchClosureFiles(result.files);
+      setSelectedLaunchClosureFilePath(result.files[0]?.relativePath ?? null);
+    },
+    onError: (error) => {
+      setLaunchClosureError(
+        readApiErrorMessage(error, "Failed to generate launch-closure pack.")
+      );
+    }
+  });
+
+  function runLaunchClosureAction(action: "validate" | "scaffold") {
+    try {
+      const manifest = parseLaunchClosureManifestDraft(launchClosureManifestDraft);
+
+      setLaunchClosureError(null);
+      setLaunchClosureFlash(null);
+
+      if (action === "validate") {
+        validateLaunchClosureMutation.mutate(manifest);
+        return;
+      }
+
+      scaffoldLaunchClosureMutation.mutate(manifest);
+    } catch (error) {
+      setLaunchClosureError(
+        error instanceof Error ? error.message : "Manifest draft must be valid JSON."
+      );
+    }
+  }
+
+  function seedLaunchClosureTemplate() {
+    setLaunchClosureManifestDraft(
+      stringifyLaunchClosureManifest(
+        buildLaunchClosureManifestTemplate({
+          apiBaseUrl: session?.baseUrl,
+          releaseIdentifier:
+            selectedApproval?.releaseIdentifier ?? selectedEvidence?.releaseIdentifier,
+          rollbackReleaseIdentifier:
+            selectedApproval?.rollbackReleaseIdentifier ??
+            selectedEvidence?.rollbackReleaseIdentifier,
+          summary: selectedApproval?.summary,
+          requesterId: session?.operatorId,
+          requesterRole: session?.operatorRole
+        })
+      )
+    );
+    setLaunchClosureFlash("Manifest template refreshed from the current release context.");
+    setLaunchClosureError(null);
+  }
+
   if (fallback) {
     return fallback;
   }
@@ -462,8 +662,15 @@ export function LaunchReadinessPage() {
   const selectedApproval =
     approvalsQuery.data!.approvals.find((approval) => approval.id === selectedApprovalId) ??
     null;
+  const selectedLaunchClosureFile =
+    launchClosureFiles.find(
+      (file) => file.relativePath === selectedLaunchClosureFilePath
+    ) ?? null;
   const gateNotice = buildApprovalGateNotice(selectedApproval);
   const decisionPending = approveMutation.isPending || rejectMutation.isPending;
+  const launchClosurePending =
+    validateLaunchClosureMutation.isPending ||
+    scaffoldLaunchClosureMutation.isPending;
   const recordEvidenceDisabled =
     !evidenceConfirm ||
     recordEvidenceMutation.isPending ||
@@ -1249,6 +1456,201 @@ export function LaunchReadinessPage() {
                 )}
               </ActionRail>
             </>
+          }
+        />
+      </SectionPanel>
+
+      <SectionPanel
+        title="Launch-closure pack"
+        description="Validate the Phase 12 manifest and generate the governed execution pack without leaving the console."
+      >
+        <WorkspaceLayout
+          sidebar={
+            <>
+              <ListCard title="Pack status">
+                <div className="admin-detail-stack">
+                  <div className="admin-field">
+                    <span>Current status summary</span>
+                    <textarea
+                      aria-label="Launch-closure status summary"
+                      readOnly
+                      value={
+                        launchClosureStatusQuery.data?.summaryMarkdown ??
+                        "Launch-closure status is unavailable."
+                      }
+                    />
+                  </div>
+                </div>
+              </ListCard>
+
+              <ListCard title="Generated files">
+                {launchClosureFiles.length > 0 ? (
+                  <div className="admin-list">
+                    {launchClosureFiles.map((file) => (
+                      <button
+                        key={file.relativePath}
+                        type="button"
+                        className={`admin-list-row selectable ${
+                          selectedLaunchClosureFilePath === file.relativePath
+                            ? "selected"
+                            : ""
+                        }`}
+                        onClick={() => setSelectedLaunchClosureFilePath(file.relativePath)}
+                      >
+                        <strong>{file.relativePath}</strong>
+                        <span>{formatCount(file.content.length)} chars</span>
+                        <span>Generated</span>
+                        <AdminStatusBadge label="Ready" tone="positive" />
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState
+                    title="No pack generated"
+                    description="Validate and generate a launch-closure pack to review the execution files."
+                  />
+                )}
+              </ListCard>
+            </>
+          }
+          main={
+            <>
+              <ListCard title="Manifest validation">
+                <div className="admin-detail-stack">
+                  {launchClosureStatusQuery.isError ? (
+                    <InlineNotice
+                      title="Status unavailable"
+                      description="The launch-closure status summary could not be loaded."
+                      tone="warning"
+                    />
+                  ) : null}
+                  {launchClosureFlash ? (
+                    <InlineNotice
+                      title="Latest launch-closure action"
+                      description={launchClosureFlash}
+                      tone="positive"
+                    />
+                  ) : null}
+                  {launchClosureError ? (
+                    <InlineNotice
+                      title="Launch-closure action failed"
+                      description={launchClosureError}
+                      tone="critical"
+                    />
+                  ) : null}
+                  {launchClosureOutputSubpath ? (
+                    <InlineNotice
+                      title="Suggested output directory"
+                      description={launchClosureOutputSubpath}
+                    />
+                  ) : null}
+                  <div className="admin-field">
+                    <span>Validation summary</span>
+                    <textarea
+                      aria-label="Launch-closure validation summary"
+                      readOnly
+                      value={
+                        launchClosureSummary ??
+                        "Validate a manifest to render the checklist, errors, and warnings."
+                      }
+                    />
+                  </div>
+                </div>
+              </ListCard>
+
+              {selectedLaunchClosureFile ? (
+                <ListCard title="Selected generated file">
+                  <div className="admin-detail-stack">
+                    <DetailList
+                      items={[
+                        {
+                          label: "Relative path",
+                          value: selectedLaunchClosureFile.relativePath,
+                          mono: true
+                        },
+                        {
+                          label: "File size",
+                          value: `${formatCount(selectedLaunchClosureFile.content.length)} chars`
+                        }
+                      ]}
+                    />
+                    <div className="admin-field">
+                      <span>Generated content</span>
+                      <textarea
+                        aria-label="Generated launch-closure file content"
+                        readOnly
+                        value={selectedLaunchClosureFile.content}
+                      />
+                    </div>
+                    <div className="admin-action-buttons">
+                      <button
+                        type="button"
+                        className="admin-secondary-button"
+                        onClick={() => downloadLaunchClosureFile(selectedLaunchClosureFile)}
+                      >
+                        Download selected file
+                      </button>
+                    </div>
+                  </div>
+                </ListCard>
+              ) : (
+                <EmptyState
+                  title="Select a generated file"
+                  description="Generate the pack and choose a file to inspect its exact runbook or template content."
+                />
+              )}
+            </>
+          }
+          rail={
+            <ActionRail
+              title="Manifest editor"
+              description="Keep this draft truthful to the current release candidate. Generation does not write files on the API host."
+            >
+              <div className="admin-field">
+                <span>Launch-closure manifest JSON</span>
+                <textarea
+                  aria-label="Launch-closure manifest JSON"
+                  value={launchClosureManifestDraft}
+                  onChange={(event) =>
+                    setLaunchClosureManifestDraft(event.target.value)
+                  }
+                />
+                <p className="admin-field-help">
+                  Seed from the selected release context, validate the manifest,
+                  then generate the full execution pack for browser download.
+                </p>
+              </div>
+
+              <div className="admin-action-buttons">
+                <button
+                  type="button"
+                  className="admin-secondary-button"
+                  onClick={seedLaunchClosureTemplate}
+                >
+                  Load current template
+                </button>
+                <button
+                  type="button"
+                  className="admin-secondary-button"
+                  disabled={launchClosurePending}
+                  onClick={() => runLaunchClosureAction("validate")}
+                >
+                  {validateLaunchClosureMutation.isPending
+                    ? "Validating..."
+                    : "Validate manifest"}
+                </button>
+                <button
+                  type="button"
+                  className="admin-primary-button"
+                  disabled={launchClosurePending}
+                  onClick={() => runLaunchClosureAction("scaffold")}
+                >
+                  {scaffoldLaunchClosureMutation.isPending
+                    ? "Generating..."
+                    : "Generate pack"}
+                </button>
+              </div>
+            </ActionRail>
           }
         />
       </SectionPanel>
