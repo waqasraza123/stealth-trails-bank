@@ -46,6 +46,7 @@ Replace broad app-level specs with workflow-oriented specs:
 - `operations-and-health.spec.ts`
 - `queues.spec.ts`
 - `accounts-and-restrictions.spec.ts`
+- `staking-governance.spec.ts`
 - `reconciliation.spec.ts`
 - `alerts.spec.ts`
 - `launch-readiness.spec.ts`
@@ -205,6 +206,16 @@ Use a small shared scenario vocabulary so coverage stays readable:
 - reject succeeds with rejection note
 - failure path shows an inline error
 - no approval selected keeps governed actions unavailable
+
+### Staking governance
+
+- request selection updates the governed pool-creation workspace
+- status filtering keeps retryable execution failures visible
+- request creation submits reward rate and rationale through governed controls
+- approval succeeds with operator note and leaves the request ready for execution
+- rejection requires a note and preserves historical request detail
+- execution succeeds for approved or retryable requests and surfaces linked pool state
+- mutation failure shows inline critical feedback without dropping the selected request
 
 ### Live full-stack smoke
 

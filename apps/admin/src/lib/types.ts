@@ -822,6 +822,57 @@ export type LoanMutationResult =
       status: string;
     };
 
+export type StakingPoolGovernanceRequestStatus =
+  | "pending_approval"
+  | "approved"
+  | "rejected"
+  | "executed"
+  | "execution_failed";
+
+export type StakingPoolGovernanceRequest = {
+  id: string;
+  rewardRate: number;
+  status: StakingPoolGovernanceRequestStatus;
+  requestedByOperatorId: string;
+  requestedByOperatorRole: string | null;
+  approvedByOperatorId: string | null;
+  approvedByOperatorRole: string | null;
+  rejectedByOperatorId: string | null;
+  rejectedByOperatorRole: string | null;
+  executedByOperatorId: string | null;
+  executedByOperatorRole: string | null;
+  requestNote: string | null;
+  approvalNote: string | null;
+  rejectionNote: string | null;
+  executionNote: string | null;
+  executionFailureReason: string | null;
+  blockchainTransactionHash: string | null;
+  requestedAt: string;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  executedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  stakingPool: {
+    id: number;
+    blockchainPoolId: number | null;
+    rewardRate: number;
+    poolStatus: string;
+    createdAt: string;
+    updatedAt: string;
+  } | null;
+};
+
+export type StakingPoolGovernanceRequestList = {
+  requests: StakingPoolGovernanceRequest[];
+  limit: number;
+};
+
+export type StakingPoolGovernanceMutationResult = {
+  request: StakingPoolGovernanceRequest;
+  stateReused: boolean;
+};
+
 export type OperationsStatus = {
   generatedAt: string;
   alertSummary: {

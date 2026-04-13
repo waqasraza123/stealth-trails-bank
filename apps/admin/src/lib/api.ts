@@ -33,6 +33,8 @@ import type {
   PlatformAlertGovernanceMutationResult,
   PlatformAlertRouteResult,
   RetryPlatformAlertDeliveriesResult,
+  StakingPoolGovernanceMutationResult,
+  StakingPoolGovernanceRequestList,
   LoanAgreementList,
   LoanAgreementWorkspace,
   LoanApplicationList,
@@ -119,6 +121,83 @@ export async function getLoanOperationsSummary(
   return requestData(session, {
     method: "GET",
     url: "/loans/internal/summary"
+  });
+}
+
+export async function listStakingPoolGovernanceRequests(
+  session: OperatorSession,
+  params: Record<string, string | number | undefined>
+): Promise<StakingPoolGovernanceRequestList> {
+  return requestData(session, {
+    method: "GET",
+    url: "/staking/internal/pool-governance-requests",
+    params
+  });
+}
+
+export async function getStakingPoolGovernanceRequest(
+  session: OperatorSession,
+  requestId: string
+): Promise<StakingPoolGovernanceMutationResult> {
+  return requestData(session, {
+    method: "GET",
+    url: `/staking/internal/pool-governance-requests/${requestId}`
+  });
+}
+
+export async function createStakingPoolGovernanceRequest(
+  session: OperatorSession,
+  payload: {
+    rewardRate: number;
+    requestNote?: string;
+  }
+): Promise<StakingPoolGovernanceMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: "/staking/internal/pool-governance-requests",
+    data: payload
+  });
+}
+
+export async function approveStakingPoolGovernanceRequest(
+  session: OperatorSession,
+  requestId: string,
+  payload: {
+    approvalNote?: string;
+  } = {}
+): Promise<StakingPoolGovernanceMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/staking/internal/pool-governance-requests/${requestId}/approve`,
+    data: payload
+  });
+}
+
+export async function rejectStakingPoolGovernanceRequest(
+  session: OperatorSession,
+  requestId: string,
+  payload: {
+    rejectionNote: string;
+  }
+): Promise<StakingPoolGovernanceMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/staking/internal/pool-governance-requests/${requestId}/reject`,
+    data: payload
+  });
+}
+
+export async function executeStakingPoolGovernanceRequest(
+  session: OperatorSession,
+  requestId: string,
+  payload: {
+    executionNote?: string;
+  } = {}
+): Promise<StakingPoolGovernanceMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/staking/internal/pool-governance-requests/${requestId}/execute`,
+    data: payload
   });
 }
 

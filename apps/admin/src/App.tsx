@@ -29,6 +29,7 @@ import { LoansPage } from "@/pages/LoansPage";
 import { OperationsPage } from "@/pages/OperationsPage";
 import { QueuesPage } from "@/pages/QueuesPage";
 import { ReconciliationPage } from "@/pages/ReconciliationPage";
+import { StakingGovernancePage } from "@/pages/StakingGovernancePage";
 import { TreasuryPage } from "@/pages/TreasuryPage";
 import { buildSystemHealthTone } from "@/pages/shared";
 
@@ -49,6 +50,7 @@ const navItems = [
   { label: "Accounts & Reviews", path: "/accounts" },
   { label: "Incident Packages", path: "/incident-packages" },
   { label: "Lending", path: "/lending" },
+  { label: "Staking Governance", path: "/staking-governance" },
   { label: "Reconciliation", path: "/reconciliation" },
   { label: "Treasury", path: "/treasury" },
   { label: "Alerts & Incidents", path: "/alerts" },
@@ -146,6 +148,7 @@ function AdminConsole() {
         <Route path="/accounts" element={<AccountsPage />} />
         <Route path="/incident-packages" element={<IncidentPackagesPage />} />
         <Route path="/lending" element={<LoansPage />} />
+        <Route path="/staking-governance" element={<StakingGovernancePage />} />
         <Route path="/reconciliation" element={<ReconciliationPage />} />
         <Route path="/treasury" element={<TreasuryPage />} />
         <Route path="/alerts" element={<AlertsPage />} />

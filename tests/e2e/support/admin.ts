@@ -1581,10 +1581,134 @@ function buildLoanAgreementWorkspace(status = "active", liquidationStatus: strin
   };
 }
 
+function stakingGovernanceRequest(
+  status:
+    | "pending_approval"
+    | "approved"
+    | "rejected"
+    | "executed"
+    | "execution_failed" = "pending_approval",
+  overrides: Record<string, unknown> = {}
+) {
+  const approved = status === "approved" || status === "executed" || status === "execution_failed";
+  const rejected = status === "rejected";
+  const executed = status === "executed";
+  const executionFailed = status === "execution_failed";
+  const hasLinkedPool = executed || executionFailed;
+  const poolId = status === "executed" ? 77 : executionFailed ? null : null;
+
+  return {
+    id:
+      status === "pending_approval"
+        ? "staking_governance_request_1"
+        : status === "approved"
+          ? "staking_governance_request_2"
+          : status === "execution_failed"
+            ? "staking_governance_request_3"
+            : status === "executed"
+              ? "staking_governance_request_4"
+              : "staking_governance_request_5",
+    rewardRate:
+      status === "approved"
+        ? 9
+        : status === "execution_failed"
+          ? 14
+          : status === "executed"
+            ? 8
+            : status === "rejected"
+              ? 16
+              : 12,
+    status,
+    requestedByOperatorId:
+      status === "pending_approval" ? "ops_treasury" : "ops_policy",
+    requestedByOperatorRole:
+      status === "pending_approval" ? "treasury_manager" : "operations_admin",
+    approvedByOperatorId: approved ? "ops_approver" : null,
+    approvedByOperatorRole: approved ? "compliance_lead" : null,
+    rejectedByOperatorId: rejected ? "ops_approver" : null,
+    rejectedByOperatorRole: rejected ? "compliance_lead" : null,
+    executedByOperatorId: executed || executionFailed ? "ops_executor" : null,
+    executedByOperatorRole: executed || executionFailed ? "treasury_operator" : null,
+    requestNote:
+      status === "pending_approval"
+        ? "Treasury proposed a new managed-yield pool for the next launch window."
+        : status === "approved"
+          ? "Approved base-yield pool awaiting final execution."
+          : status === "execution_failed"
+            ? "Retryable request after signer instability."
+            : status === "executed"
+              ? "Executed reward-rate change for the active base pool."
+              : "Rejected request because the rate exceeded the approved range.",
+    approvalNote: approved ? "Governed approval recorded after treasury review." : null,
+    rejectionNote: rejected ? "Reward rate exceeds the approved treasury policy band." : null,
+    executionNote:
+      executed || executionFailed
+        ? "Submitted through the treasury signer workflow."
+        : null,
+    executionFailureReason: executionFailed
+      ? "Treasury signer rejected the transaction bundle during submission."
+      : null,
+    blockchainTransactionHash: executed
+      ? "0xpool1111222233334444555566667777888899990000aaaabbbbccccdddd0001"
+      : null,
+    requestedAt:
+      status === "pending_approval"
+        ? isoAt(4)
+        : status === "approved"
+          ? isoAt(10)
+          : status === "execution_failed"
+            ? isoAt(18)
+            : status === "executed"
+              ? isoAt(30)
+              : isoAt(42),
+    approvedAt: approved ? (status === "approved" ? isoAt(8) : isoAt(16)) : null,
+    rejectedAt: rejected ? isoAt(40) : null,
+    executedAt: executed ? isoAt(28) : null,
+    createdAt:
+      status === "pending_approval"
+        ? isoAt(4)
+        : status === "approved"
+          ? isoAt(10)
+          : status === "execution_failed"
+            ? isoAt(18)
+            : status === "executed"
+              ? isoAt(30)
+              : isoAt(42),
+    updatedAt:
+      status === "pending_approval"
+        ? isoAt(3)
+        : status === "approved"
+          ? isoAt(7)
+          : status === "execution_failed"
+            ? isoAt(2)
+            : status === "executed"
+              ? isoAt(1)
+              : isoAt(39),
+    stakingPool: hasLinkedPool
+      ? {
+          id: executionFailed ? 302 : 303,
+          blockchainPoolId: poolId,
+          rewardRate:
+            status === "execution_failed" ? 14 : 8,
+          poolStatus: executionFailed ? "provisioning" : "active",
+          createdAt: executionFailed ? isoAt(18) : isoAt(30),
+          updatedAt: executionFailed ? isoAt(2) : isoAt(1)
+        }
+      : null,
+    ...overrides
+  };
+}
+
 export type AdminScenario = {
   operationsStatus: MockResponseSpec<Record<string, unknown>>;
   treasuryOverview: MockResponseSpec<Record<string, unknown>>;
   auditEvents: MockResponseSpec<Record<string, unknown>>;
+  stakingGovernanceRequests: MockResponseSpec<Record<string, unknown>>;
+  stakingGovernanceRequestDetail: MockResponseSpec<Record<string, unknown>>;
+  createStakingGovernanceRequest: MockResponseSpec<Record<string, unknown>>;
+  approveStakingGovernanceRequest: MockResponseSpec<Record<string, unknown>>;
+  rejectStakingGovernanceRequest: MockResponseSpec<Record<string, unknown>>;
+  executeStakingGovernanceRequest: MockResponseSpec<Record<string, unknown>>;
   incidentPackageSnapshot: MockResponseSpec<Record<string, unknown>>;
   incidentPackageExport: MockResponseSpec<Record<string, unknown>>;
   createIncidentPackageReleaseRequest: MockResponseSpec<Record<string, unknown>>;
@@ -1665,6 +1789,13 @@ export function buildAdminScenario(
   const packageExport = governedIncidentPackageExport();
   const pendingIncidentPackageRelease = incidentPackageRelease();
   const releasedIncidentPackageRelease = incidentPackageRelease("released");
+  const currentStakingRequests = [
+    stakingGovernanceRequest("pending_approval"),
+    stakingGovernanceRequest("approved"),
+    stakingGovernanceRequest("execution_failed"),
+    stakingGovernanceRequest("executed"),
+    stakingGovernanceRequest("rejected")
+  ];
 
   const base: AdminScenario = {
     operationsStatus: {
@@ -1675,6 +1806,89 @@ export function buildAdminScenario(
     },
     auditEvents: {
       data: auditEventList()
+    },
+    stakingGovernanceRequests: {
+      data: {
+        requests: currentStakingRequests,
+        limit: 20
+      }
+    },
+    stakingGovernanceRequestDetail: {
+      data: {
+        request: currentStakingRequests[0],
+        stateReused: false
+      }
+    },
+    createStakingGovernanceRequest: {
+      data: {
+        request: {
+          ...stakingGovernanceRequest("pending_approval"),
+          id: "staking_governance_request_6",
+          rewardRate: 11,
+          requestedByOperatorId: "ops_e2e",
+          requestedByOperatorRole: "operations_admin",
+          requestNote: "New governed request created from the operator console.",
+          requestedAt: isoAt(0),
+          createdAt: isoAt(0),
+          updatedAt: isoAt(0)
+        },
+        stateReused: false
+      }
+    },
+    approveStakingGovernanceRequest: {
+      data: {
+        request: {
+          ...currentStakingRequests[0],
+          status: "approved",
+          approvedAt: isoAt(0),
+          approvedByOperatorId: "ops_e2e",
+          approvedByOperatorRole: "operations_admin",
+          approvalNote: "Governed approval recorded from the operator workspace.",
+          updatedAt: isoAt(0)
+        },
+        stateReused: false
+      }
+    },
+    rejectStakingGovernanceRequest: {
+      data: {
+        request: {
+          ...currentStakingRequests[0],
+          status: "rejected",
+          rejectedAt: isoAt(0),
+          rejectedByOperatorId: "ops_e2e",
+          rejectedByOperatorRole: "operations_admin",
+          rejectionNote: "Reward rate should remain below the approved treasury threshold.",
+          updatedAt: isoAt(0)
+        },
+        stateReused: false
+      }
+    },
+    executeStakingGovernanceRequest: {
+      data: {
+        request: {
+          ...currentStakingRequests[0],
+          status: "executed",
+          approvedAt: isoAt(1),
+          approvedByOperatorId: "ops_approver",
+          approvedByOperatorRole: "compliance_lead",
+          executedAt: isoAt(0),
+          executedByOperatorId: "ops_e2e",
+          executedByOperatorRole: "operations_admin",
+          executionNote: "Executed after governed approval.",
+          blockchainTransactionHash:
+            "0xpool1111222233334444555566667777888899990000aaaabbbbccccdddd0001",
+          stakingPool: {
+            id: 304,
+            blockchainPoolId: 91,
+            rewardRate: 12,
+            poolStatus: "active",
+            createdAt: isoAt(0),
+            updatedAt: isoAt(0)
+          },
+          updatedAt: isoAt(0)
+        },
+        stateReused: false
+      }
     },
     incidentPackageSnapshot: {
       data: packageSnapshot
@@ -2289,6 +2503,12 @@ export function buildAdminScenario(
         totalCount: 0
       }
     };
+    base.stakingGovernanceRequests = {
+      data: {
+        requests: [],
+        limit: 20
+      }
+    };
     base.loanSummary = {
       data: {
         applicationBacklog: [],
@@ -2401,6 +2621,11 @@ export function buildAdminScenario(
       statusCode: 500,
       message: "Audit trail unavailable."
     };
+    base.stakingGovernanceRequests = {
+      ok: false,
+      statusCode: 500,
+      message: "Staking governance unavailable."
+    };
     base.operationsStatus = {
       ok: false,
       statusCode: 500,
@@ -2504,6 +2729,11 @@ export async function mockAdminApi(
         "events"
       ] as Array<Record<string, any>> | undefined) ?? auditEventList().events)
     ) as Array<Record<string, any>>;
+  const currentStakingGovernanceRequests = cloneAdminData(
+    (((resolved.stakingGovernanceRequests.data as Record<string, unknown> | undefined)?.[
+      "requests"
+    ] as Array<Record<string, any>> | undefined) ?? [])
+  ) as Array<Record<string, any>>;
   const currentIncidentPackageSnapshot = cloneAdminData(
     ((resolved.incidentPackageSnapshot.data as Record<string, unknown> | undefined) ??
       incidentPackageSnapshot()) as Record<string, unknown>
@@ -2815,6 +3045,12 @@ export async function mockAdminApi(
     };
   }
 
+  function findStakingGovernanceRequest(requestId: string) {
+    return (
+      currentStakingGovernanceRequests.find((request) => request.id === requestId) ?? null
+    );
+  }
+
   await page.route("**/*", async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
@@ -2843,6 +3079,239 @@ export async function mockAdminApi(
       return fulfillJson(route, {
         ...resolved.auditEvents,
         data: buildAuditEventsState(new URL(request.url()).searchParams)
+      });
+    }
+
+    if (
+      pathname.endsWith("/staking/internal/pool-governance-requests") &&
+      method === "GET"
+    ) {
+      if (resolved.stakingGovernanceRequests.ok === false) {
+        return fulfillJson(route, resolved.stakingGovernanceRequests);
+      }
+
+      const queryParams = new URL(request.url()).searchParams;
+      const statusFilter = queryParams.get("status")?.trim();
+      const limit = Number.parseInt(queryParams.get("limit") ?? "", 10);
+      const filteredRequests = currentStakingGovernanceRequests.filter((entry) =>
+        statusFilter ? entry.status === statusFilter : true
+      );
+
+      return fulfillJson(route, {
+        ...resolved.stakingGovernanceRequests,
+        data: {
+          requests:
+            Number.isFinite(limit) && limit > 0
+              ? filteredRequests.slice(0, limit)
+              : filteredRequests,
+          limit:
+            Number.isFinite(limit) && limit > 0
+              ? limit
+              : ((resolved.stakingGovernanceRequests.data as Record<string, unknown> | undefined)?.[
+                  "limit"
+                ] as number | undefined) ?? 20
+        }
+      });
+    }
+
+    if (
+      /\/staking\/internal\/pool-governance-requests\/[^/]+$/.test(pathname) &&
+      method === "GET"
+    ) {
+      if (resolved.stakingGovernanceRequestDetail.ok === false) {
+        return fulfillJson(route, resolved.stakingGovernanceRequestDetail);
+      }
+
+      const requestId = pathname.split("/").at(-1) ?? "";
+      const governanceRequest = findStakingGovernanceRequest(requestId);
+
+      return fulfillJson(route, {
+        ...resolved.stakingGovernanceRequestDetail,
+        data: {
+          request:
+            governanceRequest ??
+            ((resolved.stakingGovernanceRequestDetail.data as Record<string, unknown> | undefined)?.[
+              "request"
+            ] as Record<string, unknown> | undefined),
+          stateReused: false
+        }
+      });
+    }
+
+    if (
+      pathname.endsWith("/staking/internal/pool-governance-requests") &&
+      method === "POST"
+    ) {
+      if (resolved.createStakingGovernanceRequest.ok === false) {
+        return fulfillJson(route, resolved.createStakingGovernanceRequest);
+      }
+
+      const payload = (request.postDataJSON() as Record<string, unknown> | null) ?? {};
+      const createdRequest = {
+        ...stakingGovernanceRequest("pending_approval"),
+        id: `staking_governance_request_${currentStakingGovernanceRequests.length + 1}`,
+        rewardRate: Number(payload.rewardRate ?? 0),
+        requestedByOperatorId: "ops_e2e",
+        requestedByOperatorRole: "operations_admin",
+        requestNote: (payload.requestNote as string | undefined) ?? null,
+        requestedAt: isoAt(0),
+        createdAt: isoAt(0),
+        updatedAt: isoAt(0)
+      };
+
+      currentStakingGovernanceRequests.unshift(createdRequest);
+
+      return fulfillJson(route, {
+        ...resolved.createStakingGovernanceRequest,
+        data: {
+          request: createdRequest,
+          stateReused: false
+        }
+      });
+    }
+
+    if (
+      /\/staking\/internal\/pool-governance-requests\/[^/]+\/approve$/.test(pathname) &&
+      method === "POST"
+    ) {
+      if (resolved.approveStakingGovernanceRequest.ok === false) {
+        return fulfillJson(route, resolved.approveStakingGovernanceRequest);
+      }
+
+      const requestId = pathname.split("/").slice(-2)[0];
+      const governanceRequest = findStakingGovernanceRequest(requestId);
+      const approvalNote =
+        ((request.postDataJSON() as Record<string, unknown> | null)?.[
+          "approvalNote"
+        ] as string | undefined) ?? null;
+
+      if (governanceRequest) {
+        governanceRequest.status = "approved";
+        governanceRequest.approvedAt = isoAt(0);
+        governanceRequest.approvedByOperatorId = "ops_e2e";
+        governanceRequest.approvedByOperatorRole = "operations_admin";
+        governanceRequest.approvalNote = approvalNote;
+        governanceRequest.rejectionNote = null;
+        governanceRequest.rejectedAt = null;
+        governanceRequest.rejectedByOperatorId = null;
+        governanceRequest.rejectedByOperatorRole = null;
+        governanceRequest.updatedAt = isoAt(0);
+      }
+
+      return fulfillJson(route, {
+        ...resolved.approveStakingGovernanceRequest,
+        data: {
+          request:
+            governanceRequest ??
+            ((resolved.approveStakingGovernanceRequest.data as Record<string, unknown> | undefined)?.[
+              "request"
+            ] as Record<string, unknown> | undefined),
+          stateReused: false
+        }
+      });
+    }
+
+    if (
+      /\/staking\/internal\/pool-governance-requests\/[^/]+\/reject$/.test(pathname) &&
+      method === "POST"
+    ) {
+      if (resolved.rejectStakingGovernanceRequest.ok === false) {
+        return fulfillJson(route, resolved.rejectStakingGovernanceRequest);
+      }
+
+      const requestId = pathname.split("/").slice(-2)[0];
+      const governanceRequest = findStakingGovernanceRequest(requestId);
+      const rejectionNote =
+        ((request.postDataJSON() as Record<string, unknown> | null)?.[
+          "rejectionNote"
+        ] as string | undefined) ?? null;
+
+      if (governanceRequest) {
+        governanceRequest.status = "rejected";
+        governanceRequest.rejectedAt = isoAt(0);
+        governanceRequest.rejectedByOperatorId = "ops_e2e";
+        governanceRequest.rejectedByOperatorRole = "operations_admin";
+        governanceRequest.rejectionNote = rejectionNote;
+        governanceRequest.approvalNote = null;
+        governanceRequest.approvedAt = null;
+        governanceRequest.approvedByOperatorId = null;
+        governanceRequest.approvedByOperatorRole = null;
+        governanceRequest.updatedAt = isoAt(0);
+      }
+
+      return fulfillJson(route, {
+        ...resolved.rejectStakingGovernanceRequest,
+        data: {
+          request:
+            governanceRequest ??
+            ((resolved.rejectStakingGovernanceRequest.data as Record<string, unknown> | undefined)?.[
+              "request"
+            ] as Record<string, unknown> | undefined),
+          stateReused: false
+        }
+      });
+    }
+
+    if (
+      /\/staking\/internal\/pool-governance-requests\/[^/]+\/execute$/.test(pathname) &&
+      method === "POST"
+    ) {
+      if (resolved.executeStakingGovernanceRequest.ok === false) {
+        return fulfillJson(route, resolved.executeStakingGovernanceRequest);
+      }
+
+      const requestId = pathname.split("/").slice(-2)[0];
+      const governanceRequest = findStakingGovernanceRequest(requestId);
+      const executionNote =
+        ((request.postDataJSON() as Record<string, unknown> | null)?.[
+          "executionNote"
+        ] as string | undefined) ?? null;
+
+      if (governanceRequest) {
+        if (governanceRequest.status === "executed") {
+          return fulfillJson(route, {
+            ...resolved.executeStakingGovernanceRequest,
+            data: {
+              request: governanceRequest,
+              stateReused: true
+            }
+          });
+        }
+
+        governanceRequest.status = "executed";
+        governanceRequest.approvedAt = governanceRequest.approvedAt ?? isoAt(1);
+        governanceRequest.approvedByOperatorId =
+          governanceRequest.approvedByOperatorId ?? "ops_approver";
+        governanceRequest.approvedByOperatorRole =
+          governanceRequest.approvedByOperatorRole ?? "compliance_lead";
+        governanceRequest.executedAt = isoAt(0);
+        governanceRequest.executedByOperatorId = "ops_e2e";
+        governanceRequest.executedByOperatorRole = "operations_admin";
+        governanceRequest.executionNote = executionNote;
+        governanceRequest.executionFailureReason = null;
+        governanceRequest.blockchainTransactionHash =
+          "0xpool1111222233334444555566667777888899990000aaaabbbbccccdddd0001";
+        governanceRequest.stakingPool = {
+          id: governanceRequest.stakingPool?.id ?? 304,
+          blockchainPoolId: 91,
+          rewardRate: governanceRequest.rewardRate,
+          poolStatus: "active",
+          createdAt: governanceRequest.stakingPool?.createdAt ?? isoAt(0),
+          updatedAt: isoAt(0)
+        };
+        governanceRequest.updatedAt = isoAt(0);
+      }
+
+      return fulfillJson(route, {
+        ...resolved.executeStakingGovernanceRequest,
+        data: {
+          request:
+            governanceRequest ??
+            ((resolved.executeStakingGovernanceRequest.data as Record<string, unknown> | undefined)?.[
+              "request"
+            ] as Record<string, unknown> | undefined),
+          stateReused: false
+        }
       });
     }
 
