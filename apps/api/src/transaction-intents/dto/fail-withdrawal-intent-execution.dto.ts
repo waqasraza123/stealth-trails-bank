@@ -1,28 +1,49 @@
 import {
-  IsEthereumAddress,
-  IsNotEmpty,
   IsOptional,
-  IsString
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength
 } from "class-validator";
+import {
+  TRANSACTION_INTENT_EVM_ADDRESS_PATTERN,
+  TRANSACTION_INTENT_FAILURE_CODE_MAX_LENGTH,
+  TRANSACTION_INTENT_FAILURE_CODE_MIN_LENGTH,
+  TRANSACTION_INTENT_FAILURE_REASON_MAX_LENGTH,
+  TRANSACTION_INTENT_FAILURE_REASON_MIN_LENGTH,
+  TRANSACTION_INTENT_TX_HASH_PATTERN,
+  TRANSACTION_INTENT_TX_HASH_PATTERN_MESSAGE
+} from "./transaction-intent-execution.validation";
 
 export class FailWithdrawalIntentExecutionDto {
   @IsString()
-  @IsNotEmpty()
-  failureCode!: string;
+  @MinLength(TRANSACTION_INTENT_FAILURE_CODE_MIN_LENGTH)
+  @MaxLength(TRANSACTION_INTENT_FAILURE_CODE_MAX_LENGTH)
+  readonly failureCode!: string;
 
   @IsString()
-  @IsNotEmpty()
-  failureReason!: string;
+  @MinLength(TRANSACTION_INTENT_FAILURE_REASON_MIN_LENGTH)
+  @MaxLength(TRANSACTION_INTENT_FAILURE_REASON_MAX_LENGTH)
+  readonly failureReason!: string;
 
   @IsOptional()
   @IsString()
-  txHash?: string;
+  @Matches(TRANSACTION_INTENT_TX_HASH_PATTERN, {
+    message: TRANSACTION_INTENT_TX_HASH_PATTERN_MESSAGE
+  })
+  readonly txHash?: string;
 
   @IsOptional()
-  @IsEthereumAddress()
-  fromAddress?: string;
+  @IsString()
+  @Matches(TRANSACTION_INTENT_EVM_ADDRESS_PATTERN, {
+    message: "fromAddress must be a valid EVM address."
+  })
+  readonly fromAddress?: string;
 
   @IsOptional()
-  @IsEthereumAddress()
-  toAddress?: string;
+  @IsString()
+  @Matches(TRANSACTION_INTENT_EVM_ADDRESS_PATTERN, {
+    message: "toAddress must be a valid EVM address."
+  })
+  readonly toAddress?: string;
 }

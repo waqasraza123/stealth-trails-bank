@@ -1,0 +1,15 @@
+export const TRANSACTION_INTENT_TX_HASH_PATTERN =
+  /^0x[a-fA-F0-9]{64}$/;
+export const TRANSACTION_INTENT_TX_HASH_PATTERN_MESSAGE =
+  "txHash must be a valid 32-byte hex transaction hash.";
+export const TRANSACTION_INTENT_EVM_ADDRESS_PATTERN =
+  /^0x[a-fA-F0-9]{40}$/;
+export const TRANSACTION_INTENT_FAILURE_CODE_MIN_LENGTH = 3;
+export const TRANSACTION_INTENT_FAILURE_CODE_MAX_LENGTH = 100;
+export const TRANSACTION_INTENT_FAILURE_REASON_MIN_LENGTH = 3;
+export const TRANSACTION_INTENT_FAILURE_REASON_MAX_LENGTH = 500;
+export const TRANSACTION_INTENT_NOTE_MAX_LENGTH = 500;
+export const TRANSACTION_INTENT_SERIALIZED_TRANSACTION_PATTERN =
+  /^0x(?:[a-fA-F0-9]{2})+$/;
+export const TRANSACTION_INTENT_SERIALIZED_TRANSACTION_PATTERN_MESSAGE =
+  "serializedTransaction must be a valid hex-encoded raw transaction.";
