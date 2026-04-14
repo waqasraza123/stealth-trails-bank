@@ -268,6 +268,71 @@ describe("ReleaseReadinessService", () => {
     );
   });
 
+  it("rejects external-only evidence without a release identifier", async () => {
+    const { service, transactionClient } = createService();
+
+    await expect(
+      service.recordEvidence(
+        {
+          evidenceType: "secret_handling_review",
+          environment: "production_like",
+          status: "passed",
+          summary: "Launch secret review completed."
+        },
+        "ops_1",
+        "operations_admin"
+      )
+    ).rejects.toThrow(
+      "Release readiness evidence for secret_handling_review requires release identifier."
+    );
+
+    expect(transactionClient.releaseReadinessEvidence.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects restore drill evidence without a backup reference", async () => {
+    const { service, transactionClient } = createService();
+
+    await expect(
+      service.recordEvidence(
+        {
+          evidenceType: "database_restore_drill",
+          environment: "production_like",
+          status: "passed",
+          releaseIdentifier: "launch-2026.04.14.1",
+          summary: "Restore drill completed against the launch snapshot."
+        },
+        "ops_1",
+        "operations_admin"
+      )
+    ).rejects.toThrow(
+      "Release readiness evidence for database_restore_drill requires release identifier, backup reference."
+    );
+
+    expect(transactionClient.releaseReadinessEvidence.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects rollback drill evidence without a rollback release identifier", async () => {
+    const { service, transactionClient } = createService();
+
+    await expect(
+      service.recordEvidence(
+        {
+          evidenceType: "api_rollback_drill",
+          environment: "production_like",
+          status: "passed",
+          releaseIdentifier: "launch-2026.04.14.1",
+          summary: "API rollback drill completed."
+        },
+        "ops_1",
+        "operations_admin"
+      )
+    ).rejects.toThrow(
+      "Release readiness evidence for api_rollback_drill requires release identifier, rollback release identifier."
+    );
+
+    expect(transactionClient.releaseReadinessEvidence.create).not.toHaveBeenCalled();
+  });
+
   it("lists release readiness evidence using bounded filters", async () => {
     const { service, prismaService } = createService();
     (

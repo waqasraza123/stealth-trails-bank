@@ -20,6 +20,10 @@ import {
   type ReleaseReadinessProofResult,
   type ReleaseReadinessProofType
 } from "../release-readiness/release-readiness-proof-runner";
+import {
+  describeReleaseReadinessEvidenceMetadataRequirements,
+  validateReleaseReadinessEvidenceMetadata
+} from "../release-readiness/release-readiness-evidence-requirements";
 
 type ParsedArgs = {
   [key: string]: string | boolean | undefined;
@@ -241,6 +245,26 @@ async function recordEvidence(
   proof: ReleaseReadinessProofResult
 ): Promise<{ evidence: { id: string; status: "passed" | "failed" } }> {
   const session = buildSession(parsedArgs);
+  const releaseIdentifier = readOptionalStringArg(parsedArgs, "release-id");
+  const rollbackReleaseIdentifier = readOptionalStringArg(
+    parsedArgs,
+    "rollback-release-id"
+  );
+  const backupReference = readOptionalStringArg(parsedArgs, "backup-ref");
+  const missingMetadata = validateReleaseReadinessEvidenceMetadata({
+    evidenceType: proof.evidenceType,
+    releaseIdentifier,
+    rollbackReleaseIdentifier,
+    backupReference
+  });
+
+  if (missingMetadata.length > 0) {
+    fail(
+      `Recording ${proof.evidenceType} requires ${describeReleaseReadinessEvidenceMetadataRequirements(
+        proof.evidenceType
+      ).join(", ")}.`
+    );
+  }
 
   return recordReleaseReadinessEvidence(session, {
     evidenceType: proof.evidenceType,
@@ -248,12 +272,9 @@ async function recordEvidence(
     status: proof.status,
     summary: readOptionalStringArg(parsedArgs, "summary") ?? proof.summary,
     note: readOptionalStringArg(parsedArgs, "note") ?? proof.note,
-    releaseIdentifier: readOptionalStringArg(parsedArgs, "release-id"),
-    rollbackReleaseIdentifier: readOptionalStringArg(
-      parsedArgs,
-      "rollback-release-id"
-    ),
-    backupReference: readOptionalStringArg(parsedArgs, "backup-ref"),
+    releaseIdentifier,
+    rollbackReleaseIdentifier,
+    backupReference,
     observedAt: proof.observedAt,
     evidencePayload: proof.evidencePayload
   });

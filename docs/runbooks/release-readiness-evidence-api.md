@@ -58,6 +58,12 @@ Optional fields:
 - `completedAt`
 - `observedAt`
 
+Field requirements by evidence type:
+
+- external-only launch proofs require `releaseIdentifier`
+- `database_restore_drill` also requires `backupReference`
+- `api_rollback_drill` and `worker_rollback_drill` also require `rollbackReleaseIdentifier`
+
 ## Evidence types
 
 - `platform_alert_delivery_slo`

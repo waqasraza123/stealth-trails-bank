@@ -8,6 +8,10 @@ import {
   type ReleaseReadinessDrillOptions,
   type ReleaseReadinessDrillSession
 } from "../release-readiness/release-readiness-drill-runner";
+import {
+  describeReleaseReadinessEvidenceMetadataRequirements,
+  validateReleaseReadinessEvidenceMetadata
+} from "../release-readiness/release-readiness-evidence-requirements";
 
 type ParsedArgs = {
   [key: string]: string | boolean | undefined;
@@ -218,6 +222,12 @@ async function main(): Promise<void> {
 
   if (recordEvidence) {
     const environment = readRequiredStringArg(parsedArgs, "environment");
+    const releaseIdentifier = readOptionalStringArg(parsedArgs, "release-id");
+    const rollbackReleaseIdentifier = readOptionalStringArg(
+      parsedArgs,
+      "rollback-release-id"
+    );
+    const backupReference = readOptionalStringArg(parsedArgs, "backup-ref");
 
     if (
       environment !== "staging" &&
@@ -229,18 +239,30 @@ async function main(): Promise<void> {
       );
     }
 
+    const missingMetadata = validateReleaseReadinessEvidenceMetadata({
+      evidenceType: result.evidenceType,
+      releaseIdentifier,
+      rollbackReleaseIdentifier,
+      backupReference
+    });
+
+    if (missingMetadata.length > 0) {
+      fail(
+        `Recording ${result.evidenceType} requires ${describeReleaseReadinessEvidenceMetadataRequirements(
+          result.evidenceType
+        ).join(", ")}.`
+      );
+    }
+
     const evidenceResult = await recordReleaseReadinessEvidence(session, {
       evidenceType: result.evidenceType,
       environment,
       status: result.status,
       summary: summaryOverride ?? result.summary,
       note: readOptionalStringArg(parsedArgs, "note"),
-      releaseIdentifier: readOptionalStringArg(parsedArgs, "release-id"),
-      rollbackReleaseIdentifier: readOptionalStringArg(
-        parsedArgs,
-        "rollback-release-id"
-      ),
-      backupReference: readOptionalStringArg(parsedArgs, "backup-ref"),
+      releaseIdentifier,
+      rollbackReleaseIdentifier,
+      backupReference,
       observedAt: result.observedAt,
       evidencePayload: result.evidencePayload
     });

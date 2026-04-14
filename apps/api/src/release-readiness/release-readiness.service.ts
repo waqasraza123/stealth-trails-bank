@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -25,6 +26,10 @@ import {
   releaseReadinessChecklistSections,
   requiredReleaseReadinessChecks
 } from "./release-readiness-checks";
+import {
+  describeReleaseReadinessEvidenceMetadataRequirements,
+  validateReleaseReadinessEvidenceMetadata
+} from "./release-readiness-evidence-requirements";
 import {
   ApproveReleaseReadinessApprovalDto,
   RejectReleaseReadinessApprovalDto
@@ -552,12 +557,26 @@ export class ReleaseReadinessService {
       dto.rollbackReleaseIdentifier
     );
     const backupReference = this.normalizeOptionalString(dto.backupReference);
+    const missingMetadata = validateReleaseReadinessEvidenceMetadata({
+      evidenceType: dto.evidenceType,
+      releaseIdentifier,
+      rollbackReleaseIdentifier,
+      backupReference
+    });
     const startedAt = this.normalizeOptionalDate(dto.startedAt);
     const completedAt = this.normalizeOptionalDate(dto.completedAt);
     const observedAt = this.normalizeOptionalDate(dto.observedAt) ?? new Date();
     const evidenceLinks = this.normalizeEvidenceLinks(dto.evidenceLinks);
     const evidencePayload =
       (dto.evidencePayload as Prisma.InputJsonValue | undefined) ?? undefined;
+
+    if (missingMetadata.length > 0) {
+      throw new BadRequestException(
+        `Release readiness evidence for ${dto.evidenceType} requires ${describeReleaseReadinessEvidenceMetadataRequirements(
+          dto.evidenceType
+        ).join(", ")}.`
+      );
+    }
 
     const evidence = await this.prismaService.$transaction(async (transaction) => {
       const createdEvidence = await transaction.releaseReadinessEvidence.create({

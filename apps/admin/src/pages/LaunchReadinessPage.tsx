@@ -184,6 +184,42 @@ function parseListInput(value: string): string[] {
   ];
 }
 
+function listRequiredEvidenceMetadataFields(
+  evidenceType: EvidenceDraft["evidenceType"]
+): string[] {
+  switch (evidenceType) {
+    case "platform_alert_delivery_slo":
+    case "critical_alert_reescalation":
+    case "secret_handling_review":
+    case "role_review":
+      return ["release identifier"];
+    case "database_restore_drill":
+      return ["release identifier", "backup reference"];
+    case "api_rollback_drill":
+    case "worker_rollback_drill":
+      return ["release identifier", "rollback release identifier"];
+    default:
+      return [];
+  }
+}
+
+function listMissingEvidenceMetadataFields(draft: EvidenceDraft): string[] {
+  const requiredFields = listRequiredEvidenceMetadataFields(draft.evidenceType);
+
+  return requiredFields.filter((field) => {
+    switch (field) {
+      case "release identifier":
+        return draft.releaseIdentifier.trim().length === 0;
+      case "rollback release identifier":
+        return draft.rollbackReleaseIdentifier.trim().length === 0;
+      case "backup reference":
+        return draft.backupReference.trim().length === 0;
+      default:
+        return false;
+    }
+  });
+}
+
 function stringifyLaunchClosureManifest(manifest: LaunchClosureManifest): string {
   return JSON.stringify(manifest, null, 2);
 }
@@ -752,10 +788,17 @@ export function LaunchReadinessPage() {
   const launchClosurePending =
     validateLaunchClosureMutation.isPending ||
     scaffoldLaunchClosureMutation.isPending;
+  const requiredEvidenceMetadataFields = listRequiredEvidenceMetadataFields(
+    evidenceDraft.evidenceType
+  );
+  const missingEvidenceMetadataFields = listMissingEvidenceMetadataFields(
+    evidenceDraft
+  );
   const recordEvidenceDisabled =
     !evidenceConfirm ||
     recordEvidenceMutation.isPending ||
-    evidenceDraft.summary.trim().length === 0;
+    evidenceDraft.summary.trim().length === 0 ||
+    missingEvidenceMetadataFields.length > 0;
   const requestApprovalDisabled =
     !approvalRequestConfirm ||
     requestApprovalMutation.isPending ||
@@ -1130,6 +1173,20 @@ export function LaunchReadinessPage() {
                   }
                 />
               </div>
+
+              {requiredEvidenceMetadataFields.length > 0 ? (
+                <InlineNotice
+                  title="Evidence metadata required"
+                  description={`This evidence type requires ${requiredEvidenceMetadataFields.join(
+                    ", "
+                  )} before it can be recorded.`}
+                  tone={
+                    missingEvidenceMetadataFields.length > 0
+                      ? "warning"
+                      : "positive"
+                  }
+                />
+              ) : null}
 
               <label className="admin-checkbox">
                 <input

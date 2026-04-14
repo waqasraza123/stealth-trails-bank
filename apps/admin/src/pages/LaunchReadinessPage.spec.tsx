@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { LaunchReadinessPage } from "./LaunchReadinessPage";
 import {
@@ -362,6 +362,63 @@ describe("LaunchReadinessPage", () => {
           releaseIdentifier: "launch-2026.04.13.2"
         }
       );
+    });
+  });
+
+  it("requires rollback metadata before recording rollback drill evidence", async () => {
+    renderPage("/launch-readiness?release=launch-2026.04.13.1");
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Release scope")).toHaveValue(
+        "launch-2026.04.13.1"
+      );
+    });
+
+    fireEvent.change(screen.getByLabelText("Evidence type"), {
+      target: {
+        value: "api_rollback_drill"
+      }
+    });
+    fireEvent.change(screen.getByLabelText("Evidence summary"), {
+      target: {
+        value: "API rollback drill completed."
+      }
+    });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /I verified the environment label, summary, and linked evidence/i
+      })
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Record evidence" })
+    ).toBeDisabled();
+    expect(
+      screen.getByText(
+        /requires release identifier, rollback release identifier/i
+      )
+    ).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Evidence release identifier"), {
+      target: {
+        value: "launch-2026.04.13.1"
+      }
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Record evidence" })
+    ).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Evidence rollback release identifier"), {
+      target: {
+        value: "launch-rollback-2026.04.12.4"
+      }
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Record evidence" })
+      ).toBeEnabled();
     });
   });
 });
