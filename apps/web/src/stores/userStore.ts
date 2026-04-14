@@ -32,7 +32,12 @@ export const useUserStore = create<UserState>()(
     }),
     {
       name: "user-storage",
-      partialize: (state) => ({ user: state.user, token: state.token })
+      partialize: (state) => ({ user: state.user, token: state.token }),
+      skipHydration: true
     }
   )
 );
+
+export function initializeUserStore(): Promise<void> {
+  return Promise.resolve(useUserStore.persist.rehydrate());
+}

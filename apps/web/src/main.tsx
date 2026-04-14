@@ -11,8 +11,19 @@ import "@fontsource/space-grotesk/500.css";
 import "@fontsource/space-grotesk/600.css";
 import "@fontsource/space-grotesk/700.css";
 import "@stealth-trails-bank/ui-foundation/styles.css";
-import { createRoot } from 'react-dom/client'
-import App from './App.tsx'
-import './index.css'
+import { createRoot } from "react-dom/client";
+import App from "./App.tsx";
+import "./index.css";
+import { initializeUserStore } from "./stores/userStore";
 
-createRoot(document.getElementById("root")!).render(<App />);
+async function bootstrap() {
+  try {
+    await initializeUserStore();
+  } catch (error) {
+    console.error("Failed to initialize persisted user state.", error);
+  }
+
+  createRoot(document.getElementById("root")!).render(<App />);
+}
+
+void bootstrap();

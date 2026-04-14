@@ -6,15 +6,22 @@ import { routerFuture } from "@/lib/router-future";
 
 type RenderWithRouterOptions = Omit<MemoryRouterProps, "children">;
 
+const testRouterFuture = {
+  ...routerFuture,
+  v7_startTransition: false
+} as const;
+
 export function renderWithRouter(
   element: ReactElement,
   options?: RenderWithRouterOptions,
 ) {
-  return render(
-    <WebI18nProvider>
-      <MemoryRouter future={routerFuture} {...options}>
-        {element}
-      </MemoryRouter>
-    </WebI18nProvider>,
-  );
+  return render(element, {
+    wrapper: ({ children }) => (
+      <WebI18nProvider>
+        <MemoryRouter future={testRouterFuture} {...options}>
+          {children}
+        </MemoryRouter>
+      </WebI18nProvider>
+    )
+  });
 }

@@ -240,6 +240,105 @@ describe("wallet page", () => {
     expect(screen.getByText(/25 USDC/i)).toBeInTheDocument();
   });
 
+  it("falls back to the first available asset when a prior selection is no longer supported", async () => {
+    const user = userEvent.setup();
+
+    mutateDepositAsync.mockResolvedValue({
+      idempotencyReused: false,
+      intent: {
+        id: "intent_deposit_1",
+        customerAccountId: "account_1",
+        asset: {
+          id: "asset_eth",
+          symbol: "ETH",
+          displayName: "Ether",
+          decimals: 18,
+          chainId: 1
+        },
+        destinationWalletAddress: "0x1111222233334444555566667777888899990000",
+        intentType: "deposit",
+        status: "requested",
+        policyDecision: "pending",
+        requestedAmount: "1.25",
+        createdAt: "2026-04-05T10:00:00.000Z",
+        updatedAt: "2026-04-05T10:00:00.000Z"
+      }
+    });
+
+    const view = renderWithRouter(<Wallet />);
+
+    await user.selectOptions(
+      screen.getByLabelText(/^Asset$/i, { selector: "#deposit-asset" }),
+      "USDC"
+    );
+
+    mockUseSupportedAssets.mockReturnValue({
+      data: {
+        assets: [
+          {
+            id: "asset_eth",
+            symbol: "ETH",
+            displayName: "Ether",
+            decimals: 18,
+            chainId: 1,
+            assetType: "native",
+            contractAddress: null
+          }
+        ]
+      },
+      isLoading: false,
+      isError: false,
+      error: null
+    } as ReturnType<typeof useSupportedAssets>);
+
+    mockUseMyBalances.mockReturnValue({
+      data: {
+        customerAccountId: "account_1",
+        balances: [
+          {
+            asset: {
+              id: "asset_eth",
+              symbol: "ETH",
+              displayName: "Ether",
+              decimals: 18,
+              chainId: 1
+            },
+            availableBalance: "2.5",
+            pendingBalance: "0",
+            updatedAt: "2026-04-05T10:00:00.000Z"
+          }
+        ]
+      },
+      isLoading: false,
+      isError: false,
+      error: null
+    } as ReturnType<typeof useMyBalances>);
+
+    view.rerender(<Wallet />);
+
+    expect(
+      screen.getByLabelText(/^Asset$/i, { selector: "#deposit-asset" })
+    ).toHaveValue("ETH");
+
+    await user.type(
+      screen.getByLabelText(/^Amount$/i, { selector: "#deposit-amount" }),
+      "1.25"
+    );
+    await user.click(
+      screen.getByRole("button", { name: /create deposit request/i })
+    );
+
+    await waitFor(() => {
+      expect(mutateDepositAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assetSymbol: "ETH",
+          amount: "1.25",
+          idempotencyKey: expect.any(String)
+        })
+      );
+    });
+  });
+
   it("blocks invalid deposit amounts before the mutation is called", async () => {
     const user = userEvent.setup();
 

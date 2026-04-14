@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Copy, QrCode, ShieldCheck } from "lucide-react";
 import {
   Card,
@@ -48,7 +48,7 @@ const DepositCard = ({
   const { locale } = useLocale();
   const createDepositIntent = useCreateDepositIntent();
   const [showQR, setShowQR] = useState(false);
-  const [selectedAssetSymbol, setSelectedAssetSymbol] = useState("");
+  const [preferredAssetSymbol, setPreferredAssetSymbol] = useState("");
   const [amount, setAmount] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [latestRequest, setLatestRequest] =
@@ -58,11 +58,10 @@ const DepositCard = ({
     idempotencyKey: string;
   } | null>(null);
 
-  useEffect(() => {
-    if (assets.length > 0 && !selectedAssetSymbol) {
-      setSelectedAssetSymbol(assets[0].symbol);
-    }
-  }, [assets, selectedAssetSymbol]);
+  const selectedAssetSymbol =
+    assets.find((asset) => asset.symbol === preferredAssetSymbol)?.symbol ??
+    assets[0]?.symbol ??
+    "";
 
   async function handleCopyAddress() {
     if (!walletAddress) {
@@ -268,7 +267,7 @@ const DepositCard = ({
                 className="flex h-12 w-full rounded-2xl border border-input bg-white px-4 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                 value={selectedAssetSymbol}
                 disabled={isAssetsLoading || assets.length === 0}
-                onChange={(event) => setSelectedAssetSymbol(event.target.value)}
+                onChange={(event) => setPreferredAssetSymbol(event.target.value)}
               >
                 {assets.length === 0 ? (
                   <option value="">

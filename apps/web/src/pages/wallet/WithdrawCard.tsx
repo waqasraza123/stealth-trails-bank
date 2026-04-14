@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
 import {
   Card,
@@ -54,7 +54,7 @@ const WithdrawCard = ({
 }: WithdrawCardProps) => {
   const { locale } = useLocale();
   const createWithdrawalIntent = useCreateWithdrawalIntent();
-  const [selectedAssetSymbol, setSelectedAssetSymbol] = useState("");
+  const [preferredAssetSymbol, setPreferredAssetSymbol] = useState("");
   const [withdrawAddress, setWithdrawAddress] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -65,11 +65,10 @@ const WithdrawCard = ({
     idempotencyKey: string;
   } | null>(null);
 
-  useEffect(() => {
-    if (assets.length > 0 && !selectedAssetSymbol) {
-      setSelectedAssetSymbol(assets[0].symbol);
-    }
-  }, [assets, selectedAssetSymbol]);
+  const selectedAssetSymbol =
+    assets.find((asset) => asset.symbol === preferredAssetSymbol)?.symbol ??
+    assets[0]?.symbol ??
+    "";
 
   const selectedBalance = useMemo(
     () =>
@@ -252,7 +251,7 @@ const WithdrawCard = ({
               className="flex h-12 w-full rounded-2xl border border-input bg-white px-4 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               value={selectedAssetSymbol}
               disabled={isAssetsLoading || assets.length === 0}
-              onChange={(event) => setSelectedAssetSymbol(event.target.value)}
+              onChange={(event) => setPreferredAssetSymbol(event.target.value)}
             >
               {assets.length === 0 ? (
                 <option value="">
