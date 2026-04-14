@@ -486,11 +486,13 @@ export async function getOperationsStatus(
 }
 
 export async function getReleaseReadinessSummary(
-  session: OperatorSession
+  session: OperatorSession,
+  params: Record<string, string | number | undefined> = {}
 ): Promise<ReleaseReadinessSummary> {
   return requestData(session, {
     method: "GET",
-    url: "/release-readiness/internal/summary"
+    url: "/release-readiness/internal/summary",
+    params
   });
 }
 

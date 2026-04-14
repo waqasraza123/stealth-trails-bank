@@ -966,6 +966,8 @@ export type ReleaseReadinessEvidenceList = {
 
 export type ReleaseReadinessSummary = {
   generatedAt: string;
+  releaseIdentifier: string | null;
+  environment: string | null;
   overallStatus: "healthy" | "warning" | "critical";
   summary: {
     requiredCheckCount: number;

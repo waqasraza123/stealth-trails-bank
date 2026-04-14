@@ -287,6 +287,7 @@ export function LaunchReadinessPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedEvidenceId = searchParams.get("evidence");
   const selectedApprovalId = searchParams.get("approval");
+  const selectedReleaseIdentifier = searchParams.get("release");
   const [evidenceDraft, setEvidenceDraft] = useState<EvidenceDraft>(
     createEvidenceDraft()
   );
@@ -323,14 +324,29 @@ export function LaunchReadinessPage() {
     useState<string | null>(null);
 
   const releaseSummaryQuery = useQuery({
-    queryKey: ["launch-release-summary", session?.baseUrl],
-    queryFn: () => getReleaseReadinessSummary(session!),
+    queryKey: [
+      "launch-release-summary",
+      session?.baseUrl,
+      selectedReleaseIdentifier ?? "all"
+    ],
+    queryFn: () =>
+      getReleaseReadinessSummary(session!, {
+        releaseIdentifier: selectedReleaseIdentifier ?? undefined
+      }),
     enabled: Boolean(session)
   });
 
   const evidenceQuery = useQuery({
-    queryKey: ["launch-evidence", session?.baseUrl],
-    queryFn: () => listReleaseReadinessEvidence(session!, { limit: 20 }),
+    queryKey: [
+      "launch-evidence",
+      session?.baseUrl,
+      selectedReleaseIdentifier ?? "all"
+    ],
+    queryFn: () =>
+      listReleaseReadinessEvidence(session!, {
+        limit: 20,
+        releaseIdentifier: selectedReleaseIdentifier ?? undefined
+      }),
     enabled: Boolean(session)
   });
 
@@ -358,16 +374,17 @@ export function LaunchReadinessPage() {
     enabled: Boolean(session)
   });
 
-  function updateSearchParam(
-    key: "evidence" | "approval",
-    value: string | null
+  function updateSearchParams(
+    updates: Partial<Record<"evidence" | "approval" | "release", string | null>>
   ) {
     const nextParams = new URLSearchParams(searchParams);
 
-    if (value) {
-      nextParams.set(key, value);
-    } else {
-      nextParams.delete(key);
+    for (const [key, value] of Object.entries(updates)) {
+      if (value) {
+        nextParams.set(key, value);
+      } else {
+        nextParams.delete(key);
+      }
     }
 
     setSearchParams(nextParams);
@@ -377,7 +394,12 @@ export function LaunchReadinessPage() {
     const nextParams = new URLSearchParams(searchParams);
     let changed = false;
     const evidence = evidenceQuery.data?.evidence ?? [];
-    const approvals = approvalsQuery.data?.approvals ?? [];
+    const allApprovals = approvalsQuery.data?.approvals ?? [];
+    const approvals = selectedReleaseIdentifier
+      ? allApprovals.filter(
+          (approval) => approval.releaseIdentifier === selectedReleaseIdentifier
+        )
+      : allApprovals;
 
     if (evidence.length > 0) {
       const selectedEvidenceExists = evidence.some(
@@ -388,6 +410,9 @@ export function LaunchReadinessPage() {
         nextParams.set("evidence", evidence[0].id);
         changed = true;
       }
+    } else if (selectedEvidenceId) {
+      nextParams.delete("evidence");
+      changed = true;
     }
 
     if (approvals.length > 0) {
@@ -397,8 +422,14 @@ export function LaunchReadinessPage() {
 
       if (!selectedApprovalId || !selectedApprovalExists) {
         nextParams.set("approval", approvals[0].id);
+        if (!selectedReleaseIdentifier) {
+          nextParams.set("release", approvals[0].releaseIdentifier);
+        }
         changed = true;
       }
+    } else if (selectedApprovalId) {
+      nextParams.delete("approval");
+      changed = true;
     }
 
     if (changed) {
@@ -408,6 +439,7 @@ export function LaunchReadinessPage() {
     approvalsQuery.data,
     evidenceQuery.data,
     searchParams,
+    selectedReleaseIdentifier,
     selectedApprovalId,
     selectedEvidenceId,
     setSearchParams
@@ -457,7 +489,10 @@ export function LaunchReadinessPage() {
         createEvidenceDraft(result.evidence.evidenceType, result.evidence.environment)
       );
       await refreshData();
-      updateSearchParam("evidence", result.evidence.id);
+      updateSearchParams({
+        evidence: result.evidence.id,
+        release: result.evidence.releaseIdentifier
+      });
     },
     onError: (error) => {
       setEvidenceError(
@@ -496,7 +531,10 @@ export function LaunchReadinessPage() {
       setApprovalRequestConfirm(false);
       setApprovalDraft(createApprovalDraft(result.approval.environment));
       await refreshData();
-      updateSearchParam("approval", result.approval.id);
+      updateSearchParams({
+        approval: result.approval.id,
+        release: result.approval.releaseIdentifier
+      });
     },
     onError: (error) => {
       setApprovalRequestError(
@@ -652,6 +690,21 @@ export function LaunchReadinessPage() {
   }
 
   const summary = releaseSummaryQuery.data!;
+  const scopedApprovals = selectedReleaseIdentifier
+    ? approvalsQuery.data!.approvals.filter(
+        (approval) => approval.releaseIdentifier === selectedReleaseIdentifier
+      )
+    : approvalsQuery.data!.approvals;
+  const releaseScopeOptions = [
+    ...new Set(
+      [
+        ...approvalsQuery.data!.approvals.map((approval) => approval.releaseIdentifier),
+        ...evidenceQuery.data!.evidence
+          .map((item) => item.releaseIdentifier)
+          .filter((value): value is string => Boolean(value))
+      ].filter((value): value is string => Boolean(value))
+    )
+  ];
   const selectedEvidence =
     evidenceQuery.data!.evidence.find((item) => item.id === selectedEvidenceId) ??
     null;
@@ -660,8 +713,7 @@ export function LaunchReadinessPage() {
       (check) => check.evidenceType === selectedEvidence?.evidenceType
     ) ?? null;
   const selectedApproval =
-    approvalsQuery.data!.approvals.find((approval) => approval.id === selectedApprovalId) ??
-    null;
+    scopedApprovals.find((approval) => approval.id === selectedApprovalId) ?? null;
   const selectedLaunchClosureFile =
     launchClosureFiles.find(
       (file) => file.relativePath === selectedLaunchClosureFilePath
@@ -695,7 +747,7 @@ export function LaunchReadinessPage() {
           />
           <MetricCard
             label="Approvals"
-            value={formatCount(approvalsQuery.data!.approvals.length)}
+            value={formatCount(scopedApprovals.length)}
             detail={`${formatCount(pendingReleasesQuery.data!.releases.length)} pending releases`}
           />
           <MetricCard
@@ -703,6 +755,38 @@ export function LaunchReadinessPage() {
             value={formatCount(evidenceQuery.data!.evidence.length)}
             detail={`${formatCount(releasedReleasesQuery.data!.releases.length)} released artifacts`}
           />
+          <MetricCard
+            label="Release scope"
+            value={selectedReleaseIdentifier ?? "All releases"}
+            detail={
+              selectedReleaseIdentifier
+                ? "Scoped evidence and gate posture"
+                : "Global readiness view"
+            }
+          />
+        </div>
+        <div className="admin-field">
+          <span>Focused release</span>
+          <select
+            aria-label="Release scope"
+            value={selectedReleaseIdentifier ?? ""}
+            onChange={(event) =>
+              updateSearchParams({
+                release: event.target.value || null,
+                evidence: null
+              })
+            }
+          >
+            <option value="">All releases</option>
+            {releaseScopeOptions.map((releaseIdentifier) => (
+              <option key={releaseIdentifier} value={releaseIdentifier}>
+                {releaseIdentifier}
+              </option>
+            ))}
+          </select>
+          <p className="admin-field-help">
+            Scope required checks and evidence to one launch candidate before requesting governed approval.
+          </p>
         </div>
       </SectionPanel>
 
@@ -738,7 +822,12 @@ export function LaunchReadinessPage() {
                       className={`admin-list-row selectable ${
                         selectedEvidenceId === item.id ? "selected" : ""
                       }`}
-                      onClick={() => updateSearchParam("evidence", item.id)}
+                      onClick={() =>
+                        updateSearchParams({
+                          evidence: item.id,
+                          release: item.releaseIdentifier
+                        })
+                      }
                     >
                       <strong>{toTitleCase(item.evidenceType)}</strong>
                       <span>{item.environment}</span>
@@ -1065,14 +1154,19 @@ export function LaunchReadinessPage() {
             <>
               <ListCard title="Approval chain">
                 <div className="admin-list">
-                  {approvalsQuery.data!.approvals.map((approval) => (
+                  {scopedApprovals.map((approval) => (
                     <button
                       key={approval.id}
                       type="button"
                       className={`admin-list-row selectable ${
                         selectedApprovalId === approval.id ? "selected" : ""
                       }`}
-                      onClick={() => updateSearchParam("approval", approval.id)}
+                      onClick={() =>
+                        updateSearchParams({
+                          approval: approval.id,
+                          release: approval.releaseIdentifier
+                        })
+                      }
                     >
                       <strong>{approval.releaseIdentifier}</strong>
                       <span>{approval.environment}</span>
