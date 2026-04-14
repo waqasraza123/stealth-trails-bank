@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { LaunchReadinessPage } from "./LaunchReadinessPage";
 import {
@@ -180,7 +180,7 @@ function buildApproval(releaseIdentifier: string) {
   };
 }
 
-function renderPage() {
+function renderPage(initialEntry = "/launch-readiness") {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -193,7 +193,7 @@ function renderPage() {
     <QueryClientProvider client={queryClient}>
       <OperatorSessionProvider serverUrl="http://localhost:9001">
         <MemoryRouter
-          initialEntries={["/launch-readiness"]}
+          initialEntries={[initialEntry]}
           future={{
             v7_startTransition: true,
             v7_relativeSplatPath: true
@@ -320,19 +320,13 @@ describe("LaunchReadinessPage", () => {
     );
   });
 
-  it("re-queries the release workspace when the operator changes scope", async () => {
-    renderPage();
+  it("loads the release workspace from an explicit scope deep link", async () => {
+    renderPage("/launch-readiness?release=launch-2026.04.13.2");
 
     await waitFor(() => {
       expect(screen.getByLabelText("Release scope")).toHaveValue(
-        "launch-2026.04.13.1"
+        "launch-2026.04.13.2"
       );
-    });
-
-    fireEvent.change(screen.getByLabelText("Release scope"), {
-      target: {
-        value: "launch-2026.04.13.2"
-      }
     });
 
     await waitFor(() => {
