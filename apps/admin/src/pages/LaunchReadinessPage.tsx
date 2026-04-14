@@ -350,9 +350,35 @@ export function LaunchReadinessPage() {
     enabled: Boolean(session)
   });
 
+  const evidenceCatalogQuery = useQuery({
+    queryKey: ["launch-evidence-catalog", session?.baseUrl],
+    queryFn: () =>
+      listReleaseReadinessEvidence(session!, {
+        limit: 100
+      }),
+    enabled: Boolean(session)
+  });
+
   const approvalsQuery = useQuery({
-    queryKey: ["launch-approvals", session?.baseUrl],
-    queryFn: () => listReleaseReadinessApprovals(session!, { limit: 20 }),
+    queryKey: [
+      "launch-approvals",
+      session?.baseUrl,
+      selectedReleaseIdentifier ?? "all"
+    ],
+    queryFn: () =>
+      listReleaseReadinessApprovals(session!, {
+        limit: 20,
+        releaseIdentifier: selectedReleaseIdentifier ?? undefined
+      }),
+    enabled: Boolean(session)
+  });
+
+  const approvalsCatalogQuery = useQuery({
+    queryKey: ["launch-approvals-catalog", session?.baseUrl],
+    queryFn: () =>
+      listReleaseReadinessApprovals(session!, {
+        limit: 100
+      }),
     enabled: Boolean(session)
   });
 
@@ -394,12 +420,7 @@ export function LaunchReadinessPage() {
     const nextParams = new URLSearchParams(searchParams);
     let changed = false;
     const evidence = evidenceQuery.data?.evidence ?? [];
-    const allApprovals = approvalsQuery.data?.approvals ?? [];
-    const approvals = selectedReleaseIdentifier
-      ? allApprovals.filter(
-          (approval) => approval.releaseIdentifier === selectedReleaseIdentifier
-        )
-      : allApprovals;
+    const approvals = approvalsQuery.data?.approvals ?? [];
 
     if (evidence.length > 0) {
       const selectedEvidenceExists = evidence.some(
@@ -454,7 +475,13 @@ export function LaunchReadinessPage() {
         queryKey: ["launch-evidence", session?.baseUrl]
       }),
       queryClient.invalidateQueries({
+        queryKey: ["launch-evidence-catalog", session?.baseUrl]
+      }),
+      queryClient.invalidateQueries({
         queryKey: ["launch-approvals", session?.baseUrl]
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["launch-approvals-catalog", session?.baseUrl]
       }),
       queryClient.invalidateQueries({
         queryKey: ["pending-releases", session?.baseUrl]
@@ -662,7 +689,9 @@ export function LaunchReadinessPage() {
   if (
     releaseSummaryQuery.isLoading ||
     evidenceQuery.isLoading ||
+    evidenceCatalogQuery.isLoading ||
     approvalsQuery.isLoading ||
+    approvalsCatalogQuery.isLoading ||
     pendingReleasesQuery.isLoading ||
     releasedReleasesQuery.isLoading
   ) {
@@ -677,7 +706,9 @@ export function LaunchReadinessPage() {
   if (
     releaseSummaryQuery.isError ||
     evidenceQuery.isError ||
+    evidenceCatalogQuery.isError ||
     approvalsQuery.isError ||
+    approvalsCatalogQuery.isError ||
     pendingReleasesQuery.isError ||
     releasedReleasesQuery.isError
   ) {
@@ -690,21 +721,19 @@ export function LaunchReadinessPage() {
   }
 
   const summary = releaseSummaryQuery.data!;
-  const scopedApprovals = selectedReleaseIdentifier
-    ? approvalsQuery.data!.approvals.filter(
-        (approval) => approval.releaseIdentifier === selectedReleaseIdentifier
-      )
-    : approvalsQuery.data!.approvals;
+  const scopedApprovals = approvalsQuery.data!.approvals;
   const releaseScopeOptions = [
     ...new Set(
       [
-        ...approvalsQuery.data!.approvals.map((approval) => approval.releaseIdentifier),
-        ...evidenceQuery.data!.evidence
+        ...approvalsCatalogQuery.data!.approvals.map(
+          (approval) => approval.releaseIdentifier
+        ),
+        ...evidenceCatalogQuery.data!.evidence
           .map((item) => item.releaseIdentifier)
           .filter((value): value is string => Boolean(value))
       ].filter((value): value is string => Boolean(value))
     )
-  ];
+  ].sort((left, right) => right.localeCompare(left));
   const selectedEvidence =
     evidenceQuery.data!.evidence.find((item) => item.id === selectedEvidenceId) ??
     null;

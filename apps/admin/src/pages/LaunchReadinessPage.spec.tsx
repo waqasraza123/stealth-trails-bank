@@ -219,14 +219,29 @@ describe("LaunchReadinessPage", () => {
       })
     );
 
-    vi.mocked(listReleaseReadinessApprovals).mockResolvedValue({
-      approvals: [
-        buildApproval("launch-2026.04.13.1"),
-        buildApproval("launch-2026.04.13.2")
-      ],
-      limit: 20,
-      totalCount: 2
-    });
+    vi.mocked(listReleaseReadinessApprovals).mockImplementation(
+      async (_session, params) => {
+        const approvals = [
+          buildApproval("launch-2026.04.13.1"),
+          buildApproval("launch-2026.04.13.2")
+        ];
+        const releaseIdentifier =
+          typeof params.releaseIdentifier === "string"
+            ? params.releaseIdentifier
+            : undefined;
+        const scopedApprovals = releaseIdentifier
+          ? approvals.filter(
+              (approval) => approval.releaseIdentifier === releaseIdentifier
+            )
+          : approvals;
+
+        return {
+          approvals: scopedApprovals,
+          limit: typeof params.limit === "number" ? params.limit : 20,
+          totalCount: scopedApprovals.length
+        };
+      }
+    );
     vi.mocked(listPendingReleases).mockResolvedValue({
       releases: [],
       limit: 20,
@@ -288,6 +303,18 @@ describe("LaunchReadinessPage", () => {
       );
     });
 
+    await waitFor(() => {
+      expect(vi.mocked(listReleaseReadinessApprovals)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operatorId: "ops_1"
+        }),
+        {
+          limit: 20,
+          releaseIdentifier: "launch-2026.04.13.1"
+        }
+      );
+    });
+
     expect(screen.getByLabelText("Release scope")).toHaveValue(
       "launch-2026.04.13.1"
     );
@@ -327,6 +354,18 @@ describe("LaunchReadinessPage", () => {
 
     await waitFor(() => {
       expect(vi.mocked(listReleaseReadinessEvidence)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operatorId: "ops_1"
+        }),
+        {
+          limit: 20,
+          releaseIdentifier: "launch-2026.04.13.2"
+        }
+      );
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(listReleaseReadinessApprovals)).toHaveBeenCalledWith(
         expect.objectContaining({
           operatorId: "ops_1"
         }),

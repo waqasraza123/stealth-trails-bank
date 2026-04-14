@@ -273,7 +273,7 @@ export class ReleaseReadinessService {
 
     if (query.releaseIdentifier) {
       where.releaseIdentifier = {
-        contains: query.releaseIdentifier.trim(),
+        equals: query.releaseIdentifier.trim(),
         mode: Prisma.QueryMode.insensitive
       };
     }
@@ -349,7 +349,7 @@ export class ReleaseReadinessService {
 
     if (query.releaseIdentifier) {
       where.releaseIdentifier = {
-        contains: query.releaseIdentifier.trim(),
+        equals: query.releaseIdentifier.trim(),
         mode: Prisma.QueryMode.insensitive
       };
     }

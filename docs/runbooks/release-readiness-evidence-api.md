@@ -114,7 +114,7 @@ Optional fields:
 - `warning`: one or more proofs are still missing accepted evidence
 - `critical`: the latest evidence for at least one required proof is `failed`
 
-`GET /release-readiness/internal/evidence` also accepts an optional `releaseIdentifier` filter so operators can inspect the exact evidence set attached to one launch candidate.
+`GET /release-readiness/internal/evidence` also accepts an optional `releaseIdentifier` filter. That filter is an exact launch-candidate match, so `launch-2026.04.13.1` does not inherit evidence from similarly prefixed identifiers such as `launch-2026.04.13.10`.
 
 ## Launch rule
 

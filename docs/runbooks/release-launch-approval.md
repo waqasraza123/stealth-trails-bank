@@ -22,6 +22,8 @@ Required operator headers:
 
 ## Requesting approval
 
+`GET /release-readiness/internal/approvals` accepts the same bounded filters used by the operator console, including an exact `releaseIdentifier` match for one launch candidate.
+
 `POST /release-readiness/internal/approvals` records:
 
 - release identifier

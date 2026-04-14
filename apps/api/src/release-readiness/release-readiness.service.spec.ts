@@ -295,7 +295,7 @@ describe("ReleaseReadinessService", () => {
         where: expect.objectContaining({
           environment: "staging",
           releaseIdentifier: {
-            contains: "release-2026-04-08.1",
+            equals: "release-2026-04-08.1",
             mode: "insensitive"
           }
         })
@@ -303,6 +303,45 @@ describe("ReleaseReadinessService", () => {
     );
     expect(result.totalCount).toBe(2);
     expect(result.evidence).toHaveLength(2);
+  });
+
+  it("lists governed approvals using exact release filters", async () => {
+    const { service, prismaService } = createService();
+    (
+      prismaService.releaseReadinessApproval.findMany as jest.Mock
+    ).mockResolvedValue([
+      buildApprovalRecord({
+        id: "approval_2",
+        status: ReleaseReadinessApprovalStatus.approved,
+        approvedByOperatorId: "approver_1",
+        approvedByOperatorRole: "risk_manager",
+        approvedAt: new Date("2026-04-08T13:00:00.000Z")
+      })
+    ]);
+    (prismaService.releaseReadinessApproval.count as jest.Mock).mockResolvedValue(1);
+
+    const result = await service.listApprovals({
+      limit: 5,
+      status: "approved",
+      environment: "production_like",
+      releaseIdentifier: "release-2026-04-08.1"
+    });
+
+    expect(prismaService.releaseReadinessApproval.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        take: 5,
+        where: expect.objectContaining({
+          status: "approved",
+          environment: "production_like",
+          releaseIdentifier: {
+            equals: "release-2026-04-08.1",
+            mode: "insensitive"
+          }
+        })
+      })
+    );
+    expect(result.totalCount).toBe(1);
+    expect(result.approvals).toHaveLength(1);
   });
 
   it("derives readiness summary from the latest evidence per required check", async () => {
