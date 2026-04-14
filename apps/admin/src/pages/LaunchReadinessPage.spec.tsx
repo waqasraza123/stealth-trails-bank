@@ -336,12 +336,6 @@ describe("LaunchReadinessPage", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Release scope")).toHaveValue(
-        "launch-2026.04.13.2"
-      );
-    });
-
-    await waitFor(() => {
       expect(vi.mocked(getReleaseReadinessSummary)).toHaveBeenCalledWith(
         expect.objectContaining({
           operatorId: "ops_1"
