@@ -1,11 +1,27 @@
-import { IsNotEmpty, IsOptional, IsString } from "class-validator";
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength
+} from "class-validator";
+import {
+  OPERATOR_CASE_NOTE_CONTENT_PATTERN,
+  OPERATOR_CASE_NOTE_MAX_LENGTH,
+  OPERATOR_CASE_REASON_CODE_MAX_LENGTH,
+  OPERATOR_CASE_REASON_CODE_PATTERN
+} from "../../review-cases/dto/operator-case-input.validation";
 
 export class ApplyAccountRestrictionDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(OPERATOR_CASE_REASON_CODE_MAX_LENGTH)
+  @Matches(OPERATOR_CASE_REASON_CODE_PATTERN)
   restrictionReasonCode!: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(OPERATOR_CASE_NOTE_MAX_LENGTH)
+  @Matches(OPERATOR_CASE_NOTE_CONTENT_PATTERN)
   note?: string;
 }

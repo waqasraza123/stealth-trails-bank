@@ -3,9 +3,15 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   Max,
+  MaxLength,
   Min
 } from "class-validator";
+import {
+  OPERATOR_CASE_NOTE_CONTENT_PATTERN,
+  OPERATOR_CASE_NOTE_MAX_LENGTH
+} from "../../review-cases/dto/operator-case-input.validation";
 
 export class OpenCustomerOversightIncidentDto {
   @IsOptional()
@@ -24,5 +30,7 @@ export class OpenCustomerOversightIncidentDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(OPERATOR_CASE_NOTE_MAX_LENGTH)
+  @Matches(OPERATOR_CASE_NOTE_CONTENT_PATTERN)
   note?: string;
 }

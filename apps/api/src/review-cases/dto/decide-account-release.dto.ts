@@ -1,4 +1,8 @@
-import { IsIn, IsOptional, IsString } from "class-validator";
+import { IsIn, IsOptional, IsString, Matches, MaxLength } from "class-validator";
+import {
+  OPERATOR_CASE_NOTE_CONTENT_PATTERN,
+  OPERATOR_CASE_NOTE_MAX_LENGTH
+} from "./operator-case-input.validation";
 
 export class DecideAccountReleaseDto {
   @IsIn(["approved", "denied"])
@@ -6,5 +10,7 @@ export class DecideAccountReleaseDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(OPERATOR_CASE_NOTE_MAX_LENGTH)
+  @Matches(OPERATOR_CASE_NOTE_CONTENT_PATTERN)
   note?: string;
 }
