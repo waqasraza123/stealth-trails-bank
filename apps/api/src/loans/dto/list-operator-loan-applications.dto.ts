@@ -1,5 +1,14 @@
 import { Transform } from "class-transformer";
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min
+} from "class-validator";
+import { OPERATOR_LOAN_SEARCH_MAX_LENGTH } from "./operator-loan-input.validation";
 
 const LOAN_STATUSES = [
   "submitted",
@@ -29,5 +38,6 @@ export class ListOperatorLoanApplicationsDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(OPERATOR_LOAN_SEARCH_MAX_LENGTH)
   search?: string;
 }
