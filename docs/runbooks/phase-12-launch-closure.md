@@ -137,7 +137,7 @@ pnpm release:readiness:probe -- \
   --expected-target-name ops-critical \
   --expected-target-health-status critical \
   --environment production_like \
-  --release-id api-2026.04.10.1 \
+  --release-id launch-2026.04.10.1 \
   --record-evidence
 ```
 
@@ -153,7 +153,7 @@ pnpm release:readiness:probe -- \
   --expected-alert-id alert_123 \
   --expected-min-re-escalations 1 \
   --environment production_like \
-  --release-id api-2026.04.10.1 \
+  --release-id launch-2026.04.10.1 \
   --record-evidence
 ```
 
@@ -167,7 +167,7 @@ pnpm release:readiness:probe -- \
   --api-key "$INTERNAL_OPERATOR_API_KEY" \
   --operator-role operations_admin \
   --environment production_like \
-  --release-id api-2026.04.10.1 \
+  --release-id launch-2026.04.10.1 \
   --backup-ref snapshot-2026-04-10T08:00Z \
   --record-evidence
 ```
@@ -182,7 +182,7 @@ pnpm release:readiness:probe -- \
   --api-key "$INTERNAL_OPERATOR_API_KEY" \
   --operator-role operations_admin \
   --environment production_like \
-  --release-id api-2026.04.10.1 \
+  --release-id launch-2026.04.10.1 \
   --rollback-release-id api-2026.04.09.4 \
   --record-evidence
 ```
@@ -199,7 +199,7 @@ pnpm release:readiness:probe -- \
   --expected-worker-id worker-staging-1 \
   --expected-min-healthy-workers 1 \
   --environment production_like \
-  --release-id worker-2026.04.10.1 \
+  --release-id launch-2026.04.10.1 \
   --rollback-release-id worker-2026.04.09.4 \
   --record-evidence
 ```

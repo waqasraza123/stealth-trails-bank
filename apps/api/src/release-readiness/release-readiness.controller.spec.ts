@@ -98,6 +98,39 @@ describe("ReleaseReadinessController", () => {
     jest.clearAllMocks();
   });
 
+  it("passes scoped release-readiness summary filters through", async () => {
+    releaseReadinessService.getSummary.mockResolvedValue({
+      generatedAt: "2026-04-10T12:00:00.000Z",
+      releaseIdentifier: "launch-2026.04.10.1",
+      environment: "production_like",
+      overallStatus: "warning",
+      summary: {
+        requiredCheckCount: 10,
+        passedCheckCount: 3,
+        failedCheckCount: 0,
+        pendingCheckCount: 7
+      },
+      requiredChecks: [],
+      recentEvidence: []
+    });
+
+    const response = await request(app.getHttpServer())
+      .get("/release-readiness/internal/summary")
+      .set("x-operator-api-key", "test-operator-key")
+      .set("x-operator-id", "ops_1")
+      .query({
+        releaseIdentifier: "launch-2026.04.10.1",
+        environment: "production_like"
+      })
+      .expect(200);
+
+    expect(releaseReadinessService.getSummary).toHaveBeenCalledWith({
+      releaseIdentifier: "launch-2026.04.10.1",
+      environment: "production_like"
+    });
+    expect(response.body.data.releaseIdentifier).toBe("launch-2026.04.10.1");
+  });
+
   it("rejects malformed release-readiness evidence filters", async () => {
     await request(app.getHttpServer())
       .get("/release-readiness/internal/evidence")
@@ -127,7 +160,8 @@ describe("ReleaseReadinessController", () => {
         sinceDays: "30",
         evidenceType: "backend_integration_suite",
         environment: "staging",
-        status: "passed"
+        status: "passed",
+        releaseIdentifier: "launch-2026.04.10.1"
       })
       .expect(200);
 
@@ -136,7 +170,8 @@ describe("ReleaseReadinessController", () => {
       sinceDays: 30,
       evidenceType: "backend_integration_suite",
       environment: "staging",
-      status: "passed"
+      status: "passed",
+      releaseIdentifier: "launch-2026.04.10.1"
     });
     expect(response.body).toEqual({
       status: "success",

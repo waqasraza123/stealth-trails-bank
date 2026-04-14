@@ -14,6 +14,7 @@ import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-ap
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { CreateReleaseReadinessApprovalDto } from "./dto/create-release-readiness-approval.dto";
 import { CreateReleaseReadinessEvidenceDto } from "./dto/create-release-readiness-evidence.dto";
+import { GetReleaseReadinessSummaryDto } from "./dto/get-release-readiness-summary.dto";
 import { LaunchClosureManifestDto } from "./dto/launch-closure.dto";
 import { ListReleaseReadinessApprovalsDto } from "./dto/list-release-readiness-approvals.dto";
 import { ListReleaseReadinessEvidenceDto } from "./dto/list-release-readiness-evidence.dto";
@@ -44,8 +45,17 @@ export class ReleaseReadinessController {
   ) {}
 
   @Get("summary")
-  async getSummary(): Promise<CustomJsonResponse> {
-    const result = await this.releaseReadinessService.getSummary();
+  async getSummary(
+    @Query(
+      new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
+    query: GetReleaseReadinessSummaryDto
+  ): Promise<CustomJsonResponse> {
+    const result = await this.releaseReadinessService.getSummary(query);
 
     return {
       status: "success",

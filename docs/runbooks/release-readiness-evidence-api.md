@@ -86,7 +86,7 @@ Optional fields:
   "evidenceType": "database_restore_drill",
   "environment": "production_like",
   "status": "passed",
-  "releaseIdentifier": "api-2026.04.08.1",
+  "releaseIdentifier": "launch-2026.04.08.1",
   "backupReference": "snapshot-2026-04-08T09:00Z",
   "summary": "Restored the latest production-like backup and verified auth, review, reconciliation, operations status, and incident package reads.",
   "note": "No missing-table or schema-drift issues were observed.",
@@ -108,11 +108,13 @@ Optional fields:
 
 ## Summary behavior
 
-`GET /release-readiness/internal/summary` derives the current checkpoint from the latest accepted evidence for each required proof.
+`GET /release-readiness/internal/summary` derives the current checkpoint from the latest accepted evidence for each required proof. When `releaseIdentifier` is supplied, the summary is scoped to that launch candidate so one release cannot inherit another release's proof.
 
 - `healthy`: every required proof has a latest `passed` record
 - `warning`: one or more proofs are still missing accepted evidence
 - `critical`: the latest evidence for at least one required proof is `failed`
+
+`GET /release-readiness/internal/evidence` also accepts an optional `releaseIdentifier` filter so operators can inspect the exact evidence set attached to one launch candidate.
 
 ## Launch rule
 

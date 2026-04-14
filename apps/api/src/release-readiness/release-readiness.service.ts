@@ -69,6 +69,8 @@ type ReleaseReadinessEvidenceList = {
 
 type ReleaseReadinessSummary = {
   generatedAt: string;
+  releaseIdentifier: string | null;
+  environment: ReleaseReadinessEnvironment | null;
   overallStatus: "healthy" | "warning" | "critical";
   summary: {
     requiredCheckCount: number;
@@ -86,6 +88,11 @@ type ReleaseReadinessSummary = {
     latestEvidence: ReleaseReadinessEvidenceProjection | null;
   }>;
   recentEvidence: ReleaseReadinessEvidenceProjection[];
+};
+
+type ReleaseReadinessSummaryScope = {
+  releaseIdentifier?: string | null;
+  environment?: ReleaseReadinessEnvironment | null;
 };
 
 type ReleaseReadinessApprovalChecklist = {
@@ -264,10 +271,64 @@ export class ReleaseReadinessService {
       where.status = query.status;
     }
 
+    if (query.releaseIdentifier) {
+      where.releaseIdentifier = {
+        contains: query.releaseIdentifier.trim(),
+        mode: Prisma.QueryMode.insensitive
+      };
+    }
+
     if (query.sinceDays) {
       where.observedAt = {
         gte: new Date(Date.now() - query.sinceDays * 24 * 60 * 60 * 1000)
       };
+    }
+
+    return where;
+  }
+
+  private normalizeSummaryScope(
+    scope?: ReleaseReadinessSummaryScope
+  ): ReleaseReadinessSummaryScope {
+    return {
+      releaseIdentifier: this.normalizeOptionalString(scope?.releaseIdentifier),
+      environment: scope?.environment ?? null
+    };
+  }
+
+  private buildSummaryEvidenceWhere(
+    scope?: ReleaseReadinessSummaryScope
+  ): Prisma.ReleaseReadinessEvidenceWhereInput {
+    const normalizedScope = this.normalizeSummaryScope(scope);
+    const where: Prisma.ReleaseReadinessEvidenceWhereInput = {
+      evidenceType: {
+        in: requiredReleaseReadinessChecks.map((check) => check.evidenceType)
+      }
+    };
+
+    if (normalizedScope.releaseIdentifier) {
+      where.releaseIdentifier = normalizedScope.releaseIdentifier;
+    }
+
+    if (normalizedScope.environment) {
+      where.environment = normalizedScope.environment;
+    }
+
+    return where;
+  }
+
+  private buildRecentEvidenceWhere(
+    scope?: ReleaseReadinessSummaryScope
+  ): Prisma.ReleaseReadinessEvidenceWhereInput {
+    const normalizedScope = this.normalizeSummaryScope(scope);
+    const where: Prisma.ReleaseReadinessEvidenceWhereInput = {};
+
+    if (normalizedScope.releaseIdentifier) {
+      where.releaseIdentifier = normalizedScope.releaseIdentifier;
+    }
+
+    if (normalizedScope.environment) {
+      where.environment = normalizedScope.environment;
     }
 
     return where;
@@ -594,24 +655,16 @@ export class ReleaseReadinessService {
     };
   }
 
-  async getSummary(): Promise<ReleaseReadinessSummary> {
-    const acceptedEnvironments = [
-      ...new Set(
-        requiredReleaseReadinessChecks.flatMap((check) => check.acceptedEnvironments)
-      )
-    ];
+  async getSummary(
+    scope?: ReleaseReadinessSummaryScope
+  ): Promise<ReleaseReadinessSummary> {
+    const normalizedScope = this.normalizeSummaryScope(scope);
     const candidateEvidence = await this.prismaService.releaseReadinessEvidence.findMany({
-      where: {
-        evidenceType: {
-          in: requiredReleaseReadinessChecks.map((check) => check.evidenceType)
-        },
-        environment: {
-          in: acceptedEnvironments
-        }
-      },
+      where: this.buildSummaryEvidenceWhere(normalizedScope),
       orderBy: [{ observedAt: "desc" }, { createdAt: "desc" }]
     });
     const recentEvidence = await this.prismaService.releaseReadinessEvidence.findMany({
+      where: this.buildRecentEvidenceWhere(normalizedScope),
       orderBy: [{ observedAt: "desc" }, { createdAt: "desc" }],
       take: 10
     });
@@ -669,6 +722,8 @@ export class ReleaseReadinessService {
 
     return {
       generatedAt: new Date().toISOString(),
+      releaseIdentifier: normalizedScope.releaseIdentifier ?? null,
+      environment: normalizedScope.environment ?? null,
       overallStatus:
         failedCheckCount > 0
           ? "critical"
@@ -711,7 +766,9 @@ export class ReleaseReadinessService {
         },
         orderBy: [{ requestedAt: "desc" }]
       }),
-      this.getSummary()
+      this.getSummary({
+        releaseIdentifier
+      })
     ]);
 
     if (existingPendingApproval) {
@@ -808,7 +865,9 @@ export class ReleaseReadinessService {
       );
     }
 
-    const readinessSummary = await this.getSummary();
+    const readinessSummary = await this.getSummary({
+      releaseIdentifier: approval.releaseIdentifier
+    });
     const checklist = this.mapApprovalChecklist(approval);
     const gate = this.evaluateApprovalGate(
       readinessSummary,
@@ -902,7 +961,9 @@ export class ReleaseReadinessService {
       );
     }
 
-    const readinessSummary = await this.getSummary();
+    const readinessSummary = await this.getSummary({
+      releaseIdentifier: approval.releaseIdentifier
+    });
     const checklist = this.mapApprovalChecklist(approval);
     const evidenceSnapshot = this.buildApprovalEvidenceSnapshot(readinessSummary);
     const rejectedGate = this.evaluateApprovalGate(
@@ -970,7 +1031,9 @@ export class ReleaseReadinessService {
 
     const currentSummary =
       approval.status === ReleaseReadinessApprovalStatus.pending_approval
-        ? await this.getSummary()
+        ? await this.getSummary({
+            releaseIdentifier: approval.releaseIdentifier
+          })
         : undefined;
 
     return {
@@ -984,7 +1047,7 @@ export class ReleaseReadinessService {
     const limit = query.limit ?? 10;
     const where = this.buildApprovalWhere(query);
 
-    const [approvals, totalCount, currentSummary] = await Promise.all([
+    const [approvals, totalCount] = await Promise.all([
       this.prismaService.releaseReadinessApproval.findMany({
         where,
         orderBy: [{ requestedAt: "desc" }, { createdAt: "desc" }],
@@ -992,13 +1055,43 @@ export class ReleaseReadinessService {
       }),
       this.prismaService.releaseReadinessApproval.count({
         where
-      }),
-      this.getSummary()
+      })
     ]);
+
+    const pendingApprovalScopeKeys = [
+      ...new Set(
+        approvals
+          .filter(
+            (approval) =>
+              approval.status === ReleaseReadinessApprovalStatus.pending_approval
+          )
+          .map(
+            (approval) =>
+              approval.releaseIdentifier
+          )
+      )
+    ];
+    const currentSummaries = new Map<string, ReleaseReadinessSummary>();
+
+    await Promise.all(
+      pendingApprovalScopeKeys.map(async (scopeKey) => {
+        const summary = await this.getSummary({
+          releaseIdentifier: scopeKey
+        });
+        currentSummaries.set(scopeKey, summary);
+      })
+    );
 
     return {
       approvals: approvals.map((record) =>
-        this.mapApprovalProjection(record, currentSummary)
+        this.mapApprovalProjection(
+          record,
+          record.status === ReleaseReadinessApprovalStatus.pending_approval
+            ? currentSummaries.get(
+                record.releaseIdentifier
+              )
+            : undefined
+        )
       ),
       limit,
       totalCount

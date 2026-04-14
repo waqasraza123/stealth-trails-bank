@@ -285,6 +285,7 @@ describe("ReleaseReadinessService", () => {
     const result = await service.listEvidence({
       limit: 5,
       environment: "staging",
+      releaseIdentifier: "release-2026-04-08.1",
       sinceDays: 30
     });
 
@@ -292,7 +293,11 @@ describe("ReleaseReadinessService", () => {
       expect.objectContaining({
         take: 5,
         where: expect.objectContaining({
-          environment: "staging"
+          environment: "staging",
+          releaseIdentifier: {
+            contains: "release-2026-04-08.1",
+            mode: "insensitive"
+          }
         })
       })
     );
@@ -352,6 +357,36 @@ describe("ReleaseReadinessService", () => {
     expect(result.recentEvidence).toHaveLength(2);
   });
 
+  it("scopes readiness summary to the requested release identifier", async () => {
+    const { service, prismaService } = createService();
+    (prismaService.releaseReadinessEvidence.findMany as jest.Mock)
+      .mockResolvedValueOnce([
+        buildEvidenceRecord({
+          releaseIdentifier: "release-2026-04-08.1",
+          evidenceType: ReleaseReadinessEvidenceType.platform_alert_delivery_slo
+        })
+      ])
+      .mockResolvedValueOnce([
+        buildEvidenceRecord({
+          releaseIdentifier: "release-2026-04-08.1"
+        })
+      ]);
+
+    const result = await service.getSummary({
+      releaseIdentifier: " release-2026-04-08.1 "
+    });
+
+    expect(prismaService.releaseReadinessEvidence.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          releaseIdentifier: "release-2026-04-08.1"
+        })
+      })
+    );
+    expect(result.releaseIdentifier).toBe("release-2026-04-08.1");
+  });
+
   it("requests launch approval and snapshots checklist blockers from live evidence", async () => {
     const { service, prismaService, transactionClient } = createService();
     (prismaService.releaseReadinessApproval.findFirst as jest.Mock).mockResolvedValue(
@@ -394,10 +429,74 @@ describe("ReleaseReadinessService", () => {
         })
       })
     );
+    expect(prismaService.releaseReadinessEvidence.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          releaseIdentifier: "release-2026-04-08.1"
+        })
+      })
+    );
     expect(transactionClient.auditEvent.create).toHaveBeenCalledTimes(1);
     expect(result.approval.gate.overallStatus).toBe("ready");
     expect(result.approval.gate.approvalEligible).toBe(true);
     expect(result.approval.gate.staleEvidenceTypes).toEqual([]);
+  });
+
+  it("keeps launch approval blocked when the latest evidence belongs to another release", async () => {
+    const { service, prismaService, transactionClient } = createService();
+    (prismaService.releaseReadinessApproval.findFirst as jest.Mock).mockResolvedValue(
+      null
+    );
+    (prismaService.releaseReadinessEvidence.findMany as jest.Mock).mockImplementation(
+      async (args?: {
+        where?: {
+          releaseIdentifier?: string;
+        };
+      }) => {
+        if (args?.where?.releaseIdentifier === "release-2026-04-08.1") {
+          return [];
+        }
+
+        return [
+          buildEvidenceRecord({
+            releaseIdentifier: "release-2026-04-07.9"
+          })
+        ];
+      }
+    );
+    (
+      transactionClient.releaseReadinessApproval.create as jest.Mock
+    ).mockResolvedValue(buildApprovalRecord());
+
+    const result = await service.requestApproval(
+      {
+        releaseIdentifier: "release-2026-04-08.1",
+        environment: "production_like",
+        rollbackReleaseIdentifier: "release-2026-04-07.3",
+        summary: "Launch posture reviewed.",
+        securityConfigurationComplete: true,
+        accessAndGovernanceComplete: true,
+        dataAndRecoveryComplete: true,
+        platformHealthComplete: true,
+        functionalProofComplete: true,
+        contractAndChainProofComplete: true,
+        finalSignoffComplete: true,
+        unresolvedRisksAccepted: true,
+        openBlockers: []
+      },
+      "ops_1",
+      "operations_admin"
+    );
+
+    expect(result.approval.gate.overallStatus).toBe("blocked");
+    expect(result.approval.gate.approvalEligible).toBe(false);
+    expect(result.approval.gate.missingEvidenceTypes).toEqual(
+      expect.arrayContaining([
+        ReleaseReadinessEvidenceType.platform_alert_delivery_slo,
+        ReleaseReadinessEvidenceType.end_to_end_finance_flows
+      ])
+    );
   });
 
   it("blocks launch approval requests for operators outside the request roster", async () => {

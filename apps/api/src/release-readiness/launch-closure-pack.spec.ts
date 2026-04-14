@@ -105,6 +105,7 @@ describe("launch-closure-pack", () => {
 
       expect(executionPlan).toContain("pnpm release:readiness:probe --");
       expect(executionPlan).toContain("--probe worker_rollback_drill");
+      expect(executionPlan).toContain("--release-id launch-2026.04.10.1");
       expect(executionPlan).toContain("pnpm release:readiness:verify --");
       expect(executionPlan).toContain("curl -sS -X POST");
       expect(approvalRequest).toContain('"releaseIdentifier": "launch-2026.04.10.1"');

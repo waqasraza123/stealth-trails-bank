@@ -232,7 +232,8 @@ function buildLaunchClosureArtifacts(
         `API base URL: ${manifest.baseUrls.api}`,
         `Expected target name: ${manifest.alerting.expectedTargetName}`,
         `Expected target health status: ${manifest.alerting.expectedTargetHealthStatus}`,
-        `Release identifier recorded with evidence: ${manifest.artifacts.apiReleaseId}`,
+        `Launch release identifier recorded with evidence: ${manifest.releaseIdentifier}`,
+        `Current API release id: ${manifest.artifacts.apiReleaseId}`,
         `Requester operator: ${manifest.operator.requesterId} (${manifest.operator.requesterRole})`,
         `Operator API key environment variable: ${manifest.operator.apiKeyEnvironmentVariable}`
       ],
@@ -256,7 +257,7 @@ function buildLaunchClosureArtifacts(
         `--expected-target-name ${manifest.alerting.expectedTargetName}`,
         `--expected-target-health-status ${manifest.alerting.expectedTargetHealthStatus}`,
         `--environment ${manifest.environment}`,
-        `--release-id ${manifest.artifacts.apiReleaseId}`,
+        `--release-id ${manifest.releaseIdentifier}`,
         "--record-evidence"
       ])
     },
@@ -272,7 +273,8 @@ function buildLaunchClosureArtifacts(
         manifest.alerting.expectedAlertId
           ? `Expected alert id: ${manifest.alerting.expectedAlertId}`
           : `Expected alert dedupe key: ${manifest.alerting.expectedAlertDedupeKey ?? ""}`,
-        `Release identifier recorded with evidence: ${manifest.artifacts.apiReleaseId}`,
+        `Launch release identifier recorded with evidence: ${manifest.releaseIdentifier}`,
+        `Current API release id: ${manifest.artifacts.apiReleaseId}`,
         `Requester operator: ${manifest.operator.requesterId} (${manifest.operator.requesterRole})`
       ],
       steps: [
@@ -296,7 +298,7 @@ function buildLaunchClosureArtifacts(
           : `--expected-dedupe-key ${manifest.alerting.expectedAlertDedupeKey ?? ""}`,
         `--expected-min-re-escalations ${manifest.alerting.expectedMinReEscalations}`,
         `--environment ${manifest.environment}`,
-        `--release-id ${manifest.artifacts.apiReleaseId}`,
+        `--release-id ${manifest.releaseIdentifier}`,
         "--record-evidence"
       ])
     },
@@ -309,7 +311,8 @@ function buildLaunchClosureArtifacts(
       requiredInputs: [
         `Restore validation API base URL: ${manifest.baseUrls.restoreApi}`,
         `Backup reference: ${manifest.artifacts.backupReference}`,
-        `Release identifier recorded with evidence: ${manifest.artifacts.apiReleaseId}`,
+        `Launch release identifier recorded with evidence: ${manifest.releaseIdentifier}`,
+        `Current API release id: ${manifest.artifacts.apiReleaseId}`,
         `Requester operator: ${manifest.operator.requesterId} (${manifest.operator.requesterRole})`
       ],
       steps: [
@@ -329,7 +332,7 @@ function buildLaunchClosureArtifacts(
         `--api-key \"$${manifest.operator.apiKeyEnvironmentVariable}\"`,
         `--operator-role ${manifest.operator.requesterRole}`,
         `--environment ${manifest.environment}`,
-        `--release-id ${manifest.artifacts.apiReleaseId}`,
+        `--release-id ${manifest.releaseIdentifier}`,
         `--backup-ref ${manifest.artifacts.backupReference}`,
         "--record-evidence"
       ])
@@ -363,7 +366,7 @@ function buildLaunchClosureArtifacts(
         `--api-key \"$${manifest.operator.apiKeyEnvironmentVariable}\"`,
         `--operator-role ${manifest.operator.requesterRole}`,
         `--environment ${manifest.environment}`,
-        `--release-id ${manifest.artifacts.apiReleaseId}`,
+        `--release-id ${manifest.releaseIdentifier}`,
         `--rollback-release-id ${manifest.artifacts.apiRollbackReleaseId}`,
         "--record-evidence"
       ])
@@ -400,7 +403,7 @@ function buildLaunchClosureArtifacts(
         `--expected-worker-id ${manifest.worker.identifier}`,
         "--expected-min-healthy-workers 1",
         `--environment ${manifest.environment}`,
-        `--release-id ${manifest.artifacts.workerReleaseId}`,
+        `--release-id ${manifest.releaseIdentifier}`,
         `--rollback-release-id ${manifest.artifacts.workerRollbackReleaseId}`,
         "--record-evidence"
       ])
