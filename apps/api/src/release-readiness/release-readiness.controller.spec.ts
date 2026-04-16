@@ -103,6 +103,17 @@ describe("ReleaseReadinessController", () => {
       generatedAt: "2026-04-10T12:00:00.000Z",
       releaseIdentifier: "launch-2026.04.10.1",
       environment: "production_like",
+      approvalPolicy: {
+        requestAllowedOperatorRoles: ["operations_admin"],
+        approverAllowedOperatorRoles: ["compliance_lead"],
+        maximumEvidenceAgeHours: 72,
+        currentOperator: {
+          operatorId: "ops_1",
+          operatorRole: "operations_admin",
+          canRequestApproval: true,
+          canApproveOrReject: false
+        }
+      },
       overallStatus: "warning",
       summary: {
         requiredCheckCount: 10,
@@ -124,10 +135,16 @@ describe("ReleaseReadinessController", () => {
       })
       .expect(200);
 
-    expect(releaseReadinessService.getSummary).toHaveBeenCalledWith({
-      releaseIdentifier: "launch-2026.04.10.1",
-      environment: "production_like"
-    });
+    expect(releaseReadinessService.getSummary).toHaveBeenCalledWith(
+      {
+        releaseIdentifier: "launch-2026.04.10.1",
+        environment: "production_like"
+      },
+      {
+        operatorId: "ops_1",
+        operatorRole: undefined
+      }
+    );
     expect(response.body.data.releaseIdentifier).toBe("launch-2026.04.10.1");
   });
 

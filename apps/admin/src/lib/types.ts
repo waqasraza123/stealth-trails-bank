@@ -968,6 +968,17 @@ export type ReleaseReadinessSummary = {
   generatedAt: string;
   releaseIdentifier: string | null;
   environment: string | null;
+  approvalPolicy: {
+    requestAllowedOperatorRoles: string[];
+    approverAllowedOperatorRoles: string[];
+    maximumEvidenceAgeHours: number;
+    currentOperator: {
+      operatorId: string | null;
+      operatorRole: string | null;
+      canRequestApproval: boolean;
+      canApproveOrReject: boolean;
+    };
+  };
   overallStatus: "healthy" | "warning" | "critical";
   summary: {
     requiredCheckCount: number;

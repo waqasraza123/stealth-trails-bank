@@ -448,9 +448,27 @@ describe("ReleaseReadinessService", () => {
         })
       ]);
 
-    const result = await service.getSummary();
+    const result = await service.getSummary(undefined, {
+      operatorId: "ops_1",
+      operatorRole: "operations_admin"
+    });
 
     expect(result.overallStatus).toBe("critical");
+    expect(result.approvalPolicy).toEqual({
+      requestAllowedOperatorRoles: [
+        "operations_admin",
+        "compliance_lead",
+        "risk_manager"
+      ],
+      approverAllowedOperatorRoles: ["compliance_lead", "risk_manager"],
+      maximumEvidenceAgeHours: 72,
+      currentOperator: {
+        operatorId: "ops_1",
+        operatorRole: "operations_admin",
+        canRequestApproval: true,
+        canApproveOrReject: false
+      }
+    });
     expect(result.summary.requiredCheckCount).toBe(10);
     expect(result.summary.passedCheckCount).toBe(2);
     expect(result.summary.failedCheckCount).toBe(1);
@@ -482,6 +500,9 @@ describe("ReleaseReadinessService", () => {
 
     const result = await service.getSummary({
       releaseIdentifier: " release-2026-04-08.1 "
+    }, {
+      operatorId: "ops_2",
+      operatorRole: "compliance_lead"
     });
 
     expect(prismaService.releaseReadinessEvidence.findMany).toHaveBeenNthCalledWith(
@@ -493,6 +514,12 @@ describe("ReleaseReadinessService", () => {
       })
     );
     expect(result.releaseIdentifier).toBe("release-2026-04-08.1");
+    expect(result.approvalPolicy.currentOperator).toEqual({
+      operatorId: "ops_2",
+      operatorRole: "compliance_lead",
+      canRequestApproval: true,
+      canApproveOrReject: true
+    });
   });
 
   it("requests launch approval and snapshots checklist blockers from live evidence", async () => {

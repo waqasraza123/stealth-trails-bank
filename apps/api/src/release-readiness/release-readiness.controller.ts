@@ -53,9 +53,13 @@ export class ReleaseReadinessController {
         forbidNonWhitelisted: true
       })
     )
-    query: GetReleaseReadinessSummaryDto
+    query: GetReleaseReadinessSummaryDto,
+    @Request() request: InternalOperatorRequest
   ): Promise<CustomJsonResponse> {
-    const result = await this.releaseReadinessService.getSummary(query);
+    const result = await this.releaseReadinessService.getSummary(query, {
+      operatorId: request.internalOperator.operatorId,
+      operatorRole: request.internalOperator.operatorRole
+    });
 
     return {
       status: "success",

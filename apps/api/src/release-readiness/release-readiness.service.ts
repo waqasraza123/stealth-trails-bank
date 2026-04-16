@@ -76,6 +76,17 @@ type ReleaseReadinessSummary = {
   generatedAt: string;
   releaseIdentifier: string | null;
   environment: ReleaseReadinessEnvironment | null;
+  approvalPolicy: {
+    requestAllowedOperatorRoles: string[];
+    approverAllowedOperatorRoles: string[];
+    maximumEvidenceAgeHours: number;
+    currentOperator: {
+      operatorId: string | null;
+      operatorRole: string | null;
+      canRequestApproval: boolean;
+      canApproveOrReject: boolean;
+    };
+  };
   overallStatus: "healthy" | "warning" | "critical";
   summary: {
     requiredCheckCount: number;
@@ -245,6 +256,43 @@ export class ReleaseReadinessService {
       this.approvalAllowedOperatorRoles,
       "Operator role is not authorized to approve or reject launch readiness."
     );
+  }
+
+  private isOperatorRoleAllowed(
+    operatorRole: string | undefined | null,
+    allowedOperatorRoles: readonly string[]
+  ): boolean {
+    const normalizedOperatorRole = normalizeOperatorRole(operatorRole);
+
+    return Boolean(
+      normalizedOperatorRole &&
+        allowedOperatorRoles.includes(normalizedOperatorRole)
+    );
+  }
+
+  private buildApprovalPolicy(
+    operatorId?: string | null,
+    operatorRole?: string | null
+  ): ReleaseReadinessSummary["approvalPolicy"] {
+    const normalizedOperatorRole = normalizeOperatorRole(operatorRole);
+
+    return {
+      requestAllowedOperatorRoles: [...this.requestAllowedOperatorRoles],
+      approverAllowedOperatorRoles: [...this.approvalAllowedOperatorRoles],
+      maximumEvidenceAgeHours: this.maxEvidenceAgeHours,
+      currentOperator: {
+        operatorId: operatorId?.trim() || null,
+        operatorRole: normalizedOperatorRole,
+        canRequestApproval: this.isOperatorRoleAllowed(
+          normalizedOperatorRole,
+          this.requestAllowedOperatorRoles
+        ),
+        canApproveOrReject: this.isOperatorRoleAllowed(
+          normalizedOperatorRole,
+          this.approvalAllowedOperatorRoles
+        )
+      }
+    };
   }
 
   private mapEvidenceProjection(
@@ -800,7 +848,11 @@ export class ReleaseReadinessService {
   }
 
   async getSummary(
-    scope?: ReleaseReadinessSummaryScope
+    scope?: ReleaseReadinessSummaryScope,
+    operatorContext?: {
+      operatorId?: string | null;
+      operatorRole?: string | null;
+    }
   ): Promise<ReleaseReadinessSummary> {
     const normalizedScope = this.normalizeSummaryScope(scope);
     const candidateEvidence = await this.prismaService.releaseReadinessEvidence.findMany({
@@ -868,6 +920,10 @@ export class ReleaseReadinessService {
       generatedAt: new Date().toISOString(),
       releaseIdentifier: normalizedScope.releaseIdentifier ?? null,
       environment: normalizedScope.environment ?? null,
+      approvalPolicy: this.buildApprovalPolicy(
+        operatorContext?.operatorId,
+        operatorContext?.operatorRole
+      ),
       overallStatus:
         failedCheckCount > 0
           ? "critical"
