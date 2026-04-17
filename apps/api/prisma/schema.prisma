@@ -1399,6 +1399,8 @@ model ReleaseReadinessApproval {
   rejectedByOperatorRole        String?
   supersededByOperatorId        String?
   supersededByOperatorRole      String?
+  supersedesApprovalId          String?                        @unique
+  supersededByApprovalId        String?                        @unique
   securityConfigurationComplete Boolean                        @default(false)
   accessAndGovernanceComplete   Boolean                        @default(false)
   dataAndRecoveryComplete       Boolean                        @default(false)
@@ -1426,6 +1428,8 @@ model ReleaseReadinessApproval {
   @@index([requestedByOperatorId, requestedAt])
   @@index([approvedByOperatorId, approvedAt])
   @@index([launchClosurePackId])
+  @@index([supersedesApprovalId])
+  @@index([supersededByApprovalId])
 }
 
 model ReleaseLaunchClosurePack {

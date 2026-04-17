@@ -1386,6 +1386,18 @@ export function LaunchReadinessPage() {
                     items={[
                       { label: "Approval reference", value: selectedApproval.id, mono: true },
                       {
+                        label: "Supersedes approval",
+                        value: selectedApproval.supersedesApprovalId ?? "Origin approval",
+                        mono: Boolean(selectedApproval.supersedesApprovalId)
+                      },
+                      {
+                        label: "Superseded by approval",
+                        value:
+                          selectedApproval.supersededByApprovalId ??
+                          "No replacement approval",
+                        mono: Boolean(selectedApproval.supersededByApprovalId)
+                      },
+                      {
                         label: "Release identifier",
                         value: selectedApproval.releaseIdentifier,
                         mono: true

@@ -120,6 +120,8 @@ function buildEvidenceList(releaseIdentifier: string | undefined) {
 function buildApproval(releaseIdentifier: string) {
   return {
     id: `${releaseIdentifier}-approval`,
+    supersedesApprovalId: null,
+    supersededByApprovalId: null,
     releaseIdentifier,
     environment: "production_like",
     launchClosurePack: {
@@ -353,6 +355,7 @@ describe("LaunchReadinessPage", () => {
         approval: {
           ...buildApproval("launch-2026.04.13.2"),
           id: `${approvalId}-rebound`,
+          supersedesApprovalId: approvalId,
           launchClosurePack: {
             id: payload.launchClosurePackId,
             version: 4,
@@ -628,6 +631,7 @@ describe("LaunchReadinessPage", () => {
         {
           ...buildApproval("launch-2026.04.13.1"),
           status: "superseded" as const,
+          supersededByApprovalId: "launch-2026.04.13.1-approval-rebound",
           supersededByOperatorId: "ops_2",
           supersededByOperatorRole: "operations_admin",
           supersededAt: "2026-04-14T11:00:00.000Z"

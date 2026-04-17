@@ -1065,6 +1065,8 @@ export type ReleaseReadinessApprovalGate = {
 
 export type ReleaseReadinessApproval = {
   id: string;
+  supersedesApprovalId: string | null;
+  supersededByApprovalId: string | null;
   releaseIdentifier: string;
   environment: string;
   launchClosurePack: {

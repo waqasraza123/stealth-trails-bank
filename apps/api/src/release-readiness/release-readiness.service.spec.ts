@@ -61,6 +61,8 @@ function buildApprovalRecord(
     rejectedByOperatorRole: null,
     supersededByOperatorId: null,
     supersededByOperatorRole: null,
+    supersedesApprovalId: null,
+    supersededByApprovalId: null,
     securityConfigurationComplete: true,
     accessAndGovernanceComplete: true,
     dataAndRecoveryComplete: true,
@@ -947,6 +949,7 @@ describe("ReleaseReadinessService", () => {
     ).mockResolvedValue(
       buildApprovalRecord({
         id: "approval_2",
+        supersedesApprovalId: "approval_1",
         launchClosurePackId: "pack_2",
         launchClosurePackVersion: 2,
         launchClosurePackChecksumSha256: "checksum_2",
@@ -981,6 +984,7 @@ describe("ReleaseReadinessService", () => {
           status: ReleaseReadinessApprovalStatus.superseded,
           supersededByOperatorId: "ops_1",
           supersededByOperatorRole: "operations_admin",
+          supersededByApprovalId: "approval_2",
           supersededAt: expect.any(Date)
         })
       })
@@ -990,6 +994,7 @@ describe("ReleaseReadinessService", () => {
         data: expect.objectContaining({
           releaseIdentifier: "release-2026-04-08.1",
           environment: ReleaseReadinessEnvironment.production_like,
+          supersedesApprovalId: "approval_1",
           launchClosurePackId: "pack_2",
           launchClosurePackVersion: 2,
           launchClosurePackChecksumSha256: "checksum_2",
@@ -1004,13 +1009,16 @@ describe("ReleaseReadinessService", () => {
           targetId: "approval_1",
           metadata: expect.objectContaining({
             supersededApprovalId: "approval_1",
+            supersededByApprovalId: "approval_2",
             nextApprovalId: "approval_2",
+            nextApprovalSupersedesApprovalId: "approval_1",
             nextLaunchClosurePackId: "pack_2"
           })
         })
       })
     );
     expect(result.approval.id).toBe("approval_2");
+    expect(result.approval.supersedesApprovalId).toBe("approval_1");
     expect(result.approval.launchClosurePack?.id).toBe("pack_2");
   });
 

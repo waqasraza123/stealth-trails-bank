@@ -171,6 +171,8 @@ type ReleaseReadinessApprovalGate = {
 
 type ReleaseReadinessApprovalProjection = {
   id: string;
+  supersedesApprovalId: string | null;
+  supersededByApprovalId: string | null;
   releaseIdentifier: string;
   environment: ReleaseReadinessEnvironment;
   launchClosurePack: {
@@ -1001,6 +1003,8 @@ export class ReleaseReadinessService {
 
     return {
       id: record.id,
+      supersedesApprovalId: record.supersedesApprovalId ?? null,
+      supersededByApprovalId: record.supersededByApprovalId ?? null,
       releaseIdentifier: record.releaseIdentifier,
       environment: record.environment,
       launchClosurePack: record.launchClosurePackId &&
@@ -1930,22 +1934,11 @@ export class ReleaseReadinessService {
       async (transaction) => {
         const supersededAt = new Date();
 
-        await transaction.releaseReadinessApproval.update({
-          where: {
-            id: approval.id
-          },
-          data: {
-            status: ReleaseReadinessApprovalStatus.superseded,
-            supersededByOperatorId: operatorId,
-            supersededByOperatorRole: normalizedOperatorRole,
-            supersededAt
-          }
-        });
-
         const nextApproval = await transaction.releaseReadinessApproval.create({
           data: {
             releaseIdentifier: approval.releaseIdentifier,
             environment: approval.environment,
+            supersedesApprovalId: approval.id,
             launchClosurePackId: launchClosurePack.id,
             launchClosurePackVersion: launchClosurePack.version,
             launchClosurePackChecksumSha256:
@@ -1976,6 +1969,19 @@ export class ReleaseReadinessService {
           }
         });
 
+        await transaction.releaseReadinessApproval.update({
+          where: {
+            id: approval.id
+          },
+          data: {
+            status: ReleaseReadinessApprovalStatus.superseded,
+            supersededByOperatorId: operatorId,
+            supersededByOperatorRole: normalizedOperatorRole,
+            supersededByApprovalId: nextApproval.id,
+            supersededAt
+          }
+        });
+
         await transaction.auditEvent.create({
           data: {
             actorType: "operator",
@@ -1987,12 +1993,14 @@ export class ReleaseReadinessService {
               releaseIdentifier: approval.releaseIdentifier,
               environment: approval.environment,
               supersededApprovalId: approval.id,
+              supersededByApprovalId: nextApproval.id,
               supersededAt: supersededAt.toISOString(),
               previousLaunchClosurePackId: approval.launchClosurePackId,
               previousLaunchClosurePackVersion: approval.launchClosurePackVersion,
               previousLaunchClosurePackChecksumSha256:
                 approval.launchClosurePackChecksumSha256,
               nextApprovalId: nextApproval.id,
+              nextApprovalSupersedesApprovalId: approval.id,
               nextLaunchClosurePackId: launchClosurePack.id,
               nextLaunchClosurePackVersion: launchClosurePack.version,
               nextLaunchClosurePackChecksumSha256:
