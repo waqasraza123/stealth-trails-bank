@@ -1087,6 +1087,29 @@ export type ReleaseReadinessApproval = {
   checklist: ReleaseReadinessApprovalChecklist;
   evidenceSnapshot: ReleaseReadinessApprovalEvidenceSnapshot;
   gate: ReleaseReadinessApprovalGate;
+  launchClosureDrift: {
+    changed: boolean;
+    currentOverallStatus: "ready" | "blocked" | "approved" | "rejected" | "in_progress";
+    summaryDelta: {
+      passedCheckCount: number;
+      failedCheckCount: number;
+      pendingCheckCount: number;
+    };
+    missingEvidenceTypesAdded: string[];
+    missingEvidenceTypesResolved: string[];
+    failedEvidenceTypesAdded: string[];
+    failedEvidenceTypesResolved: string[];
+    staleEvidenceTypesAdded: string[];
+    staleEvidenceTypesResolved: string[];
+    openBlockersAdded: string[];
+    openBlockersResolved: string[];
+    newerPackAvailable: boolean;
+    latestPack: {
+      id: string;
+      version: number;
+      artifactChecksumSha256: string;
+    } | null;
+  } | null;
   requestedAt: string;
   approvedAt: string | null;
   rejectedAt: string | null;

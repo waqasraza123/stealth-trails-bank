@@ -193,6 +193,29 @@ type ReleaseReadinessApprovalProjection = {
   checklist: ReleaseReadinessApprovalChecklist;
   evidenceSnapshot: ReleaseReadinessApprovalEvidenceSnapshot;
   gate: ReleaseReadinessApprovalGate;
+  launchClosureDrift: {
+    changed: boolean;
+    currentOverallStatus: LaunchClosureStatusProjection["overallStatus"];
+    summaryDelta: {
+      passedCheckCount: number;
+      failedCheckCount: number;
+      pendingCheckCount: number;
+    };
+    missingEvidenceTypesAdded: ReleaseReadinessEvidenceType[];
+    missingEvidenceTypesResolved: ReleaseReadinessEvidenceType[];
+    failedEvidenceTypesAdded: ReleaseReadinessEvidenceType[];
+    failedEvidenceTypesResolved: ReleaseReadinessEvidenceType[];
+    staleEvidenceTypesAdded: ReleaseReadinessEvidenceType[];
+    staleEvidenceTypesResolved: ReleaseReadinessEvidenceType[];
+    openBlockersAdded: string[];
+    openBlockersResolved: string[];
+    newerPackAvailable: boolean;
+    latestPack: {
+      id: string;
+      version: number;
+      artifactChecksumSha256: string;
+    } | null;
+  } | null;
   requestedAt: string;
   approvedAt: string | null;
   rejectedAt: string | null;
@@ -735,9 +758,148 @@ export class ReleaseReadinessService {
     };
   }
 
+  private listAddedItems<T extends string>(baseline: T[], current: T[]): T[] {
+    const baselineSet = new Set(baseline);
+
+    return [...new Set(current.filter((item) => !baselineSet.has(item)))];
+  }
+
+  private listResolvedItems<T extends string>(baseline: T[], current: T[]): T[] {
+    const currentSet = new Set(current);
+
+    return [...new Set(baseline.filter((item) => !currentSet.has(item)))];
+  }
+
+  private buildLaunchClosureDrift(
+    record: ReleaseReadinessApprovalRecord,
+    currentSummary?: ReleaseReadinessSummary,
+    latestPack?: ReleaseLaunchClosurePackRecord | null
+  ): ReleaseReadinessApprovalProjection["launchClosureDrift"] {
+    if (!currentSummary) {
+      return null;
+    }
+
+    const storedSnapshot = this.mapStoredApprovalEvidenceSnapshot(record);
+    const storedGate = this.mapStoredApprovalGate(record);
+    const checklist = this.mapApprovalChecklist(record);
+    const currentGate = this.evaluateApprovalGate(
+      currentSummary,
+      checklist,
+      record.status === ReleaseReadinessApprovalStatus.pending_approval
+        ? ReleaseReadinessApprovalStatus.pending_approval
+        : record.status,
+      record.rollbackReleaseIdentifier ?? null
+    );
+    const currentOverallStatus: LaunchClosureStatusProjection["overallStatus"] =
+      record.status === ReleaseReadinessApprovalStatus.approved
+        ? "approved"
+        : record.status === ReleaseReadinessApprovalStatus.rejected
+          ? "rejected"
+          : currentGate.approvalEligible
+            ? "ready"
+            : "blocked";
+    const latestPackProjection =
+      latestPack && latestPack.id !== record.launchClosurePackId
+        ? {
+            id: latestPack.id,
+            version: latestPack.version,
+            artifactChecksumSha256: latestPack.artifactChecksumSha256
+          }
+        : latestPack &&
+            latestPack.version !== record.launchClosurePackVersion
+          ? {
+              id: latestPack.id,
+              version: latestPack.version,
+              artifactChecksumSha256: latestPack.artifactChecksumSha256
+            }
+          : latestPack &&
+              latestPack.artifactChecksumSha256 !==
+                record.launchClosurePackChecksumSha256
+            ? {
+                id: latestPack.id,
+                version: latestPack.version,
+                artifactChecksumSha256: latestPack.artifactChecksumSha256
+              }
+            : null;
+    const summaryDelta = {
+      passedCheckCount:
+        currentSummary.summary.passedCheckCount -
+        storedSnapshot.summary.passedCheckCount,
+      failedCheckCount:
+        currentSummary.summary.failedCheckCount -
+        storedSnapshot.summary.failedCheckCount,
+      pendingCheckCount:
+        currentSummary.summary.pendingCheckCount -
+        storedSnapshot.summary.pendingCheckCount
+    };
+    const missingEvidenceTypesAdded = this.listAddedItems(
+      storedGate.missingEvidenceTypes,
+      currentGate.missingEvidenceTypes
+    );
+    const missingEvidenceTypesResolved = this.listResolvedItems(
+      storedGate.missingEvidenceTypes,
+      currentGate.missingEvidenceTypes
+    );
+    const failedEvidenceTypesAdded = this.listAddedItems(
+      storedGate.failedEvidenceTypes,
+      currentGate.failedEvidenceTypes
+    );
+    const failedEvidenceTypesResolved = this.listResolvedItems(
+      storedGate.failedEvidenceTypes,
+      currentGate.failedEvidenceTypes
+    );
+    const staleEvidenceTypesAdded = this.listAddedItems(
+      storedGate.staleEvidenceTypes,
+      currentGate.staleEvidenceTypes
+    );
+    const staleEvidenceTypesResolved = this.listResolvedItems(
+      storedGate.staleEvidenceTypes,
+      currentGate.staleEvidenceTypes
+    );
+    const openBlockersAdded = this.listAddedItems(
+      storedGate.openBlockers,
+      currentGate.openBlockers
+    );
+    const openBlockersResolved = this.listResolvedItems(
+      storedGate.openBlockers,
+      currentGate.openBlockers
+    );
+    const changed =
+      summaryDelta.passedCheckCount !== 0 ||
+      summaryDelta.failedCheckCount !== 0 ||
+      summaryDelta.pendingCheckCount !== 0 ||
+      missingEvidenceTypesAdded.length > 0 ||
+      missingEvidenceTypesResolved.length > 0 ||
+      failedEvidenceTypesAdded.length > 0 ||
+      failedEvidenceTypesResolved.length > 0 ||
+      staleEvidenceTypesAdded.length > 0 ||
+      staleEvidenceTypesResolved.length > 0 ||
+      openBlockersAdded.length > 0 ||
+      openBlockersResolved.length > 0 ||
+      latestPackProjection !== null ||
+      currentOverallStatus !== storedGate.overallStatus;
+
+    return {
+      changed,
+      currentOverallStatus,
+      summaryDelta,
+      missingEvidenceTypesAdded,
+      missingEvidenceTypesResolved,
+      failedEvidenceTypesAdded,
+      failedEvidenceTypesResolved,
+      staleEvidenceTypesAdded,
+      staleEvidenceTypesResolved,
+      openBlockersAdded,
+      openBlockersResolved,
+      newerPackAvailable: latestPackProjection !== null,
+      latestPack: latestPackProjection
+    };
+  }
+
   private mapApprovalProjection(
     record: ReleaseReadinessApprovalRecord,
-    currentSummary?: ReleaseReadinessSummary
+    currentSummary?: ReleaseReadinessSummary,
+    latestPack?: ReleaseLaunchClosurePackRecord | null
   ): ReleaseReadinessApprovalProjection {
     const checklist = this.mapApprovalChecklist(record);
     const evidenceSnapshot =
@@ -784,6 +946,11 @@ export class ReleaseReadinessService {
       checklist,
       evidenceSnapshot,
       gate,
+      launchClosureDrift: this.buildLaunchClosureDrift(
+        record,
+        currentSummary,
+        latestPack
+      ),
       requestedAt: record.requestedAt.toISOString(),
       approvedAt: record.approvedAt?.toISOString() ?? null,
       rejectedAt: record.rejectedAt?.toISOString() ?? null,
@@ -838,6 +1005,19 @@ export class ReleaseReadinessService {
     }
 
     return where;
+  }
+
+  private async getLatestLaunchClosurePackForScope(
+    releaseIdentifier: string,
+    environment: ReleaseReadinessEnvironment
+  ): Promise<ReleaseLaunchClosurePackRecord | null> {
+    return this.prismaService.releaseLaunchClosurePack.findFirst({
+      where: {
+        releaseIdentifier,
+        environment
+      },
+      orderBy: [{ version: "desc" }, { createdAt: "desc" }]
+    });
   }
 
   async recordEvidence(
@@ -1080,17 +1260,25 @@ export class ReleaseReadinessService {
     }
   ): Promise<LaunchClosureStatusProjection> {
     const summary = await this.getSummary(scope, operatorContext);
-    const latestApprovalRecord = summary.releaseIdentifier
-      ? await this.prismaService.releaseReadinessApproval.findFirst({
+    const [latestApprovalRecord, latestPack] = summary.releaseIdentifier
+      ? await Promise.all([
+          this.prismaService.releaseReadinessApproval.findFirst({
           where: {
             releaseIdentifier: summary.releaseIdentifier,
             ...(summary.environment ? { environment: summary.environment } : {})
           },
           orderBy: [{ requestedAt: "desc" }, { createdAt: "desc" }]
-        })
-      : null;
+        }),
+          summary.environment
+            ? this.getLatestLaunchClosurePackForScope(
+                summary.releaseIdentifier,
+                summary.environment
+              )
+            : Promise.resolve(null)
+        ])
+      : [null, null];
     const latestApproval = latestApprovalRecord
-      ? this.mapApprovalProjection(latestApprovalRecord, summary)
+      ? this.mapApprovalProjection(latestApprovalRecord, summary, latestPack)
       : null;
 
     const externalChecks: LaunchClosureOperationalCheck[] =
@@ -1671,15 +1859,22 @@ export class ReleaseReadinessService {
       throw new NotFoundException("Release readiness approval request was not found.");
     }
 
-    const currentSummary =
+    const [currentSummary, latestPack] =
       approval.status === ReleaseReadinessApprovalStatus.pending_approval
-        ? await this.getSummary({
-            releaseIdentifier: approval.releaseIdentifier
-          })
-        : undefined;
+        ? await Promise.all([
+            this.getSummary({
+              releaseIdentifier: approval.releaseIdentifier,
+              environment: approval.environment
+            }),
+            this.getLatestLaunchClosurePackForScope(
+              approval.releaseIdentifier,
+              approval.environment
+            )
+          ])
+        : [undefined, null];
 
     return {
-      approval: this.mapApprovalProjection(approval, currentSummary)
+      approval: this.mapApprovalProjection(approval, currentSummary, latestPack)
     };
   }
 
@@ -1709,18 +1904,37 @@ export class ReleaseReadinessService {
           )
           .map(
             (approval) =>
-              approval.releaseIdentifier
+              `${approval.releaseIdentifier}:${approval.environment}`
           )
       )
     ];
     const currentSummaries = new Map<string, ReleaseReadinessSummary>();
+    const latestPacks = new Map<string, ReleaseLaunchClosurePackRecord | null>();
 
     await Promise.all(
       pendingApprovalScopeKeys.map(async (scopeKey) => {
-        const summary = await this.getSummary({
-          releaseIdentifier: scopeKey
-        });
+        const matchingApproval = approvals.find(
+          (approval) =>
+            approval.status === ReleaseReadinessApprovalStatus.pending_approval &&
+            `${approval.releaseIdentifier}:${approval.environment}` === scopeKey
+        );
+
+        if (!matchingApproval) {
+          return;
+        }
+
+        const [summary, latestPack] = await Promise.all([
+          this.getSummary({
+            releaseIdentifier: matchingApproval.releaseIdentifier,
+            environment: matchingApproval.environment
+          }),
+          this.getLatestLaunchClosurePackForScope(
+            matchingApproval.releaseIdentifier,
+            matchingApproval.environment
+          )
+        ]);
         currentSummaries.set(scopeKey, summary);
+        latestPacks.set(scopeKey, latestPack);
       })
     );
 
@@ -1730,9 +1944,13 @@ export class ReleaseReadinessService {
           record,
           record.status === ReleaseReadinessApprovalStatus.pending_approval
             ? currentSummaries.get(
-                record.releaseIdentifier
+                `${record.releaseIdentifier}:${record.environment}`
               )
-            : undefined
+            : undefined,
+          record.status === ReleaseReadinessApprovalStatus.pending_approval
+            ? latestPacks.get(`${record.releaseIdentifier}:${record.environment}`) ??
+              null
+            : null
         )
       ),
       limit,

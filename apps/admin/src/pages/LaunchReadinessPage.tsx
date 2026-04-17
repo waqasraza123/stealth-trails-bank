@@ -1736,6 +1736,179 @@ export function LaunchReadinessPage() {
                       ]}
                     />
 
+                    {selectedApproval.launchClosureDrift ? (
+                      <div className="admin-detail-stack">
+                        <InlineNotice
+                          title={
+                            selectedApproval.launchClosureDrift.changed
+                              ? "Live drift detected"
+                              : "No live drift detected"
+                          }
+                          description={
+                            selectedApproval.launchClosureDrift.changed
+                              ? `Current status is ${formatLaunchClosureStatusLabel(
+                                  selectedApproval.launchClosureDrift
+                                    .currentOverallStatus
+                                ).toLowerCase()} compared with the stored approval snapshot.`
+                              : "Current launch-closure posture still matches the stored approval snapshot."
+                          }
+                          tone={
+                            selectedApproval.launchClosureDrift.changed
+                              ? "warning"
+                              : "positive"
+                          }
+                        />
+
+                        <DetailList
+                          items={[
+                            {
+                              label: "Passed delta",
+                              value: `${selectedApproval.launchClosureDrift.summaryDelta.passedCheckCount > 0 ? "+" : ""}${
+                                selectedApproval.launchClosureDrift.summaryDelta
+                                  .passedCheckCount
+                              }`
+                            },
+                            {
+                              label: "Failed delta",
+                              value: `${selectedApproval.launchClosureDrift.summaryDelta.failedCheckCount > 0 ? "+" : ""}${
+                                selectedApproval.launchClosureDrift.summaryDelta
+                                  .failedCheckCount
+                              }`
+                            },
+                            {
+                              label: "Pending delta",
+                              value: `${selectedApproval.launchClosureDrift.summaryDelta.pendingCheckCount > 0 ? "+" : ""}${
+                                selectedApproval.launchClosureDrift.summaryDelta
+                                  .pendingCheckCount
+                              }`
+                            }
+                          ]}
+                        />
+
+                        {selectedApproval.launchClosureDrift.newerPackAvailable ? (
+                          <InlineNotice
+                            title="Newer pack available"
+                            description={`Latest stored pack is ${selectedApproval.launchClosureDrift.latestPack?.id} (v${selectedApproval.launchClosureDrift.latestPack?.version}). The selected approval is still bound to ${selectedApproval.launchClosurePack?.id}.`}
+                            tone="warning"
+                          />
+                        ) : null}
+
+                        <div className="admin-list">
+                          {selectedApproval.launchClosureDrift
+                            .missingEvidenceTypesAdded.length ? (
+                            <div className="admin-list-row">
+                              <div>
+                                <strong>Missing evidence added</strong>
+                                <span>
+                                  {selectedApproval.launchClosureDrift.missingEvidenceTypesAdded.join(
+                                    ", "
+                                  )}
+                                </span>
+                              </div>
+                              <AdminStatusBadge label="Drift" tone="critical" />
+                            </div>
+                          ) : null}
+                          {selectedApproval.launchClosureDrift
+                            .missingEvidenceTypesResolved.length ? (
+                            <div className="admin-list-row">
+                              <div>
+                                <strong>Missing evidence resolved</strong>
+                                <span>
+                                  {selectedApproval.launchClosureDrift.missingEvidenceTypesResolved.join(
+                                    ", "
+                                  )}
+                                </span>
+                              </div>
+                              <AdminStatusBadge label="Resolved" tone="positive" />
+                            </div>
+                          ) : null}
+                          {selectedApproval.launchClosureDrift.failedEvidenceTypesAdded
+                            .length ? (
+                            <div className="admin-list-row">
+                              <div>
+                                <strong>Failed evidence added</strong>
+                                <span>
+                                  {selectedApproval.launchClosureDrift.failedEvidenceTypesAdded.join(
+                                    ", "
+                                  )}
+                                </span>
+                              </div>
+                              <AdminStatusBadge label="Failed" tone="critical" />
+                            </div>
+                          ) : null}
+                          {selectedApproval.launchClosureDrift.failedEvidenceTypesResolved
+                            .length ? (
+                            <div className="admin-list-row">
+                              <div>
+                                <strong>Failed evidence resolved</strong>
+                                <span>
+                                  {selectedApproval.launchClosureDrift.failedEvidenceTypesResolved.join(
+                                    ", "
+                                  )}
+                                </span>
+                              </div>
+                              <AdminStatusBadge label="Resolved" tone="positive" />
+                            </div>
+                          ) : null}
+                          {selectedApproval.launchClosureDrift.staleEvidenceTypesAdded
+                            .length ? (
+                            <div className="admin-list-row">
+                              <div>
+                                <strong>Stale evidence added</strong>
+                                <span>
+                                  {selectedApproval.launchClosureDrift.staleEvidenceTypesAdded.join(
+                                    ", "
+                                  )}
+                                </span>
+                              </div>
+                              <AdminStatusBadge label="Stale" tone="warning" />
+                            </div>
+                          ) : null}
+                          {selectedApproval.launchClosureDrift.staleEvidenceTypesResolved
+                            .length ? (
+                            <div className="admin-list-row">
+                              <div>
+                                <strong>Stale evidence resolved</strong>
+                                <span>
+                                  {selectedApproval.launchClosureDrift.staleEvidenceTypesResolved.join(
+                                    ", "
+                                  )}
+                                </span>
+                              </div>
+                              <AdminStatusBadge label="Resolved" tone="positive" />
+                            </div>
+                          ) : null}
+                          {selectedApproval.launchClosureDrift.openBlockersAdded.length ? (
+                            <div className="admin-list-row">
+                              <div>
+                                <strong>Open blockers added</strong>
+                                <span>
+                                  {selectedApproval.launchClosureDrift.openBlockersAdded.join(
+                                    "; "
+                                  )}
+                                </span>
+                              </div>
+                              <AdminStatusBadge label="Blocked" tone="critical" />
+                            </div>
+                          ) : null}
+                          {selectedApproval.launchClosureDrift.openBlockersResolved
+                            .length ? (
+                            <div className="admin-list-row">
+                              <div>
+                                <strong>Open blockers resolved</strong>
+                                <span>
+                                  {selectedApproval.launchClosureDrift.openBlockersResolved.join(
+                                    "; "
+                                  )}
+                                </span>
+                              </div>
+                              <AdminStatusBadge label="Resolved" tone="positive" />
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+
                     <div className="admin-field">
                       <span>Approval note</span>
                       <textarea

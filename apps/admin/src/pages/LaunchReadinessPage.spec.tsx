@@ -183,6 +183,29 @@ function buildApproval(releaseIdentifier: string) {
       openBlockers: [],
       generatedAt: "2026-04-14T10:00:00.000Z"
     },
+    launchClosureDrift: {
+      changed: true,
+      currentOverallStatus: "ready" as const,
+      summaryDelta: {
+        passedCheckCount: 2,
+        failedCheckCount: 0,
+        pendingCheckCount: -2
+      },
+      missingEvidenceTypesAdded: [],
+      missingEvidenceTypesResolved: ["critical_alert_reescalation"],
+      failedEvidenceTypesAdded: [],
+      failedEvidenceTypesResolved: [],
+      staleEvidenceTypesAdded: [],
+      staleEvidenceTypesResolved: [],
+      openBlockersAdded: [],
+      openBlockersResolved: [],
+      newerPackAvailable: true,
+      latestPack: {
+        id: `${releaseIdentifier}-pack-v4`,
+        version: 4,
+        artifactChecksumSha256: `checksum-${releaseIdentifier}-v4`
+      }
+    },
     requestedAt: "2026-04-14T10:00:00.000Z",
     approvedAt: null,
     rejectedAt: null,
@@ -491,7 +514,31 @@ describe("LaunchReadinessPage", () => {
 
     expect(screen.getByText("Latest approval")).toBeVisible();
     expect(screen.getByText("Missing evidence")).toBeVisible();
-    expect(screen.getByText(/critical_alert_reescalation/i)).toBeVisible();
+    expect(screen.getAllByText(/critical_alert_reescalation/i).length).toBeGreaterThan(
+      0
+    );
+  });
+
+  it("shows approval drift and newer stored pack state for the selected approval", async () => {
+    vi.mocked(getLaunchClosureStatus).mockImplementation(async (_session, params) =>
+      buildLaunchClosureStatus(
+        typeof params.releaseIdentifier === "string"
+          ? params.releaseIdentifier
+          : null
+      )
+    );
+
+    renderPage("/launch-readiness?release=launch-2026.04.13.2");
+
+    await waitFor(() => {
+      expect(screen.getByText("Live drift detected")).toBeVisible();
+    });
+
+    expect(screen.getByText("Newer pack available")).toBeVisible();
+    expect(screen.getByText(/missing evidence resolved/i)).toBeVisible();
+    expect(screen.getAllByText(/critical_alert_reescalation/i).length).toBeGreaterThan(
+      0
+    );
   });
 
   it("requires rollback metadata before recording rollback drill evidence", async () => {

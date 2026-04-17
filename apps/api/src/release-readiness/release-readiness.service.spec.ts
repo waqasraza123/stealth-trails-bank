@@ -812,6 +812,69 @@ describe("ReleaseReadinessService", () => {
     expect(result.approval.gate.overallStatus).toBe("ready");
     expect(result.approval.gate.approvalEligible).toBe(true);
     expect(result.approval.gate.staleEvidenceTypes).toEqual([]);
+    expect(result.approval.launchClosureDrift).toEqual(
+      expect.objectContaining({
+        changed: false,
+        newerPackAvailable: false
+      })
+    );
+  });
+
+  it("computes live drift for pending approvals against the stored snapshot and latest pack", async () => {
+    const { service, prismaService } = createService();
+    (prismaService.releaseReadinessApproval.findUnique as jest.Mock).mockResolvedValue(
+      buildApprovalRecord({
+        blockerSnapshot: {
+          overallStatus: "blocked",
+          approvalEligible: false,
+          missingChecklistItems: [],
+          missingEvidenceTypes: ["critical_alert_reescalation"],
+          failedEvidenceTypes: [],
+          staleEvidenceTypes: [],
+          metadataMismatches: [],
+          maximumEvidenceAgeHours: 72,
+          openBlockers: [],
+          generatedAt: "2026-04-08T12:00:00.000Z"
+        },
+        evidenceSnapshot: {
+          generatedAt: "2026-04-08T12:00:00.000Z",
+          overallStatus: "warning",
+          summary: {
+            requiredCheckCount: 10,
+            passedCheckCount: 9,
+            failedCheckCount: 0,
+            pendingCheckCount: 1
+          },
+          requiredChecks: []
+        }
+      })
+    );
+    (prismaService.releaseReadinessEvidence.findMany as jest.Mock)
+      .mockResolvedValueOnce(buildPassedRequiredEvidenceRecords())
+      .mockResolvedValueOnce([buildEvidenceRecord()]);
+    (prismaService.releaseLaunchClosurePack.findFirst as jest.Mock).mockResolvedValue(
+      buildLaunchClosurePackRecord({
+        id: "pack_2",
+        version: 2,
+        artifactChecksumSha256: "checksum_2"
+      })
+    );
+
+    const result = await service.getApproval("approval_1");
+
+    expect(result.approval.launchClosureDrift).toEqual(
+      expect.objectContaining({
+        changed: true,
+        currentOverallStatus: "ready",
+        missingEvidenceTypesResolved: ["critical_alert_reescalation"],
+        newerPackAvailable: true,
+        latestPack: expect.objectContaining({
+          id: "pack_2",
+          version: 2,
+          artifactChecksumSha256: "checksum_2"
+        })
+      })
+    );
   });
 
   it("keeps launch approval blocked when the latest evidence belongs to another release", async () => {
