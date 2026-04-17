@@ -222,6 +222,12 @@ type ReleaseReadinessApprovalProjection = {
       artifactChecksumSha256: string;
     } | null;
   } | null;
+  lineageSummary: {
+    status: "healthy" | "warning" | "critical";
+    issueCount: number;
+    actionableApprovalId: string | null;
+    isActionable: boolean;
+  } | null;
   requestedAt: string;
   approvedAt: string | null;
   rejectedAt: string | null;
@@ -1028,7 +1034,8 @@ export class ReleaseReadinessService {
   private mapApprovalProjection(
     record: ReleaseReadinessApprovalRecord,
     currentSummary?: ReleaseReadinessSummary,
-    latestPack?: ReleaseLaunchClosurePackRecord | null
+    latestPack?: ReleaseLaunchClosurePackRecord | null,
+    lineageSummary?: ReleaseReadinessApprovalProjection["lineageSummary"]
   ): ReleaseReadinessApprovalProjection {
     const checklist = this.mapApprovalChecklist(record);
     const evidenceSnapshot =
@@ -1083,6 +1090,7 @@ export class ReleaseReadinessService {
         record.status === ReleaseReadinessApprovalStatus.pending_approval
           ? this.buildLaunchClosureDrift(record, currentSummary, latestPack)
           : this.mapStoredLaunchClosureDrift(record),
+      lineageSummary: lineageSummary ?? null,
       requestedAt: record.requestedAt.toISOString(),
       approvedAt: record.approvedAt?.toISOString() ?? null,
       rejectedAt: record.rejectedAt?.toISOString() ?? null,
@@ -2677,14 +2685,19 @@ export class ReleaseReadinessService {
     ]);
 
     return {
-      approvals: await this.hydrateApprovalProjections(approvals),
+      approvals: await this.hydrateApprovalProjections(approvals, {
+        includeLineageSummary: true
+      }),
       limit,
       totalCount
     };
   }
 
   private async hydrateApprovalProjections(
-    approvals: ReleaseReadinessApprovalRecord[]
+    approvals: ReleaseReadinessApprovalRecord[],
+    options?: {
+      includeLineageSummary?: boolean;
+    }
   ): Promise<ReleaseReadinessApprovalProjection[]> {
     const pendingApprovalScopeKeys = [
       ...new Set(
@@ -2701,6 +2714,10 @@ export class ReleaseReadinessService {
     ];
     const currentSummaries = new Map<string, ReleaseReadinessSummary>();
     const latestPacks = new Map<string, ReleaseLaunchClosurePackRecord | null>();
+    const lineageSummaries = new Map<
+      string,
+      NonNullable<ReleaseReadinessApprovalProjection["lineageSummary"]>
+    >();
 
     await Promise.all(
       pendingApprovalScopeKeys.map(async (scopeKey) => {
@@ -2729,6 +2746,35 @@ export class ReleaseReadinessService {
       })
     );
 
+    if (options?.includeLineageSummary) {
+      for (const approval of approvals) {
+        if (lineageSummaries.has(approval.id)) {
+          continue;
+        }
+
+        const { lineage, integrity } = await this.resolveApprovalLineageData(approval.id);
+        const summary = {
+          status: integrity.status,
+          issueCount: integrity.issues.length,
+          actionableApprovalId: integrity.actionableApprovalId,
+          isActionable: integrity.actionableApprovalId === approval.id
+        } as const;
+
+        lineage.forEach((lineageApproval) => {
+          lineageSummaries.set(lineageApproval.id, {
+            status: integrity.status,
+            issueCount: integrity.issues.length,
+            actionableApprovalId: integrity.actionableApprovalId,
+            isActionable: integrity.actionableApprovalId === lineageApproval.id
+          });
+        });
+
+        if (!lineageSummaries.has(approval.id)) {
+          lineageSummaries.set(approval.id, summary);
+        }
+      }
+    }
+
     return approvals.map((record) =>
       this.mapApprovalProjection(
         record,
@@ -2738,7 +2784,8 @@ export class ReleaseReadinessService {
         record.status === ReleaseReadinessApprovalStatus.pending_approval
           ? latestPacks.get(`${record.releaseIdentifier}:${record.environment}`) ??
             null
-          : null
+          : null,
+        lineageSummaries.get(record.id) ?? null
       )
     );
   }

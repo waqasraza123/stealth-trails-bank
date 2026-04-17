@@ -158,6 +158,12 @@ function formatLaunchClosureCheckStatusLabel(
   return status === "passed" ? "Passed" : toTitleCase(status);
 }
 
+function formatApprovalLineageSummaryLabel(
+  status: "healthy" | "warning" | "critical"
+) {
+  return `Lineage ${toTitleCase(status)}`;
+}
+
 function createEvidenceDraft(
   evidenceType: EvidenceDraft["evidenceType"] = releaseReadinessEvidenceTypes[0],
   environment: EvidenceDraft["environment"] = "production_like"
@@ -918,6 +924,15 @@ export function LaunchReadinessPage() {
 
   const summary = releaseSummaryQuery.data!;
   const scopedApprovals = approvalsQuery.data!.approvals;
+  const approvalsWithLineageIncidents = scopedApprovals.filter(
+    (approval) =>
+      approval.lineageSummary &&
+      (approval.lineageSummary.status !== "healthy" ||
+        !approval.lineageSummary.isActionable)
+  );
+  const criticalApprovalLineageCount = approvalsWithLineageIncidents.filter(
+    (approval) => approval.lineageSummary?.status === "critical"
+  ).length;
   const releaseScopeOptions = [
     ...new Set(
       [
@@ -1438,6 +1453,21 @@ export function LaunchReadinessPage() {
           sidebar={
             <>
               <ListCard title="Approval chain">
+                {approvalsWithLineageIncidents.length > 0 ? (
+                  <InlineNotice
+                    tone={criticalApprovalLineageCount > 0 ? "critical" : "warning"}
+                    title="Lineage incidents need review"
+                    description={`${formatCount(approvalsWithLineageIncidents.length)} approval ${
+                      approvalsWithLineageIncidents.length === 1 ? "chain is" : "chains are"
+                    } not healthy or no longer actionable in the current list.`}
+                  />
+                ) : (
+                  <InlineNotice
+                    tone="positive"
+                    title="Approval chains are actionable"
+                    description="Each listed approval chain is currently healthy and points at an actionable approval."
+                  />
+                )}
                 <div className="admin-list">
                   {scopedApprovals.map((approval) => (
                     <button
@@ -1456,6 +1486,31 @@ export function LaunchReadinessPage() {
                       <strong>{approval.releaseIdentifier}</strong>
                       <span>{approval.environment}</span>
                       <span>{toTitleCase(approval.gate.overallStatus)}</span>
+                      {approval.lineageSummary ? (
+                        <>
+                          <AdminStatusBadge
+                            label={formatApprovalLineageSummaryLabel(
+                              approval.lineageSummary.status
+                            )}
+                            tone={mapStatusToTone(approval.lineageSummary.status)}
+                          />
+                          <span>
+                            {approval.lineageSummary.issueCount > 0
+                              ? `${formatCount(approval.lineageSummary.issueCount)} issue${
+                                  approval.lineageSummary.issueCount === 1 ? "" : "s"
+                                }`
+                              : approval.lineageSummary.isActionable
+                                ? "Current actionable approval"
+                                : "Actionable approval moved"}
+                          </span>
+                          {approval.lineageSummary.actionableApprovalId &&
+                          !approval.lineageSummary.isActionable ? (
+                            <span>
+                              Continue with {approval.lineageSummary.actionableApprovalId}
+                            </span>
+                          ) : null}
+                        </>
+                      ) : null}
                       <AdminStatusBadge
                         label={toTitleCase(approval.status)}
                         tone={mapStatusToTone(approval.status)}

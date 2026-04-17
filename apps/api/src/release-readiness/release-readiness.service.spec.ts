@@ -425,18 +425,20 @@ describe("ReleaseReadinessService", () => {
 
   it("lists governed approvals using exact release filters", async () => {
     const { service, prismaService } = createService();
+    const approvalRecord = buildApprovalRecord({
+      id: "approval_2",
+      status: ReleaseReadinessApprovalStatus.approved,
+      approvedByOperatorId: "approver_1",
+      approvedByOperatorRole: "risk_manager",
+      approvedAt: new Date("2026-04-08T13:00:00.000Z")
+    });
     (
       prismaService.releaseReadinessApproval.findMany as jest.Mock
-    ).mockResolvedValue([
-      buildApprovalRecord({
-        id: "approval_2",
-        status: ReleaseReadinessApprovalStatus.approved,
-        approvedByOperatorId: "approver_1",
-        approvedByOperatorRole: "risk_manager",
-        approvedAt: new Date("2026-04-08T13:00:00.000Z")
-      })
-    ]);
+    ).mockResolvedValue([approvalRecord]);
     (prismaService.releaseReadinessApproval.count as jest.Mock).mockResolvedValue(1);
+    (prismaService.releaseReadinessApproval.findUnique as jest.Mock).mockResolvedValue(
+      approvalRecord
+    );
 
     const result = await service.listApprovals({
       limit: 5,
@@ -460,6 +462,12 @@ describe("ReleaseReadinessService", () => {
     );
     expect(result.totalCount).toBe(1);
     expect(result.approvals).toHaveLength(1);
+    expect(result.approvals[0]?.lineageSummary).toEqual({
+      status: "healthy",
+      issueCount: 0,
+      actionableApprovalId: null,
+      isActionable: false
+    });
   });
 
   it("derives readiness summary from the latest evidence per required check", async () => {

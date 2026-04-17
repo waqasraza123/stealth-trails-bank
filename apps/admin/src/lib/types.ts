@@ -1116,6 +1116,12 @@ export type ReleaseReadinessApproval = {
       artifactChecksumSha256: string;
     } | null;
   } | null;
+  lineageSummary: {
+    status: "healthy" | "warning" | "critical";
+    issueCount: number;
+    actionableApprovalId: string | null;
+    isActionable: boolean;
+  } | null;
   requestedAt: string;
   approvedAt: string | null;
   rejectedAt: string | null;

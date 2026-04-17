@@ -222,6 +222,12 @@ function buildApproval(releaseIdentifier: string) {
         artifactChecksumSha256: `checksum-${releaseIdentifier}-v4`
       }
     },
+    lineageSummary: {
+      status: "healthy" as const,
+      issueCount: 0,
+      actionableApprovalId: `${releaseIdentifier}-approval`,
+      isActionable: true
+    },
     requestedAt: "2026-04-14T10:00:00.000Z",
     approvedAt: null,
     rejectedAt: null,
@@ -751,6 +757,33 @@ describe("LaunchReadinessPage", () => {
         "launch-2026.04.13.2-approval"
       );
     });
+  });
+
+  it("surfaces lineage incidents in the approval chain list before selection", async () => {
+    vi.mocked(listReleaseReadinessApprovals).mockResolvedValueOnce({
+      approvals: [
+        {
+          ...buildApproval("launch-2026.04.13.1"),
+          lineageSummary: {
+            status: "critical",
+            issueCount: 2,
+            actionableApprovalId: "launch-2026.04.13.1-approval-replacement",
+            isActionable: false
+          }
+        }
+      ],
+      limit: 20,
+      totalCount: 1
+    });
+
+    renderPage("/launch-readiness?release=launch-2026.04.13.1");
+
+    expect(await screen.findByText("Lineage incidents need review")).toBeInTheDocument();
+    expect(screen.getByText("Lineage Critical")).toBeInTheDocument();
+    expect(screen.getByText("2 issues")).toBeInTheDocument();
+    expect(
+      screen.getByText("Continue with launch-2026.04.13.1-approval-replacement")
+    ).toBeInTheDocument();
   });
 
   it("renders the selected approval lineage from the dedicated lineage endpoint", async () => {
