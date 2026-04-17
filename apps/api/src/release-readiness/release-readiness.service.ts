@@ -1933,6 +1933,46 @@ export class ReleaseReadinessService {
     const updatedApproval = await this.prismaService.$transaction(
       async (transaction) => {
         const supersededAt = new Date();
+        const rebindableApproval =
+          await transaction.releaseReadinessApproval.findUnique({
+            where: {
+              id: approval.id
+            }
+          });
+
+        if (!rebindableApproval) {
+          throw new NotFoundException(
+            "Release readiness approval request was not found."
+          );
+        }
+
+        if (
+          rebindableApproval.status !==
+          ReleaseReadinessApprovalStatus.pending_approval
+        ) {
+          throw new ConflictException(
+            "Only pending launch approvals can be rebound to a new launch-closure pack."
+          );
+        }
+
+        if (rebindableApproval.supersededByApprovalId) {
+          throw new ConflictException(
+            "Launch approval already has a replacement approval in its lineage."
+          );
+        }
+
+        const lineageReplacement =
+          await transaction.releaseReadinessApproval.findFirst({
+            where: {
+              supersedesApprovalId: approval.id
+            }
+          });
+
+        if (lineageReplacement) {
+          throw new ConflictException(
+            "Launch approval lineage already contains a replacement approval."
+          );
+        }
 
         const nextApproval = await transaction.releaseReadinessApproval.create({
           data: {

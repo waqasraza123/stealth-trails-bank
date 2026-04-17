@@ -199,7 +199,9 @@ function createService() {
     },
     releaseReadinessApproval: {
       create: jest.fn(),
-      update: jest.fn()
+      update: jest.fn(),
+      findUnique: jest.fn(),
+      findFirst: jest.fn()
     },
     releaseLaunchClosurePack: {
       create: jest.fn(),
@@ -945,6 +947,12 @@ describe("ReleaseReadinessService", () => {
       .mockResolvedValueOnce(buildPassedRequiredEvidenceRecords())
       .mockResolvedValueOnce([buildEvidenceRecord()]);
     (
+      transactionClient.releaseReadinessApproval.findUnique as jest.Mock
+    ).mockResolvedValue(buildApprovalRecord());
+    (
+      transactionClient.releaseReadinessApproval.findFirst as jest.Mock
+    ).mockResolvedValue(null);
+    (
       transactionClient.releaseReadinessApproval.create as jest.Mock
     ).mockResolvedValue(
       buildApprovalRecord({
@@ -1039,6 +1047,89 @@ describe("ReleaseReadinessService", () => {
       "Launch approval already references the requested launch-closure pack."
     );
 
+    expect(transactionClient.releaseReadinessApproval.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects rebind when the approval already points to a replacement approval", async () => {
+    const { service, prismaService, transactionClient } = createService();
+    (prismaService.releaseReadinessApproval.findUnique as jest.Mock).mockResolvedValue(
+      buildApprovalRecord({
+        supersededByApprovalId: "approval_2"
+      })
+    );
+    (prismaService.releaseLaunchClosurePack.findUnique as jest.Mock).mockResolvedValue(
+      buildLaunchClosurePackRecord({
+        id: "pack_2",
+        version: 2,
+        artifactChecksumSha256: "checksum_2"
+      })
+    );
+    (prismaService.releaseReadinessEvidence.findMany as jest.Mock)
+      .mockResolvedValueOnce(buildPassedRequiredEvidenceRecords())
+      .mockResolvedValueOnce([buildEvidenceRecord()]);
+    (
+      transactionClient.releaseReadinessApproval.findUnique as jest.Mock
+    ).mockResolvedValue(
+      buildApprovalRecord({
+        supersededByApprovalId: "approval_2"
+      })
+    );
+
+    await expect(
+      service.rebindApprovalToLaunchClosurePack(
+        "approval_1",
+        "pack_2",
+        "ops_1",
+        "operations_admin"
+      )
+    ).rejects.toThrow(
+      "Launch approval already has a replacement approval in its lineage."
+    );
+
+    expect(transactionClient.releaseReadinessApproval.create).not.toHaveBeenCalled();
+    expect(transactionClient.releaseReadinessApproval.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects rebind when another approval already supersedes the target approval", async () => {
+    const { service, prismaService, transactionClient } = createService();
+    (prismaService.releaseReadinessApproval.findUnique as jest.Mock).mockResolvedValue(
+      buildApprovalRecord()
+    );
+    (prismaService.releaseLaunchClosurePack.findUnique as jest.Mock).mockResolvedValue(
+      buildLaunchClosurePackRecord({
+        id: "pack_2",
+        version: 2,
+        artifactChecksumSha256: "checksum_2"
+      })
+    );
+    (prismaService.releaseReadinessEvidence.findMany as jest.Mock)
+      .mockResolvedValueOnce(buildPassedRequiredEvidenceRecords())
+      .mockResolvedValueOnce([buildEvidenceRecord()]);
+    (
+      transactionClient.releaseReadinessApproval.findUnique as jest.Mock
+    ).mockResolvedValue(buildApprovalRecord());
+    (
+      transactionClient.releaseReadinessApproval.findFirst as jest.Mock
+    ).mockResolvedValue(
+      buildApprovalRecord({
+        id: "approval_2",
+        status: ReleaseReadinessApprovalStatus.pending_approval,
+        supersedesApprovalId: "approval_1"
+      })
+    );
+
+    await expect(
+      service.rebindApprovalToLaunchClosurePack(
+        "approval_1",
+        "pack_2",
+        "ops_1",
+        "operations_admin"
+      )
+    ).rejects.toThrow(
+      "Launch approval lineage already contains a replacement approval."
+    );
+
+    expect(transactionClient.releaseReadinessApproval.create).not.toHaveBeenCalled();
     expect(transactionClient.releaseReadinessApproval.update).not.toHaveBeenCalled();
   });
 
