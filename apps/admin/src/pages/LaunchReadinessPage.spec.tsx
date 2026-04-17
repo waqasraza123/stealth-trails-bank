@@ -184,6 +184,56 @@ function buildApproval(releaseIdentifier: string) {
   };
 }
 
+function buildLaunchClosureStatus(releaseIdentifier: string | null) {
+  return {
+    generatedAt: "2026-04-14T10:00:00.000Z",
+    releaseIdentifier,
+    environment: releaseIdentifier ? "production_like" : null,
+    overallStatus: "blocked" as const,
+    maximumEvidenceAgeHours: 72,
+    externalChecks: [
+      {
+        evidenceType: "platform_alert_delivery_slo",
+        label: "Delivery Target SLO Alerting",
+        status: "passed" as const,
+        acceptedEnvironments: ["staging", "production_like", "production"],
+        latestEvidence: releaseIdentifier
+          ? {
+              id: `${releaseIdentifier}-platform-alert`,
+              evidenceType: "platform_alert_delivery_slo",
+              environment: "production_like",
+              status: "passed" as const,
+              releaseIdentifier,
+              rollbackReleaseIdentifier: null,
+              backupReference: null,
+              summary: "Platform alert delivery proof recorded.",
+              note: null,
+              operatorId: "ops_1",
+              operatorRole: "operations_admin",
+              runbookPath: "docs/runbooks/platform-alert-delivery-targets.md",
+              evidenceLinks: [],
+              evidencePayload: null,
+              startedAt: null,
+              completedAt: null,
+              observedAt: "2026-04-14T09:00:00.000Z",
+              createdAt: "2026-04-14T09:00:00.000Z",
+              updatedAt: "2026-04-14T09:00:00.000Z"
+            }
+          : null
+      },
+      {
+        evidenceType: "critical_alert_reescalation",
+        label: "Critical Alert Re-escalation Cadence",
+        status: "pending" as const,
+        acceptedEnvironments: ["staging", "production_like", "production"],
+        latestEvidence: null
+      }
+    ],
+    latestApproval: releaseIdentifier ? buildApproval(releaseIdentifier) : null,
+    summaryMarkdown: "Launch-closure status."
+  };
+}
+
 function renderPage(initialEntry = "/launch-readiness") {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -257,14 +307,7 @@ describe("LaunchReadinessPage", () => {
       totalCount: 0
     });
     vi.mocked(getLaunchClosureStatus).mockResolvedValue({
-      generatedAt: "2026-04-14T10:00:00.000Z",
-      releaseIdentifier: null,
-      environment: null,
-      overallStatus: "blocked",
-      maximumEvidenceAgeHours: 72,
-      externalChecks: [],
-      latestApproval: null,
-      summaryMarkdown: "Launch-closure status."
+      ...buildLaunchClosureStatus(null)
     });
     vi.mocked(getReleaseReadinessSummary).mockImplementation(
       async (_session, params = {}) =>
@@ -337,12 +380,26 @@ describe("LaunchReadinessPage", () => {
       );
     });
 
+    expect(screen.getByText("Operational posture")).toBeVisible();
+    expect(screen.getByText("External operational checks")).toBeVisible();
+    expect(
+      screen.getByText(/No governed approval request exists for the selected release scope yet/i)
+    ).toBeVisible();
+
     expect(screen.getByLabelText("Release scope")).toHaveValue(
       "launch-2026.04.13.1"
     );
   });
 
   it("loads the release workspace from an explicit scope deep link", async () => {
+    vi.mocked(getLaunchClosureStatus).mockImplementation(async (_session, params) =>
+      buildLaunchClosureStatus(
+        typeof params.releaseIdentifier === "string"
+          ? params.releaseIdentifier
+          : null
+      )
+    );
+
     renderPage("/launch-readiness?release=launch-2026.04.13.2");
 
     await waitFor(() => {
@@ -396,6 +453,10 @@ describe("LaunchReadinessPage", () => {
         }
       );
     });
+
+    expect(screen.getByText("Latest approval")).toBeVisible();
+    expect(screen.getByText("Missing evidence")).toBeVisible();
+    expect(screen.getByText(/critical_alert_reescalation/i)).toBeVisible();
   });
 
   it("requires rollback metadata before recording rollback drill evidence", async () => {

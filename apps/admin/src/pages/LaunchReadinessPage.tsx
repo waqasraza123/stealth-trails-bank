@@ -133,6 +133,18 @@ type ApprovalDraft = {
   openBlockers: string;
 } & Record<(typeof approvalChecklistFields)[number]["key"], boolean>;
 
+function formatLaunchClosureStatusLabel(
+  status: "ready" | "blocked" | "approved" | "rejected" | "in_progress"
+) {
+  return status === "in_progress" ? "In progress" : toTitleCase(status);
+}
+
+function formatLaunchClosureCheckStatusLabel(
+  status: "passed" | "failed" | "pending" | "stale"
+) {
+  return status === "passed" ? "Passed" : toTitleCase(status);
+}
+
 function createEvidenceDraft(
   evidenceType: EvidenceDraft["evidenceType"] = releaseReadinessEvidenceTypes[0],
   environment: EvidenceDraft["environment"] = "production_like"
@@ -1705,6 +1717,191 @@ export function LaunchReadinessPage() {
             <>
               <ListCard title="Pack status">
                 <div className="admin-detail-stack">
+                  {launchClosureStatusQuery.data ? (
+                    <>
+                      <DetailList
+                        items={[
+                          {
+                            label: "Release scope",
+                            value:
+                              launchClosureStatusQuery.data.releaseIdentifier ??
+                              "All releases"
+                          },
+                          {
+                            label: "Environment",
+                            value:
+                              launchClosureStatusQuery.data.environment ??
+                              "Accepted environments"
+                          },
+                          {
+                            label: "Generated at",
+                            value: formatDateTime(
+                              launchClosureStatusQuery.data.generatedAt
+                            )
+                          },
+                          {
+                            label: "Evidence freshness",
+                            value: `${launchClosureStatusQuery.data.maximumEvidenceAgeHours} hours`
+                          }
+                        ]}
+                      />
+                      <div className="admin-list-row">
+                        <div>
+                          <strong>Operational posture</strong>
+                          <span>
+                            Current governed launch-closure state for the selected
+                            scope.
+                          </span>
+                        </div>
+                        <AdminStatusBadge
+                          label={formatLaunchClosureStatusLabel(
+                            launchClosureStatusQuery.data.overallStatus
+                          )}
+                          tone={mapStatusToTone(
+                            launchClosureStatusQuery.data.overallStatus
+                          )}
+                        />
+                      </div>
+                    </>
+                  ) : null}
+
+                  <div className="admin-field">
+                    <span>External operational checks</span>
+                    {launchClosureStatusQuery.data?.externalChecks.length ? (
+                      <div className="admin-list">
+                        {launchClosureStatusQuery.data.externalChecks.map((check) => (
+                          <div key={check.evidenceType} className="admin-list-row">
+                            <div>
+                              <strong>{check.label}</strong>
+                              <span>
+                                Accepted in {check.acceptedEnvironments.join(", ")}
+                              </span>
+                              <span>
+                                {check.latestEvidence
+                                  ? `Latest evidence ${formatDateTime(
+                                      check.latestEvidence.observedAt
+                                    )} in ${check.latestEvidence.environment}.`
+                                  : "No accepted evidence recorded for this scope."}
+                              </span>
+                            </div>
+                            <AdminStatusBadge
+                              label={formatLaunchClosureCheckStatusLabel(check.status)}
+                              tone={mapStatusToTone(check.status)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="admin-field-help">
+                        No scoped operational checks are available yet.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="admin-field">
+                    <span>Approval blockers</span>
+                    {launchClosureStatusQuery.data?.latestApproval ? (
+                      <div className="admin-list">
+                        <div className="admin-list-row">
+                          <div>
+                            <strong>Latest approval</strong>
+                            <span>
+                              {launchClosureStatusQuery.data.latestApproval.releaseIdentifier}
+                            </span>
+                          </div>
+                          <AdminStatusBadge
+                            label={toTitleCase(
+                              launchClosureStatusQuery.data.latestApproval.status
+                            )}
+                            tone={mapStatusToTone(
+                              launchClosureStatusQuery.data.latestApproval.status
+                            )}
+                          />
+                        </div>
+                        <div className="admin-list-row">
+                          <div>
+                            <strong>Approval gate</strong>
+                            <span>
+                              Review missing, failed, stale, and open-blocker lists
+                              before requesting or approving launch.
+                            </span>
+                          </div>
+                          <AdminStatusBadge
+                            label={toTitleCase(
+                              launchClosureStatusQuery.data.latestApproval.gate
+                                .overallStatus
+                            )}
+                            tone={mapStatusToTone(
+                              launchClosureStatusQuery.data.latestApproval.gate
+                                .overallStatus
+                            )}
+                          />
+                        </div>
+                        {launchClosureStatusQuery.data.latestApproval.gate
+                          .missingEvidenceTypes.length ? (
+                          <div className="admin-list-row">
+                            <div>
+                              <strong>Missing evidence</strong>
+                              <span>
+                                {launchClosureStatusQuery.data.latestApproval.gate.missingEvidenceTypes.join(
+                                  ", "
+                                )}
+                              </span>
+                            </div>
+                            <AdminStatusBadge label="Missing" tone="warning" />
+                          </div>
+                        ) : null}
+                        {launchClosureStatusQuery.data.latestApproval.gate
+                          .failedEvidenceTypes.length ? (
+                          <div className="admin-list-row">
+                            <div>
+                              <strong>Failed evidence</strong>
+                              <span>
+                                {launchClosureStatusQuery.data.latestApproval.gate.failedEvidenceTypes.join(
+                                  ", "
+                                )}
+                              </span>
+                            </div>
+                            <AdminStatusBadge label="Failed" tone="critical" />
+                          </div>
+                        ) : null}
+                        {launchClosureStatusQuery.data.latestApproval.gate
+                          .staleEvidenceTypes.length ? (
+                          <div className="admin-list-row">
+                            <div>
+                              <strong>Stale evidence</strong>
+                              <span>
+                                {launchClosureStatusQuery.data.latestApproval.gate.staleEvidenceTypes.join(
+                                  ", "
+                                )}
+                              </span>
+                            </div>
+                            <AdminStatusBadge label="Stale" tone="warning" />
+                          </div>
+                        ) : null}
+                        {launchClosureStatusQuery.data.latestApproval.gate.openBlockers
+                          .length ? (
+                          <div className="admin-list-row">
+                            <div>
+                              <strong>Open blockers</strong>
+                              <span>
+                                {launchClosureStatusQuery.data.latestApproval.gate.openBlockers.join(
+                                  "; "
+                                )}
+                              </span>
+                            </div>
+                            <AdminStatusBadge label="Open" tone="critical" />
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="admin-field-help">
+                        No governed approval request exists for the selected release
+                        scope yet.
+                      </p>
+                    )}
+                  </div>
+
                   <div className="admin-field">
                     <span>Current status summary</span>
                     <textarea
