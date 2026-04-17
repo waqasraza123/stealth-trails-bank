@@ -1245,7 +1245,8 @@ describe("ReleaseReadinessService", () => {
       .mockResolvedValueOnce(
         buildApprovalRecord({
           id: "approval_1",
-          status: ReleaseReadinessApprovalStatus.superseded
+          status: ReleaseReadinessApprovalStatus.superseded,
+          supersededByApprovalId: "approval_2"
         })
       )
       .mockResolvedValueOnce(
@@ -1265,6 +1266,52 @@ describe("ReleaseReadinessService", () => {
       "approval_2",
       "approval_3"
     ]);
+    expect(result.integrity).toEqual({
+      status: "healthy",
+      issues: [],
+      headApprovalId: "approval_3",
+      tailApprovalId: "approval_1",
+      actionableApprovalId: null
+    });
+  });
+
+  it("reports lineage integrity issues when linked approvals are missing", async () => {
+    const { service, prismaService } = createService();
+    (prismaService.releaseReadinessApproval.findUnique as jest.Mock)
+      .mockResolvedValueOnce(
+        buildApprovalRecord({
+          id: "approval_2",
+          status: ReleaseReadinessApprovalStatus.superseded,
+          supersedesApprovalId: "approval_1"
+        })
+      )
+      .mockResolvedValueOnce(null);
+
+    const result = await service.getApprovalLineage("approval_2");
+
+    expect(result.lineage.map((approval) => approval.id)).toEqual(["approval_2"]);
+    expect(result.integrity).toEqual({
+      status: "critical",
+      issues: [
+        {
+          code: "missing_previous_approval",
+          approvalId: "approval_2",
+          relatedApprovalId: "approval_1",
+          description:
+            "Approval approval_2 references missing previous approval approval_1."
+        },
+        {
+          code: "superseded_head",
+          approvalId: "approval_2",
+          relatedApprovalId: null,
+          description:
+            "Latest approval approval_2 is superseded but has no valid replacement in the loaded lineage."
+        }
+      ],
+      headApprovalId: "approval_2",
+      tailApprovalId: "approval_2",
+      actionableApprovalId: null
+    });
   });
 
   it("keeps launch approval blocked when the latest evidence belongs to another release", async () => {

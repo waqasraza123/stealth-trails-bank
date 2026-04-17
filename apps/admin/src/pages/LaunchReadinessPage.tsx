@@ -920,6 +920,15 @@ export function LaunchReadinessPage() {
     null;
   const selectedApprovalLineage: ReleaseReadinessApproval[] =
     approvalLineageQuery.data?.lineage ?? (selectedApproval ? [selectedApproval] : []);
+  const selectedApprovalLineageIntegrity =
+    approvalLineageQuery.data?.integrity ?? {
+      status: "healthy" as const,
+      issues: [],
+      headApprovalId: selectedApproval?.id ?? null,
+      tailApprovalId: selectedApproval?.id ?? null,
+      actionableApprovalId:
+        selectedApproval?.status === "pending_approval" ? selectedApproval.id : null
+    };
   const selectedApprovalMutationToken =
     approvalLineageQuery.data?.currentMutationToken ??
     selectedApproval?.updatedAt ??
@@ -1443,6 +1452,72 @@ export function LaunchReadinessPage() {
           main={
             selectedApproval ? (
               <>
+                <ListCard title="Lineage integrity">
+                  <DetailList
+                    items={[
+                      {
+                        label: "Integrity status",
+                        value: (
+                          <AdminStatusBadge
+                            label={toTitleCase(selectedApprovalLineageIntegrity.status)}
+                            tone={
+                              selectedApprovalLineageIntegrity.status === "healthy"
+                                ? "positive"
+                                : selectedApprovalLineageIntegrity.status === "warning"
+                                  ? "warning"
+                                  : "critical"
+                            }
+                          />
+                        )
+                      },
+                      {
+                        label: "Actionable approval",
+                        value:
+                          selectedApprovalLineageIntegrity.actionableApprovalId ??
+                          "No actionable pending approval",
+                        mono: Boolean(
+                          selectedApprovalLineageIntegrity.actionableApprovalId
+                        )
+                      },
+                      {
+                        label: "Lineage tail",
+                        value:
+                          selectedApprovalLineageIntegrity.tailApprovalId ??
+                          "No approval loaded",
+                        mono: Boolean(selectedApprovalLineageIntegrity.tailApprovalId)
+                      },
+                      {
+                        label: "Lineage head",
+                        value:
+                          selectedApprovalLineageIntegrity.headApprovalId ??
+                          "No approval loaded",
+                        mono: Boolean(selectedApprovalLineageIntegrity.headApprovalId)
+                      }
+                    ]}
+                  />
+                  {selectedApprovalLineageIntegrity.issues.length > 0 ? (
+                    <div className="admin-list">
+                      {selectedApprovalLineageIntegrity.issues.map((issue) => (
+                        <div
+                          key={`${issue.code}:${issue.approvalId}:${issue.relatedApprovalId ?? "none"}`}
+                          className="admin-list-row"
+                        >
+                          <strong>{issue.approvalId}</strong>
+                          <span>{toTitleCase(issue.code.replaceAll("_", " "))}</span>
+                          <span>{issue.description}</span>
+                          <AdminStatusBadge label="Critical" tone="critical" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <InlineNotice
+                      tone="positive"
+                      title="Lineage is internally consistent"
+                      description="No missing links, scope mismatches, or duplicate pending approvals were detected."
+                    />
+                  )}
+                </ListCard>
+
                 <ListCard title="Approval lineage">
                   <div className="admin-list">
                     {selectedApprovalLineage.map((approval) => (

@@ -240,10 +240,34 @@ type ReleaseReadinessApprovalList = {
   totalCount: number;
 };
 
+type ReleaseReadinessApprovalLineageIssue = {
+  code:
+    | "missing_previous_approval"
+    | "missing_next_approval"
+    | "cycle_detected"
+    | "broken_backward_link"
+    | "broken_forward_link"
+    | "scope_mismatch"
+    | "multiple_pending_approvals"
+    | "superseded_head";
+  approvalId: string;
+  relatedApprovalId: string | null;
+  description: string;
+};
+
+type ReleaseReadinessApprovalLineageIntegrity = {
+  status: "healthy" | "warning" | "critical";
+  issues: ReleaseReadinessApprovalLineageIssue[];
+  headApprovalId: string | null;
+  tailApprovalId: string | null;
+  actionableApprovalId: string | null;
+};
+
 type ReleaseReadinessApprovalLineageResult = {
   approval: ReleaseReadinessApprovalProjection;
   lineage: ReleaseReadinessApprovalProjection[];
   currentMutationToken: string;
+  integrity: ReleaseReadinessApprovalLineageIntegrity;
 };
 
 type ReleaseLaunchClosurePackProjection = {
@@ -2276,6 +2300,7 @@ export class ReleaseReadinessService {
 
     const lineageRecords: ReleaseReadinessApprovalRecord[] = [approval];
     const seenIds = new Set<string>([approval.id]);
+    const issues: ReleaseReadinessApprovalLineageIssue[] = [];
 
     let cursor = approval;
     while (cursor.supersedesApprovalId) {
@@ -2285,8 +2310,33 @@ export class ReleaseReadinessService {
         }
       });
 
-      if (!previous || seenIds.has(previous.id)) {
+      if (!previous) {
+        issues.push({
+          code: "missing_previous_approval",
+          approvalId: cursor.id,
+          relatedApprovalId: cursor.supersedesApprovalId,
+          description: `Approval ${cursor.id} references missing previous approval ${cursor.supersedesApprovalId}.`
+        });
         break;
+      }
+
+      if (seenIds.has(previous.id)) {
+        issues.push({
+          code: "cycle_detected",
+          approvalId: cursor.id,
+          relatedApprovalId: previous.id,
+          description: `Approval lineage cycles back to ${previous.id}.`
+        });
+        break;
+      }
+
+      if (previous.supersededByApprovalId !== cursor.id) {
+        issues.push({
+          code: "broken_forward_link",
+          approvalId: previous.id,
+          relatedApprovalId: cursor.id,
+          description: `Approval ${previous.id} does not point forward to ${cursor.id}.`
+        });
       }
 
       lineageRecords.unshift(previous);
@@ -2302,8 +2352,33 @@ export class ReleaseReadinessService {
         }
       });
 
-      if (!next || seenIds.has(next.id)) {
+      if (!next) {
+        issues.push({
+          code: "missing_next_approval",
+          approvalId: cursor.id,
+          relatedApprovalId: cursor.supersededByApprovalId,
+          description: `Approval ${cursor.id} references missing replacement approval ${cursor.supersededByApprovalId}.`
+        });
         break;
+      }
+
+      if (seenIds.has(next.id)) {
+        issues.push({
+          code: "cycle_detected",
+          approvalId: cursor.id,
+          relatedApprovalId: next.id,
+          description: `Approval lineage cycles forward to ${next.id}.`
+        });
+        break;
+      }
+
+      if (next.supersedesApprovalId !== cursor.id) {
+        issues.push({
+          code: "broken_backward_link",
+          approvalId: next.id,
+          relatedApprovalId: cursor.id,
+          description: `Approval ${next.id} does not point back to ${cursor.id}.`
+        });
       }
 
       lineageRecords.push(next);
@@ -2314,11 +2389,13 @@ export class ReleaseReadinessService {
     const lineage = await this.hydrateApprovalProjections(lineageRecords);
     const currentApproval =
       lineage.find((item) => item.id === approval.id) ?? lineage[0];
+    const integrity = this.buildApprovalLineageIntegrity(lineage, issues);
 
     return {
       approval: currentApproval,
       lineage,
-      currentMutationToken: currentApproval.updatedAt
+      currentMutationToken: currentApproval.updatedAt,
+      integrity
     };
   }
 
@@ -2404,5 +2481,74 @@ export class ReleaseReadinessService {
           : null
       )
     );
+  }
+
+  private buildApprovalLineageIntegrity(
+    lineage: ReleaseReadinessApprovalProjection[],
+    seededIssues: ReleaseReadinessApprovalLineageIssue[]
+  ): ReleaseReadinessApprovalLineageIntegrity {
+    const issues = [...seededIssues];
+    const head = lineage[lineage.length - 1] ?? null;
+    const tail = lineage[0] ?? null;
+    const scopeKey =
+      lineage.length > 0
+        ? `${lineage[0]!.releaseIdentifier}:${lineage[0]!.environment}`
+        : null;
+    const pendingApprovals = lineage.filter(
+      (approval) => approval.status === ReleaseReadinessApprovalStatus.pending_approval
+    );
+
+    for (const approval of lineage) {
+      if (
+        scopeKey &&
+        `${approval.releaseIdentifier}:${approval.environment}` !== scopeKey
+      ) {
+        issues.push({
+          code: "scope_mismatch",
+          approvalId: approval.id,
+          relatedApprovalId: null,
+          description: `Approval ${approval.id} belongs to ${approval.releaseIdentifier}/${approval.environment}, which does not match the lineage scope ${lineage[0]!.releaseIdentifier}/${lineage[0]!.environment}.`
+        });
+      }
+    }
+
+    if (pendingApprovals.length > 1) {
+      for (const approval of pendingApprovals) {
+        issues.push({
+          code: "multiple_pending_approvals",
+          approvalId: approval.id,
+          relatedApprovalId: null,
+          description: `Approval ${approval.id} is pending while another approval in the same lineage is also pending.`
+        });
+      }
+    }
+
+    if (head?.status === ReleaseReadinessApprovalStatus.superseded) {
+      issues.push({
+        code: "superseded_head",
+        approvalId: head.id,
+        relatedApprovalId: head.supersededByApprovalId,
+        description: `Latest approval ${head.id} is superseded but has no valid replacement in the loaded lineage.`
+      });
+    }
+
+    const uniqueIssues = issues.filter(
+      (issue, index, collection) =>
+        collection.findIndex(
+          (candidate) =>
+            candidate.code === issue.code &&
+            candidate.approvalId === issue.approvalId &&
+            candidate.relatedApprovalId === issue.relatedApprovalId
+        ) === index
+    );
+
+    return {
+      status: uniqueIssues.length > 0 ? "critical" : "healthy",
+      issues: uniqueIssues,
+      headApprovalId: head?.id ?? null,
+      tailApprovalId: tail?.id ?? null,
+      actionableApprovalId:
+        pendingApprovals.length === 1 ? pendingApprovals[0]!.id : null
+    };
   }
 }

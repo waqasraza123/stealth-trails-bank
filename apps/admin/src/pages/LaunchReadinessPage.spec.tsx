@@ -229,6 +229,16 @@ function buildApproval(releaseIdentifier: string) {
   };
 }
 
+function buildApprovalLineageIntegrity(approvalIds: string[], actionableApprovalId: string | null) {
+  return {
+    status: "healthy" as const,
+    issues: [],
+    headApprovalId: approvalIds[approvalIds.length - 1] ?? null,
+    tailApprovalId: approvalIds[0] ?? null,
+    actionableApprovalId
+  };
+}
+
 function buildLaunchClosureStatus(releaseIdentifier: string | null) {
   return {
     generatedAt: "2026-04-14T10:00:00.000Z",
@@ -376,7 +386,17 @@ describe("LaunchReadinessPage", () => {
                   currentApproval
                 ]
               : [currentApproval],
-          currentMutationToken: currentApproval.updatedAt
+          currentMutationToken: currentApproval.updatedAt,
+          integrity:
+            approvalId === "launch-2026.04.13.2-approval"
+              ? buildApprovalLineageIntegrity(
+                  [
+                    "launch-2026.04.13.1-approval",
+                    "launch-2026.04.13.2-approval"
+                  ],
+                  "launch-2026.04.13.2-approval"
+                )
+              : buildApprovalLineageIntegrity([approvalId], approvalId)
         };
       }
     );
@@ -667,6 +687,10 @@ describe("LaunchReadinessPage", () => {
     renderPage("/launch-readiness?release=launch-2026.04.13.2");
 
     expect(await screen.findByText("Approval lineage")).toBeInTheDocument();
+    expect(screen.getByText("Lineage integrity")).toBeInTheDocument();
+    expect(screen.getByText("Lineage head")).toBeInTheDocument();
+    expect(screen.getAllByText("launch-2026.04.13.2-approval").length).toBeGreaterThan(0);
+    expect(screen.getByText("Actionable approval")).toBeInTheDocument();
     expect(vi.mocked(getReleaseReadinessApprovalLineage)).toHaveBeenCalledWith(
       expect.objectContaining({
         operatorId: "ops_1"
@@ -703,7 +727,22 @@ describe("LaunchReadinessPage", () => {
           supersededAt: "2026-04-14T11:00:00.000Z"
         }
       ],
-      currentMutationToken: "2026-04-14T10:00:00.000Z"
+      currentMutationToken: "2026-04-14T10:00:00.000Z",
+      integrity: {
+        status: "critical" as const,
+        issues: [
+          {
+            code: "superseded_head" as const,
+            approvalId: "launch-2026.04.13.1-approval",
+            relatedApprovalId: "launch-2026.04.13.1-approval-rebound",
+            description:
+              "Latest approval launch-2026.04.13.1-approval is superseded but has no valid replacement in the loaded lineage."
+          }
+        ],
+        headApprovalId: "launch-2026.04.13.1-approval",
+        tailApprovalId: "launch-2026.04.13.1-approval",
+        actionableApprovalId: null
+      }
     });
 
     vi.mocked(listReleaseReadinessApprovals).mockResolvedValueOnce({

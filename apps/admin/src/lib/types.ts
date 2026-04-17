@@ -1134,6 +1134,26 @@ export type ReleaseReadinessApprovalLineage = {
   approval: ReleaseReadinessApproval;
   lineage: ReleaseReadinessApproval[];
   currentMutationToken: string;
+  integrity: {
+    status: "healthy" | "warning" | "critical";
+    issues: Array<{
+      code:
+        | "missing_previous_approval"
+        | "missing_next_approval"
+        | "cycle_detected"
+        | "broken_backward_link"
+        | "broken_forward_link"
+        | "scope_mismatch"
+        | "multiple_pending_approvals"
+        | "superseded_head";
+      approvalId: string;
+      relatedApprovalId: string | null;
+      description: string;
+    }>;
+    headApprovalId: string | null;
+    tailApprovalId: string | null;
+    actionableApprovalId: string | null;
+  };
 };
 
 export type LaunchClosureManifest = {

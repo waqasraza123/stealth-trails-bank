@@ -554,7 +554,14 @@ describe("ReleaseReadinessController", () => {
           id: "approval_2"
         }
       ],
-      currentMutationToken: "2026-04-10T12:00:00.000Z"
+      currentMutationToken: "2026-04-10T12:00:00.000Z",
+      integrity: {
+        status: "healthy",
+        issues: [],
+        headApprovalId: "approval_2",
+        tailApprovalId: "approval_1",
+        actionableApprovalId: null
+      }
     });
 
     const response = await request(app.getHttpServer())
@@ -581,7 +588,14 @@ describe("ReleaseReadinessController", () => {
             id: "approval_2"
           }
         ],
-        currentMutationToken: "2026-04-10T12:00:00.000Z"
+        currentMutationToken: "2026-04-10T12:00:00.000Z",
+        integrity: {
+          status: "healthy",
+          issues: [],
+          headApprovalId: "approval_2",
+          tailApprovalId: "approval_1",
+          actionableApprovalId: null
+        }
       }
     });
   });
