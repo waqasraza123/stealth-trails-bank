@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
-import { listAuditEvents } from "@/lib/api";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import {
+  getReleaseReadinessApprovalRecoveryTarget,
+  listAuditEvents
+} from "@/lib/api";
 import {
   formatCount,
   formatDateTime,
@@ -180,6 +183,7 @@ function parseBlockedApprovalMutationMetadata(
 
 export function AuditPage() {
   const { session, fallback } = useConfiguredSessionGuard();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filterDraft, setFilterDraft] = useState<AuditFilterDraft>(() =>
     createAuditFilterDraft(searchParams)
@@ -271,6 +275,23 @@ export function AuditPage() {
     const next = new URLSearchParams(searchParams);
     next.set("event", eventId);
     setSearchParams(next);
+  }
+
+  async function openApprovalRecoveryTarget(approvalId: string) {
+    const recoveryTarget = await getReleaseReadinessApprovalRecoveryTarget(
+      session!,
+      approvalId
+    );
+
+    if (!recoveryTarget.actionableApproval) {
+      return;
+    }
+
+    navigate(
+      `/launch-readiness?release=${encodeURIComponent(
+        recoveryTarget.actionableApproval.releaseIdentifier
+      )}&approval=${encodeURIComponent(recoveryTarget.actionableApproval.id)}`
+    );
   }
 
   return (
@@ -449,6 +470,20 @@ export function AuditPage() {
                       }
                       tone="warning"
                     />
+                    {selectedEvent.targetId &&
+                    blockedApprovalMutationMetadata.actionableApprovalId ? (
+                      <div className="admin-action-buttons">
+                        <button
+                          type="button"
+                          className="admin-secondary-button"
+                          onClick={() =>
+                            void openApprovalRecoveryTarget(selectedEvent.targetId!)
+                          }
+                        >
+                          Open actionable approval
+                        </button>
+                      </div>
+                    ) : null}
                     {blockedApprovalMutationMetadata.integrityIssues.length > 0 ? (
                       <div className="admin-list">
                         {blockedApprovalMutationMetadata.integrityIssues.map((issue) => (

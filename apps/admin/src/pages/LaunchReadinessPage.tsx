@@ -6,6 +6,7 @@ import {
   createReleaseReadinessEvidence,
   getLaunchClosureStatus,
   getReleaseReadinessApprovalLineage,
+  getReleaseReadinessApprovalRecoveryTarget,
   getReleaseReadinessSummary,
   listLaunchClosurePacks,
   listPendingReleases,
@@ -604,6 +605,28 @@ export function LaunchReadinessPage() {
     setApprovalRefreshConflict(null);
     setActionError(null);
     setDecisionFlash("Approval workspace refreshed.");
+    await refreshData();
+  }
+
+  async function navigateToApprovalRecoveryTarget(approvalId: string) {
+    const recoveryTarget = await getReleaseReadinessApprovalRecoveryTarget(
+      session!,
+      approvalId
+    );
+
+    if (!recoveryTarget.actionableApproval) {
+      setActionError(
+        "No actionable approval is currently available for this lineage. Resolve lineage issues and retry."
+      );
+      return;
+    }
+
+    setActionError(null);
+    setApprovalRefreshConflict(null);
+    updateSearchParams({
+      approval: recoveryTarget.actionableApproval.id,
+      release: recoveryTarget.actionableApproval.releaseIdentifier
+    });
     await refreshData();
   }
 
@@ -2205,11 +2228,9 @@ export function LaunchReadinessPage() {
                                   className="admin-secondary-button"
                                   disabled={decisionPending}
                                   onClick={() =>
-                                    updateSearchParams({
-                                      approval:
-                                        selectedApprovalLineageIntegrity.actionableApprovalId,
-                                      release: selectedApproval.releaseIdentifier
-                                    })
+                                    void navigateToApprovalRecoveryTarget(
+                                      selectedApproval.id
+                                    )
                                   }
                                 >
                                   View actionable approval

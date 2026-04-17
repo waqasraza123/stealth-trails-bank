@@ -1156,6 +1156,13 @@ export type ReleaseReadinessApprovalLineage = {
   };
 };
 
+export type ReleaseReadinessApprovalRecoveryTarget = {
+  selectedApprovalId: string;
+  actionableApproval: ReleaseReadinessApproval | null;
+  currentMutationToken: string | null;
+  integrity: ReleaseReadinessApprovalLineage["integrity"];
+};
+
 export type LaunchClosureManifest = {
   releaseIdentifier: string;
   environment: "staging" | "production_like" | "production";

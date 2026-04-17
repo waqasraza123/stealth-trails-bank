@@ -9,7 +9,8 @@ import {
 import { listAuditEvents } from "@/lib/api";
 
 vi.mock("@/lib/api", () => ({
-  listAuditEvents: vi.fn()
+  listAuditEvents: vi.fn(),
+  getReleaseReadinessApprovalRecoveryTarget: vi.fn()
 }));
 
 function renderPage(initialEntry = "/audit") {
@@ -100,7 +101,7 @@ describe("AuditPage", () => {
   });
 
   it("renders blocked launch approval mutation details from audit metadata", async () => {
-    renderPage("/audit");
+    renderPage("/audit?event=audit_1");
 
     expect(await screen.findByText("Blocked approval mutation")).toBeInTheDocument();
     expect(screen.getByText("Attempted action")).toBeInTheDocument();
@@ -109,6 +110,9 @@ describe("AuditPage", () => {
     expect(screen.getAllByText("approval_2").length).toBeGreaterThan(0);
     expect(
       screen.getByText("Launch approval mutation was blocked")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open actionable approval" })
     ).toBeInTheDocument();
     expect(
       screen.getByText(

@@ -270,6 +270,13 @@ type ReleaseReadinessApprovalLineageResult = {
   integrity: ReleaseReadinessApprovalLineageIntegrity;
 };
 
+type ReleaseReadinessApprovalRecoveryTargetResult = {
+  selectedApprovalId: string;
+  actionableApproval: ReleaseReadinessApprovalProjection | null;
+  currentMutationToken: string | null;
+  integrity: ReleaseReadinessApprovalLineageIntegrity;
+};
+
 type ReleaseReadinessApprovalLookupClient = {
   releaseReadinessApproval: {
     findUnique(args: Prisma.ReleaseReadinessApprovalFindUniqueArgs): Promise<ReleaseReadinessApprovalRecord | null>;
@@ -2588,6 +2595,40 @@ export class ReleaseReadinessService {
   async getApprovalLineage(
     approvalId: string
   ): Promise<ReleaseReadinessApprovalLineageResult> {
+    const { currentApproval, lineage, integrity } =
+      await this.resolveApprovalLineageData(approvalId);
+
+    return {
+      approval: currentApproval,
+      lineage,
+      currentMutationToken: currentApproval.updatedAt,
+      integrity
+    };
+  }
+
+  async getApprovalRecoveryTarget(
+    approvalId: string
+  ): Promise<ReleaseReadinessApprovalRecoveryTargetResult> {
+    const { currentApproval, lineage, integrity } =
+      await this.resolveApprovalLineageData(approvalId);
+    const actionableApproval =
+      integrity.actionableApprovalId
+        ? lineage.find((item) => item.id === integrity.actionableApprovalId) ?? null
+        : null;
+
+    return {
+      selectedApprovalId: currentApproval.id,
+      actionableApproval,
+      currentMutationToken: actionableApproval?.updatedAt ?? null,
+      integrity
+    };
+  }
+
+  private async resolveApprovalLineageData(approvalId: string): Promise<{
+    currentApproval: ReleaseReadinessApprovalProjection;
+    lineage: ReleaseReadinessApprovalProjection[];
+    integrity: ReleaseReadinessApprovalLineageIntegrity;
+  }> {
     const approval = await this.prismaService.releaseReadinessApproval.findUnique({
       where: {
         id: approvalId
@@ -2612,9 +2653,8 @@ export class ReleaseReadinessService {
     );
 
     return {
-      approval: currentApproval,
+      currentApproval,
       lineage,
-      currentMutationToken: currentApproval.updatedAt,
       integrity
     };
   }

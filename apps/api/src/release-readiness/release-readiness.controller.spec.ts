@@ -74,6 +74,7 @@ describe("ReleaseReadinessController", () => {
     listApprovals: jest.fn(),
     getApproval: jest.fn(),
     getApprovalLineage: jest.fn(),
+    getApprovalRecoveryTarget: jest.fn(),
     requestApproval: jest.fn(),
     rebindApprovalToLaunchClosurePack: jest.fn(),
     approveApproval: jest.fn(),
@@ -595,6 +596,51 @@ describe("ReleaseReadinessController", () => {
           headApprovalId: "approval_2",
           tailApprovalId: "approval_1",
           actionableApprovalId: null
+        }
+      }
+    });
+  });
+
+  it("returns approval recovery target through the dedicated endpoint", async () => {
+    releaseReadinessService.getApprovalRecoveryTarget.mockResolvedValue({
+      selectedApprovalId: "approval_1",
+      actionableApproval: {
+        id: "approval_2"
+      },
+      currentMutationToken: "2026-04-10T12:05:00.000Z",
+      integrity: {
+        status: "critical",
+        issues: [],
+        headApprovalId: "approval_2",
+        tailApprovalId: "approval_1",
+        actionableApprovalId: "approval_2"
+      }
+    });
+
+    const response = await request(app.getHttpServer())
+      .get("/release-readiness/internal/approvals/approval_1/recovery-target")
+      .set("x-operator-api-key", "test-operator-key")
+      .set("x-operator-id", "ops_2")
+      .expect(200);
+
+    expect(releaseReadinessService.getApprovalRecoveryTarget).toHaveBeenCalledWith(
+      "approval_1"
+    );
+    expect(response.body).toEqual({
+      status: "success",
+      message: "Release readiness approval recovery target retrieved successfully.",
+      data: {
+        selectedApprovalId: "approval_1",
+        actionableApproval: {
+          id: "approval_2"
+        },
+        currentMutationToken: "2026-04-10T12:05:00.000Z",
+        integrity: {
+          status: "critical",
+          issues: [],
+          headApprovalId: "approval_2",
+          tailApprovalId: "approval_1",
+          actionableApprovalId: "approval_2"
         }
       }
     });

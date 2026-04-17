@@ -9,6 +9,7 @@ import {
 import {
   approveReleaseReadinessApproval,
   getReleaseReadinessApprovalLineage,
+  getReleaseReadinessApprovalRecoveryTarget,
   getLaunchClosureStatus,
   getReleaseReadinessSummary,
   listLaunchClosurePacks,
@@ -23,6 +24,7 @@ import {
 vi.mock("@/lib/api", () => ({
   getReleaseReadinessSummary: vi.fn(),
   getReleaseReadinessApprovalLineage: vi.fn(),
+  getReleaseReadinessApprovalRecoveryTarget: vi.fn(),
   listReleaseReadinessEvidence: vi.fn(),
   listReleaseReadinessApprovals: vi.fn(),
   listPendingReleases: vi.fn(),
@@ -301,13 +303,7 @@ function renderPage(initialEntry = "/launch-readiness") {
   return render(
     <QueryClientProvider client={queryClient}>
       <OperatorSessionProvider serverUrl="http://localhost:9001">
-        <MemoryRouter
-          initialEntries={[initialEntry]}
-          future={{
-            v7_startTransition: true,
-            v7_relativeSplatPath: true
-          }}
-        >
+        <MemoryRouter initialEntries={[initialEntry]}>
           <LaunchReadinessPage />
         </MemoryRouter>
       </OperatorSessionProvider>
@@ -399,6 +395,22 @@ describe("LaunchReadinessPage", () => {
               : buildApprovalLineageIntegrity([approvalId], approvalId)
         };
       }
+    );
+    vi.mocked(getReleaseReadinessApprovalRecoveryTarget).mockImplementation(
+      async (_session, approvalId) => ({
+        selectedApprovalId: approvalId,
+        actionableApproval: {
+          ...buildApproval("launch-2026.04.13.2"),
+          id: approvalId === "launch-2026.04.13.2-approval"
+            ? "launch-2026.04.13.2-approval-replacement"
+            : approvalId
+        },
+        currentMutationToken: "2026-04-14T10:00:00.000Z",
+        integrity: buildApprovalLineageIntegrity(
+          [approvalId, "launch-2026.04.13.2-approval-replacement"],
+          "launch-2026.04.13.2-approval-replacement"
+        )
+      })
     );
     vi.mocked(rebindReleaseReadinessApprovalPack).mockImplementation(
       async (_session, approvalId, payload) => ({
@@ -728,6 +740,17 @@ describe("LaunchReadinessPage", () => {
     expect(
       screen.getByRole("button", { name: "Rebind to latest pack" })
     ).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "View actionable approval" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(getReleaseReadinessApprovalRecoveryTarget)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operatorId: "ops_1"
+        }),
+        "launch-2026.04.13.2-approval"
+      );
+    });
   });
 
   it("renders the selected approval lineage from the dedicated lineage endpoint", async () => {

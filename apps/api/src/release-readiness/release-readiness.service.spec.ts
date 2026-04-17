@@ -1369,6 +1369,44 @@ describe("ReleaseReadinessService", () => {
     });
   });
 
+  it("returns the current actionable approval as a dedicated recovery target", async () => {
+    const { service, prismaService } = createService();
+    (prismaService.releaseReadinessEvidence.findMany as jest.Mock)
+      .mockResolvedValueOnce(buildPassedRequiredEvidenceRecords())
+      .mockResolvedValueOnce([buildEvidenceRecord()]);
+    (prismaService.releaseReadinessApproval.findUnique as jest.Mock)
+      .mockResolvedValueOnce(
+        buildApprovalRecord({
+          id: "approval_1",
+          status: ReleaseReadinessApprovalStatus.superseded,
+          supersededByApprovalId: "approval_2"
+        })
+      )
+      .mockResolvedValueOnce(
+        buildApprovalRecord({
+          id: "approval_2",
+          supersedesApprovalId: "approval_1"
+        })
+      );
+
+    const result = await service.getApprovalRecoveryTarget("approval_1");
+
+    expect(result).toEqual({
+      selectedApprovalId: "approval_1",
+      actionableApproval: expect.objectContaining({
+        id: "approval_2"
+      }),
+      currentMutationToken: approvalExpectedUpdatedAt,
+      integrity: {
+        status: "healthy",
+        issues: [],
+        headApprovalId: "approval_2",
+        tailApprovalId: "approval_1",
+        actionableApprovalId: "approval_2"
+      }
+    });
+  });
+
   it("keeps launch approval blocked when the latest evidence belongs to another release", async () => {
     const { service, prismaService, transactionClient } = createService();
     (prismaService.releaseReadinessApproval.findFirst as jest.Mock).mockResolvedValue(

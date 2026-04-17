@@ -31,6 +31,7 @@ import type {
   PlatformAlertList,
   ReleaseLaunchClosurePackList,
   ReleaseReadinessApprovalLineage,
+  ReleaseReadinessApprovalRecoveryTarget,
   ReleaseReadinessApprovalList,
   ReleaseReadinessEvidenceList,
   ReleaseReadinessSummary,
@@ -538,6 +539,16 @@ export async function getReleaseReadinessApprovalLineage(
   return requestData(session, {
     method: "GET",
     url: `/release-readiness/internal/approvals/${approvalId}/lineage`
+  });
+}
+
+export async function getReleaseReadinessApprovalRecoveryTarget(
+  session: OperatorSession,
+  approvalId: string
+): Promise<ReleaseReadinessApprovalRecoveryTarget> {
+  return requestData(session, {
+    method: "GET",
+    url: `/release-readiness/internal/approvals/${approvalId}/recovery-target`
   });
 }
 

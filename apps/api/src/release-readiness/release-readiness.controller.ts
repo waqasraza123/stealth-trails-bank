@@ -176,6 +176,21 @@ export class ReleaseReadinessController {
     };
   }
 
+  @Get("approvals/:approvalId/recovery-target")
+  async getApprovalRecoveryTarget(
+    @Param("approvalId") approvalId: string
+  ): Promise<CustomJsonResponse> {
+    const result = await this.releaseReadinessService.getApprovalRecoveryTarget(
+      approvalId
+    );
+
+    return {
+      status: "success",
+      message: "Release readiness approval recovery target retrieved successfully.",
+      data: result
+    };
+  }
+
   @Post("approvals")
   async requestApproval(
     @Body(
