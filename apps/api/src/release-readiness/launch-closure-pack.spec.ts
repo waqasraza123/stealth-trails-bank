@@ -140,6 +140,10 @@ describe("launch-closure-pack", () => {
       expect(result.files).toContain(
         path.join(outputDir, "approval-request.template.json")
       );
+      expect(result.files).toContain(path.join(outputDir, "operator-actions.md"));
+      expect(result.files).toContain(
+        path.join(outputDir, "payloads", "critical_alert_reescalation.json")
+      );
       expect(result.files).toContain(
         path.join(outputDir, "current-status-summary.md")
       );
@@ -157,6 +161,14 @@ describe("launch-closure-pack", () => {
         path.join(outputDir, "current-status-summary.md"),
         "utf8"
       );
+      const operatorActions = readFileSync(
+        path.join(outputDir, "operator-actions.md"),
+        "utf8"
+      );
+      const criticalAlertPayload = readFileSync(
+        path.join(outputDir, "payloads", "critical_alert_reescalation.json"),
+        "utf8"
+      );
 
       expect(executionPlan).toContain("pnpm release:readiness:probe --");
       expect(executionPlan).toContain("--probe worker_rollback_drill");
@@ -170,6 +182,10 @@ describe("launch-closure-pack", () => {
       );
       expect(currentStatus).toContain("Current Launch-Closure Status Snapshot");
       expect(currentStatus).toContain("critical_alert_reescalation");
+      expect(operatorActions).toContain("Operator Actions");
+      expect(operatorActions).toContain("payloads/critical_alert_reescalation.json");
+      expect(criticalAlertPayload).toContain('"evidenceType": "critical_alert_reescalation"');
+      expect(criticalAlertPayload).toContain('"environment": "production_like"');
       expect(validationSummary).toContain(
         "database_restore_drill: accepted only in staging, production_like, production"
       );
@@ -201,6 +217,14 @@ describe("launch-closure-pack", () => {
         expect.objectContaining({
           relativePath: "execution-plan.md",
           content: expect.stringContaining("pnpm release:readiness:probe --")
+        }),
+        expect.objectContaining({
+          relativePath: "operator-actions.md",
+          content: expect.stringContaining("payloads/platform_alert_delivery_slo.json")
+        }),
+        expect.objectContaining({
+          relativePath: path.join("payloads", "platform_alert_delivery_slo.json"),
+          content: expect.stringContaining('"evidenceType": "platform_alert_delivery_slo"')
         }),
         expect.objectContaining({
           relativePath: "current-status-summary.md",

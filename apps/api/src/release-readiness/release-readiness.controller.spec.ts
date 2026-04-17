@@ -700,8 +700,19 @@ describe("ReleaseReadinessController", () => {
           relativePath: "execution-plan.md"
         }),
         expect.objectContaining({
+          relativePath: "operator-actions.md",
+          content: expect.stringContaining("payloads/critical_alert_reescalation.json")
+        }),
+        expect.objectContaining({
+          relativePath: "approve-approval.template.json"
+        }),
+        expect.objectContaining({
           relativePath: "current-status-summary.md",
           content: expect.stringContaining("critical_alert_reescalation")
+        }),
+        expect.objectContaining({
+          relativePath: "payloads/critical_alert_reescalation.json",
+          content: expect.stringContaining('"evidenceType": "critical_alert_reescalation"')
         })
       ])
     );

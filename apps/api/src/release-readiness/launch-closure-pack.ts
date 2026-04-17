@@ -118,6 +118,7 @@ type LaunchClosureArtifact = {
   title: string;
   objective: string;
   runbookPath: string;
+  evidenceType?: string;
   requiredInputs: string[];
   steps: string[];
   expectedOutcome: string[];
@@ -261,6 +262,41 @@ function buildApprovalCurlCommand(manifest: LaunchClosureManifest): string {
   ].join("\n");
 }
 
+function buildEvidenceCurlCommand(
+  manifest: LaunchClosureManifest,
+  evidenceType: string
+): string {
+  return [
+    "curl -sS -X POST \\",
+    `  '${manifest.baseUrls.api}/release-readiness/internal/evidence' \\`,
+    `  -H 'x-operator-api-key: $${manifest.operator.apiKeyEnvironmentVariable}' \\`,
+    `  -H 'x-operator-id: ${manifest.operator.requesterId}' \\`,
+    `  -H 'x-operator-role: ${manifest.operator.requesterRole}' \\`,
+    "  -H 'content-type: application/json' \\",
+    `  --data @payloads/${evidenceType}.json`
+  ].join("\n");
+}
+
+function buildApprovalDecisionCurlCommand(
+  manifest: LaunchClosureManifest,
+  action: "approve" | "reject"
+): string {
+  const templateName =
+    action === "approve"
+      ? "approve-approval.template.json"
+      : "reject-approval.template.json";
+
+  return [
+    "curl -sS -X POST \\",
+    `  '${manifest.baseUrls.api}/release-readiness/internal/approvals/<approval-id>/${action}' \\`,
+    `  -H 'x-operator-api-key: $${manifest.operator.apiKeyEnvironmentVariable}' \\`,
+    `  -H 'x-operator-id: ${manifest.operator.approverId}' \\`,
+    `  -H 'x-operator-role: ${manifest.operator.approverRole}' \\`,
+    "  -H 'content-type: application/json' \\",
+    `  --data @${templateName}`
+  ].join("\n");
+}
+
 function buildApprovalBodyTemplate(
   manifest: LaunchClosureManifest,
   status?: LaunchClosureDynamicStatusInput
@@ -320,6 +356,125 @@ ${
 `;
 }
 
+function buildEvidencePayloadTemplate(
+  manifest: LaunchClosureManifest,
+  artifact: LaunchClosureArtifact
+): Record<string, unknown> | null {
+  if (!artifact.evidenceType) {
+    return null;
+  }
+
+  const basePayload: Record<string, unknown> = {
+    evidenceType: artifact.evidenceType,
+    environment: manifest.environment,
+    status: "passed",
+    releaseIdentifier: manifest.releaseIdentifier,
+    summary: `${artifact.title} completed for ${manifest.releaseIdentifier}.`,
+    note: `Runbook: ${artifact.runbookPath}`,
+    runbookPath: artifact.runbookPath,
+    evidenceLinks: []
+  };
+
+  if (artifact.evidenceType === "database_restore_drill") {
+    basePayload.backupReference = manifest.artifacts.backupReference;
+  }
+
+  if (
+    artifact.evidenceType === "api_rollback_drill" ||
+    artifact.evidenceType === "worker_rollback_drill"
+  ) {
+    basePayload.rollbackReleaseIdentifier =
+      artifact.evidenceType === "api_rollback_drill"
+        ? manifest.artifacts.apiRollbackReleaseId
+        : manifest.artifacts.workerRollbackReleaseId;
+  }
+
+  if (artifact.evidenceType === "secret_handling_review") {
+    basePayload.note = `References: ${manifest.governance.secretReviewReference}`;
+    basePayload.evidenceLinks = [manifest.governance.secretReviewReference];
+  }
+
+  if (artifact.evidenceType === "role_review") {
+    basePayload.note = `References: ${manifest.governance.roleReviewReference}; roster ${manifest.governance.roleReviewRosterReference}`;
+    basePayload.evidenceLinks = [
+      manifest.governance.roleReviewReference,
+      manifest.governance.roleReviewRosterReference
+    ];
+  }
+
+  return basePayload;
+}
+
+function buildApprovalDecisionTemplate(
+  action: "approve" | "reject"
+): Record<string, unknown> {
+  if (action === "approve") {
+    return {
+      approvalNote:
+        "Approval granted after reviewing current evidence, blockers, and dual-control requirements."
+    };
+  }
+
+  return {
+    rejectionNote:
+      "Rejected after reviewing missing, failed, stale, or blocked launch-closure requirements."
+  };
+}
+
+function renderOperatorActionsGuide(
+  manifest: LaunchClosureManifest,
+  artifacts: LaunchClosureArtifact[]
+): string {
+  const evidenceArtifacts = artifacts.filter((artifact) => artifact.evidenceType);
+
+  return `# Operator Actions
+
+## Console URLs
+
+- Admin launch-readiness workspace: \`${manifest.baseUrls.admin}/launch-readiness?release=${manifest.releaseIdentifier}\`
+- API launch-closure status: \`${manifest.baseUrls.api}/release-readiness/internal/launch-closure/status?releaseIdentifier=${manifest.releaseIdentifier}&environment=${manifest.environment}\`
+
+## Evidence recording payloads
+
+${evidenceArtifacts
+  .map(
+    (artifact) => `### ${artifact.title}
+
+- Payload template: \`payloads/${artifact.evidenceType}.json\`
+- Record endpoint: \`POST ${manifest.baseUrls.api}/release-readiness/internal/evidence\`
+
+\`\`\`bash
+${buildEvidenceCurlCommand(manifest, artifact.evidenceType!)}
+\`\`\``
+  )
+  .join("\n\n")}
+
+## Governed approval payloads
+
+- Request payload: \`approval-request.template.json\`
+- Approve payload: \`approve-approval.template.json\`
+- Reject payload: \`reject-approval.template.json\`
+
+### Request approval
+
+\`\`\`bash
+${buildApprovalCurlCommand(manifest)}
+\`\`\`
+
+### Approve approval record
+
+\`\`\`bash
+${buildApprovalDecisionCurlCommand(manifest, "approve")}
+\`\`\`
+
+### Reject approval record
+
+\`\`\`bash
+${buildApprovalDecisionCurlCommand(manifest, "reject")}
+\`\`\`
+`;
+}
+
 function buildLaunchClosureArtifacts(
   manifest: LaunchClosureManifest
 ): LaunchClosureArtifact[] {
@@ -330,6 +485,7 @@ function buildLaunchClosureArtifacts(
       objective:
         "Prove sustained delivery-target degradation is visible through the operator API and leaves durable operations alert evidence in an accepted environment.",
       runbookPath: "docs/runbooks/platform-alert-delivery-targets.md",
+      evidenceType: "platform_alert_delivery_slo",
       requiredInputs: [
         `API base URL: ${manifest.baseUrls.api}`,
         `Expected target name: ${manifest.alerting.expectedTargetName}`,
@@ -369,6 +525,7 @@ function buildLaunchClosureArtifacts(
       objective:
         "Prove an overdue critical alert is re-escalated on the expected cadence and leaves durable evidence in an accepted environment.",
       runbookPath: "docs/runbooks/platform-alert-delivery-targets.md",
+      evidenceType: "critical_alert_reescalation",
       requiredInputs: [
         `API base URL: ${manifest.baseUrls.api}`,
         `Expected minimum re-escalations: ${manifest.alerting.expectedMinReEscalations}`,
@@ -410,6 +567,7 @@ function buildLaunchClosureArtifacts(
       objective:
         "Prove a recent production-like backup restores cleanly and the restored API surface remains readable without schema drift.",
       runbookPath: "docs/runbooks/restore-and-rollback-drills.md",
+      evidenceType: "database_restore_drill",
       requiredInputs: [
         `Restore validation API base URL: ${manifest.baseUrls.restoreApi}`,
         `Backup reference: ${manifest.artifacts.backupReference}`,
@@ -445,6 +603,7 @@ function buildLaunchClosureArtifacts(
       objective:
         "Prove the prior known-good API artifact can be restored against the current schema without hidden runtime migration assumptions.",
       runbookPath: "docs/runbooks/restore-and-rollback-drills.md",
+      evidenceType: "api_rollback_drill",
       requiredInputs: [
         `Primary API base URL: ${manifest.baseUrls.api}`,
         `Current API release id: ${manifest.artifacts.apiReleaseId}`,
@@ -479,6 +638,7 @@ function buildLaunchClosureArtifacts(
       objective:
         "Prove the prior worker artifact resumes heartbeat and safe queue processing without duplicate execution.",
       runbookPath: "docs/runbooks/restore-and-rollback-drills.md",
+      evidenceType: "worker_rollback_drill",
       requiredInputs: [
         `Primary API base URL: ${manifest.baseUrls.api}`,
         `Worker identifier: ${manifest.worker.identifier}`,
@@ -516,6 +676,7 @@ function buildLaunchClosureArtifacts(
       objective:
         "Record the reviewed launch secret posture, rotation evidence, and any residual exceptions in an accepted environment.",
       runbookPath: "docs/security/secret-handling-review.md",
+      evidenceType: "secret_handling_review",
       requiredInputs: [
         `Primary API base URL: ${manifest.baseUrls.api}`,
         `Launch release identifier: ${manifest.releaseIdentifier}`,
@@ -551,6 +712,7 @@ function buildLaunchClosureArtifacts(
       objective:
         "Record the approved launch operator roster, mapped roles, and any scoped governance exceptions in an accepted environment.",
       runbookPath: "docs/security/role-review.md",
+      evidenceType: "role_review",
       requiredInputs: [
         `Primary API base URL: ${manifest.baseUrls.api}`,
         `Launch release identifier: ${manifest.releaseIdentifier}`,
@@ -706,17 +868,24 @@ ${artifacts
     const commandSection = artifact.exactCommand
       ? `\n### Exact command\n\n\`\`\`bash\n${artifact.exactCommand}\n\`\`\`\n`
       : "";
+    const payloadSection = artifact.evidenceType
+      ? `- Evidence payload template: \`payloads/${artifact.evidenceType}.json\`\n`
+      : "";
 
     return `## ${index + 1}. ${artifact.title}
 
 - Objective: ${artifact.objective}
 - Runbook: [${artifact.runbookPath}](/Users/mc/development/blockchain/ethereum/stealth-trails-bank/${artifact.runbookPath})
+- API endpoint: \`${artifact.evidenceType ? "POST /release-readiness/internal/evidence" : "POST /release-readiness/internal/approvals"}\`
+- Console URL: \`${manifest.baseUrls.admin}/launch-readiness?release=${manifest.releaseIdentifier}\`
+- ${artifact.evidenceType ? `Payload template: \`payloads/${artifact.evidenceType}.json\`` : "Payload template: `approval-request.template.json`"}
 - Required inputs:
 ${artifact.requiredInputs.map((value) => `  - ${value}`).join("\n")}
 - Steps:
 ${artifact.steps.map((value) => `  - ${value}`).join("\n")}
 - Expected outcome:
-${artifact.expectedOutcome.map((value) => `  - ${value}`).join("\n")}${commandSection}`;
+${artifact.expectedOutcome.map((value) => `  - ${value}`).join("\n")}
+${payloadSection}${commandSection}`;
   })
   .join("\n")}
 `;
@@ -741,6 +910,10 @@ ${artifact.objective}
 ## Required Inputs
 
 ${artifact.requiredInputs.map((value) => `- ${value}`).join("\n")}
+
+## Operator Payload Template
+
+${artifact.evidenceType ? `- \`payloads/${artifact.evidenceType}.json\`` : "- `approval-request.template.json`"}
 
 ## Steps Performed
 
@@ -1094,6 +1267,22 @@ export function previewLaunchClosurePack(
   manifest: LaunchClosureManifest,
   statusSnapshot?: LaunchClosureDynamicStatusInput
 ): LaunchClosurePackPreview {
+  const artifacts = buildLaunchClosureArtifacts(manifest);
+  const evidencePayloadFiles = artifacts
+    .map((artifact) => {
+      const payload = buildEvidencePayloadTemplate(manifest, artifact);
+
+      if (!artifact.evidenceType || !payload) {
+        return null;
+      }
+
+      return {
+        relativePath: path.join("payloads", `${artifact.evidenceType}.json`),
+        content: jsonStringify(payload)
+      };
+    })
+    .filter((file): file is LaunchClosurePackFile => file !== null);
+
   return {
     outputSubpath: buildOutputSubpath(manifest),
     files: [
@@ -1114,8 +1303,20 @@ export function previewLaunchClosurePack(
         content: renderExecutionPlan(manifest)
       },
       {
+        relativePath: "operator-actions.md",
+        content: renderOperatorActionsGuide(manifest, artifacts)
+      },
+      {
         relativePath: "approval-request.template.json",
         content: buildApprovalBodyTemplate(manifest, statusSnapshot)
+      },
+      {
+        relativePath: "approve-approval.template.json",
+        content: jsonStringify(buildApprovalDecisionTemplate("approve"))
+      },
+      {
+        relativePath: "reject-approval.template.json",
+        content: jsonStringify(buildApprovalDecisionTemplate("reject"))
       },
       ...(statusSnapshot
         ? [
@@ -1125,7 +1326,8 @@ export function previewLaunchClosurePack(
             }
           ]
         : []),
-      ...buildLaunchClosureArtifacts(manifest).map((artifact) => ({
+      ...evidencePayloadFiles,
+      ...artifacts.map((artifact) => ({
         relativePath: path.join("evidence", artifact.filename),
         content: renderEvidenceTemplate(manifest, artifact)
       }))
