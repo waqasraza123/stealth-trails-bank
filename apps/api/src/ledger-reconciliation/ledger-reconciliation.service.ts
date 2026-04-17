@@ -8,6 +8,7 @@ import { loadProductChainRuntimeConfig } from "@stealth-trails-bank/config/api";
 import {
   BlockchainTransactionStatus,
   LedgerAccountType,
+  LedgerJournalType,
   LedgerPostingDirection,
   LedgerReconciliationMismatchRecommendedAction,
   LedgerReconciliationMismatchScope,
@@ -124,7 +125,7 @@ const transactionIntentMismatchInclude = {
       updatedAt: true
     }
   },
-  ledgerJournal: {
+  ledgerJournals: {
     select: {
       id: true,
       journalType: true,
@@ -829,6 +830,14 @@ export class LedgerReconciliationService {
       }
 
       const latestBlockchainTransaction = intent.blockchainTransactions[0] ?? null;
+      const settlementJournalType =
+        intent.intentType === TransactionIntentType.deposit
+          ? LedgerJournalType.deposit_settlement
+          : LedgerJournalType.withdrawal_settlement;
+      const settlementLedgerJournal =
+        intent.ledgerJournals.find(
+          (ledgerJournal) => ledgerJournal.journalType === settlementJournalType
+        ) ?? null;
       const reconciliation =
         intent.intentType === TransactionIntentType.deposit
           ? classifyDepositSettlementReconciliation({
@@ -837,7 +846,7 @@ export class LedgerReconciliationService {
               requestedAmount: intent.requestedAmount.toString(),
               settledAmount: intent.settledAmount?.toString() ?? null,
               latestBlockchainStatus: latestBlockchainTransaction?.status ?? null,
-              hasLedgerJournal: Boolean(intent.ledgerJournal)
+              hasLedgerJournal: Boolean(settlementLedgerJournal)
             })
           : classifyWithdrawalSettlementReconciliation({
               status: intent.status,
@@ -845,7 +854,7 @@ export class LedgerReconciliationService {
               requestedAmount: intent.requestedAmount.toString(),
               settledAmount: intent.settledAmount?.toString() ?? null,
               latestBlockchainStatus: latestBlockchainTransaction?.status ?? null,
-              hasLedgerJournal: Boolean(intent.ledgerJournal)
+              hasLedgerJournal: Boolean(settlementLedgerJournal)
             });
 
       if (
@@ -927,13 +936,13 @@ export class LedgerReconciliationService {
                   updatedAt: latestBlockchainTransaction.updatedAt.toISOString()
                 }
               : null,
-            ledgerJournal: intent.ledgerJournal
+            ledgerJournal: settlementLedgerJournal
               ? {
-                  id: intent.ledgerJournal.id,
-                  journalType: intent.ledgerJournal.journalType,
-                  postedAt: intent.ledgerJournal.postedAt.toISOString(),
-                  createdAt: intent.ledgerJournal.createdAt.toISOString(),
-                  ledgerPostings: intent.ledgerJournal.ledgerPostings.map((posting) => ({
+                  id: settlementLedgerJournal.id,
+                  journalType: settlementLedgerJournal.journalType,
+                  postedAt: settlementLedgerJournal.postedAt.toISOString(),
+                  createdAt: settlementLedgerJournal.createdAt.toISOString(),
+                  ledgerPostings: settlementLedgerJournal.ledgerPostings.map((posting) => ({
                     id: posting.id,
                     direction: posting.direction,
                     amount: posting.amount.toString(),
@@ -1008,7 +1017,12 @@ export class LedgerReconciliationService {
 
     const liabilityAccounts = await this.prismaService.ledgerAccount.findMany({
       where: {
-        accountType: LedgerAccountType.customer_asset_liability,
+        accountType: {
+          in: [
+            LedgerAccountType.customer_asset_liability,
+            LedgerAccountType.customer_asset_pending_withdrawal_liability
+          ]
+        },
         chainId: this.productChainId,
         ...(accountFilter
           ? {
@@ -1120,7 +1134,8 @@ export class LedgerReconciliationService {
           lastName: string | null;
         };
       };
-      liabilityAmount: Prisma.Decimal;
+      availableLiabilityAmount: Prisma.Decimal;
+      pendingLiabilityAmount: Prisma.Decimal;
       reservedAmount: Prisma.Decimal;
       reservedIntentIds: string[];
     };
@@ -1145,7 +1160,8 @@ export class LedgerReconciliationService {
         balance: null,
         asset,
         customerAccount,
-        liabilityAmount: this.createZeroDecimal(),
+        availableLiabilityAmount: this.createZeroDecimal(),
+        pendingLiabilityAmount: this.createZeroDecimal(),
         reservedAmount: this.createZeroDecimal(),
         reservedIntentIds: []
       };
@@ -1176,7 +1192,16 @@ export class LedgerReconciliationService {
           : current.minus(amount);
       }, this.createZeroDecimal());
 
-      entry.liabilityAmount = entry.liabilityAmount.plus(liabilityAmount);
+      if (
+        account.accountType ===
+        LedgerAccountType.customer_asset_pending_withdrawal_liability
+      ) {
+        entry.pendingLiabilityAmount =
+          entry.pendingLiabilityAmount.plus(liabilityAmount);
+      } else {
+        entry.availableLiabilityAmount =
+          entry.availableLiabilityAmount.plus(liabilityAmount);
+      }
     }
 
     for (const intent of reservedWithdrawals) {
@@ -1192,11 +1217,15 @@ export class LedgerReconciliationService {
     return Array.from(byKey.values()).flatMap((entry) => {
       const actualAvailable = this.toDecimal(entry.balance?.availableBalance ?? 0);
       const actualPending = this.toDecimal(entry.balance?.pendingBalance ?? 0);
-      const expectedPending = entry.reservedAmount;
-      const expectedAvailable = entry.liabilityAmount.minus(expectedPending);
+      const expectedPending = entry.pendingLiabilityAmount;
+      const expectedAvailable = entry.availableLiabilityAmount;
+      const reservationMatchesPendingLiability =
+        entry.reservedAmount.eq(entry.pendingLiabilityAmount);
 
       const hasMeaningfulExpectedBalance =
-        !entry.liabilityAmount.eq(0) || !entry.reservedAmount.eq(0);
+        !entry.availableLiabilityAmount.eq(0) ||
+        !entry.pendingLiabilityAmount.eq(0) ||
+        !entry.reservedAmount.eq(0);
       const hasActualBalance = Boolean(entry.balance);
 
       if (
@@ -1212,21 +1241,30 @@ export class LedgerReconciliationService {
       const expectedMatchesActual =
         actualAvailable.eq(expectedAvailable) && actualPending.eq(expectedPending);
 
-      if (!impossibleExpectedState && expectedMatchesActual) {
+      if (
+        !impossibleExpectedState &&
+        expectedMatchesActual &&
+        reservationMatchesPendingLiability
+      ) {
         return [];
       }
 
-      const recommendedAction = impossibleExpectedState
-        ? LedgerReconciliationMismatchRecommendedAction.open_review_case
-        : LedgerReconciliationMismatchRecommendedAction.repair_customer_balance;
+      const recommendedAction =
+        impossibleExpectedState || !reservationMatchesPendingLiability
+          ? LedgerReconciliationMismatchRecommendedAction.open_review_case
+          : LedgerReconciliationMismatchRecommendedAction.repair_customer_balance;
 
       const reasonCode = impossibleExpectedState
         ? "customer_asset_balance_projection_unrepairable"
-        : "customer_asset_balance_projection_mismatch";
+        : !reservationMatchesPendingLiability
+          ? "customer_asset_pending_withdrawal_liability_mismatch"
+          : "customer_asset_balance_projection_mismatch";
 
       const summary = impossibleExpectedState
         ? `Customer balance projection for ${entry.asset.symbol} on account ${entry.customerAccount.id} cannot be repaired safely because the derived available balance would be negative.`
-        : `Customer balance projection for ${entry.asset.symbol} on account ${entry.customerAccount.id} diverges from ledger liability and reserved withdrawal state.`;
+        : !reservationMatchesPendingLiability
+          ? `Customer balance projection for ${entry.asset.symbol} on account ${entry.customerAccount.id} has a pending withdrawal liability mismatch between the immutable ledger and active withdrawal reservations.`
+          : `Customer balance projection for ${entry.asset.symbol} on account ${entry.customerAccount.id} diverges from immutable ledger liability state.`;
 
       return [
         {
@@ -1263,8 +1301,13 @@ export class LedgerReconciliationService {
               availableBalance: expectedAvailable.toString(),
               pendingBalance: expectedPending.toString()
             },
-            ledgerLiabilityAmount: entry.liabilityAmount.toString(),
+            ledgerAvailableLiabilityAmount:
+              entry.availableLiabilityAmount.toString(),
+            ledgerPendingWithdrawalLiabilityAmount:
+              entry.pendingLiabilityAmount.toString(),
             reservedWithdrawalAmount: entry.reservedAmount.toString(),
+            reservedWithdrawalMatchesPendingLiability:
+              reservationMatchesPendingLiability,
             reservedWithdrawalIntentIds: entry.reservedIntentIds
           } as Prisma.JsonValue
         }

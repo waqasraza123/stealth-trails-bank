@@ -13,6 +13,7 @@ import {
   AccountLifecycleStatus,
   AssetStatus,
   BlockchainTransactionStatus,
+  LedgerJournalType,
   PolicyDecision,
   Prisma,
   ReviewCaseType,
@@ -988,13 +989,6 @@ export class WithdrawalIntentsService {
     try {
       const createdIntent = await this.prismaService.$transaction(
         async (transaction) => {
-          const balanceTransition =
-            await this.ledgerService.reserveWithdrawalBalance(transaction, {
-              customerAccountId: context.customerAccountId,
-              assetId: context.assetId,
-              amount: requestedAmount
-            });
-
           const intent = await transaction.transactionIntent.create({
             data: {
               customerAccountId: context.customerAccountId,
@@ -1026,11 +1020,20 @@ export class WithdrawalIntentsService {
                 select: {
                   id: true,
                   address: true,
-            custodyType: true
+                  custodyType: true
                 }
               }
             }
           });
+
+          const balanceTransition =
+            await this.ledgerService.reserveWithdrawalBalance(transaction, {
+              transactionIntentId: intent.id,
+              customerAccountId: context.customerAccountId,
+              assetId: context.assetId,
+              chainId: this.productChainId,
+              amount: requestedAmount
+            });
 
           await transaction.auditEvent.create({
             data: {
@@ -1051,6 +1054,9 @@ export class WithdrawalIntentsService {
                 externalAddress: context.externalAddress,
                 chainId: this.productChainId,
                 idempotencyKey: dto.idempotencyKey,
+                ledgerJournalId: balanceTransition.ledgerJournalId,
+                debitLedgerAccountId: balanceTransition.debitLedgerAccountId,
+                creditLedgerAccountId: balanceTransition.creditLedgerAccountId,
                 availableBalance: balanceTransition.availableBalance,
                 pendingBalance: balanceTransition.pendingBalance
               }
@@ -1194,6 +1200,11 @@ export class WithdrawalIntentsService {
 
     const updatedIntent = await this.prismaService.$transaction(
       async (transaction) => {
+        let balanceTransition:
+          | Awaited<
+              ReturnType<LedgerService["releaseWithdrawalReservation"]>
+            >
+          | null = null;
         let availableBalance: string | null = null;
         let pendingBalance: string | null = null;
 
@@ -1207,12 +1218,16 @@ export class WithdrawalIntentsService {
             : PolicyDecision.denied;
 
         if (dto.decision === "denied") {
-          const balanceTransition =
-            await this.ledgerService.releaseWithdrawalReservation(transaction, {
+          balanceTransition = await this.ledgerService.releaseWithdrawalReservation(
+            transaction,
+            {
+              transactionIntentId: existingIntent.id,
               customerAccountId: existingIntent.customerAccount!.id,
               assetId: existingIntent.asset.id,
+              chainId: existingIntent.chainId,
               amount: existingIntent.requestedAmount
-            });
+            }
+          );
 
           availableBalance = balanceTransition.availableBalance;
           pendingBalance = balanceTransition.pendingBalance;
@@ -1260,6 +1275,18 @@ export class WithdrawalIntentsService {
               note: dto.note?.trim() ?? null,
               denialReason:
                 dto.decision === "denied" ? dto.denialReason?.trim() ?? null : null,
+              ledgerJournalId:
+                dto.decision === "denied"
+                  ? balanceTransition?.ledgerJournalId ?? null
+                  : null,
+              debitLedgerAccountId:
+                dto.decision === "denied"
+                  ? balanceTransition?.debitLedgerAccountId ?? null
+                  : null,
+              creditLedgerAccountId:
+                dto.decision === "denied"
+                  ? balanceTransition?.creditLedgerAccountId ?? null
+                  : null,
               availableBalance,
               pendingBalance
             }
@@ -2728,8 +2755,10 @@ export class WithdrawalIntentsService {
 
         const balanceTransition = resolution.releaseReservation
           ? await this.ledgerService.releaseWithdrawalReservation(transaction, {
+              transactionIntentId: currentIntent.id,
               customerAccountId: currentIntent.customerAccount!.id,
               assetId: currentIntent.asset.id,
+              chainId: currentIntent.chainId,
               amount: currentIntent.requestedAmount
             })
           : null;
@@ -2780,6 +2809,10 @@ export class WithdrawalIntentsService {
               failureReason,
               failureCategory,
               operatorRole: actor.actorRole,
+              ledgerJournalId: balanceTransition?.ledgerJournalId ?? null,
+              debitLedgerAccountId: balanceTransition?.debitLedgerAccountId ?? null,
+              creditLedgerAccountId:
+                balanceTransition?.creditLedgerAccountId ?? null,
               availableBalance: balanceTransition?.availableBalance ?? null,
               pendingBalance: balanceTransition?.pendingBalance ?? null,
               manualInterventionReviewCaseId:
@@ -2898,8 +2931,10 @@ export class WithdrawalIntentsService {
         chainId: this.productChainId,
         status: TransactionIntentStatus.confirmed,
         policyDecision: PolicyDecision.approved,
-        ledgerJournal: {
-          is: null
+        ledgerJournals: {
+          none: {
+            journalType: LedgerJournalType.withdrawal_settlement
+          }
         },
         blockchainTransactions: {
           some: {
@@ -3339,7 +3374,10 @@ export class WithdrawalIntentsService {
 
     const existingLedgerJournal = await this.prismaService.ledgerJournal.findUnique({
       where: {
-        transactionIntentId: intentId
+        transactionIntentId_journalType: {
+          transactionIntentId: intentId,
+          journalType: LedgerJournalType.withdrawal_settlement
+        }
       },
       select: {
         id: true

@@ -174,7 +174,7 @@ model TransactionIntent {
   @@index([manualInterventionReviewCaseId])
   @@index([manualResolvedByOperatorId, manuallyResolvedAt])
   @@index([manualResolutionReasonCode, manuallyResolvedAt])
-  ledgerJournal                LedgerJournal?
+  ledgerJournals               LedgerJournal[]
   ledgerReconciliationMismatches LedgerReconciliationMismatch[]
 }
 
@@ -424,7 +424,7 @@ model LedgerAccount {
 
 model LedgerJournal {
   id                  String            @id @default(cuid())
-  transactionIntentId String            @unique
+  transactionIntentId String
   transactionIntent   TransactionIntent @relation(fields: [transactionIntentId], references: [id])
   journalType         LedgerJournalType
   chainId             Int
@@ -436,6 +436,8 @@ model LedgerJournal {
 
   @@index([journalType, chainId])
   @@index([assetId])
+  @@index([transactionIntentId])
+  @@unique([transactionIntentId, journalType])
 }
 
 model LedgerPosting {
@@ -515,6 +517,7 @@ enum LedgerAccountType {
   asset_inbound_clearing
   asset_outbound_clearing
   customer_asset_liability
+  customer_asset_pending_withdrawal_liability
   loan_principal_receivable
   loan_service_fee_receivable
   loan_service_fee_income
@@ -524,6 +527,8 @@ enum LedgerAccountType {
 
 enum LedgerJournalType {
   deposit_settlement
+  withdrawal_reservation
+  withdrawal_reservation_release
   withdrawal_settlement
   loan_disbursement
   loan_repayment

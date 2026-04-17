@@ -6,6 +6,7 @@ import {
 import { loadProductChainRuntimeConfig } from "@stealth-trails-bank/config/api";
 import {
   BlockchainTransactionStatus,
+  LedgerJournalType,
   Prisma,
   ReviewCaseType,
   TransactionIntentStatus,
@@ -71,7 +72,11 @@ type DepositSettlementReconciliationRecord = Prisma.TransactionIntentGetPayload<
         confirmedAt: true;
       };
     };
-    ledgerJournal: {
+    ledgerJournals: {
+      where: {
+        journalType: "deposit_settlement";
+      };
+      take: 1;
       select: {
         id: true;
         journalType: true;
@@ -171,6 +176,7 @@ export class DepositSettlementReconciliationService {
     }
 
     const latestBlockchainTransaction = record.blockchainTransactions[0] ?? null;
+    const settlementLedgerJournal = record.ledgerJournals?.[0] ?? null;
 
     const reconciliation = classifyDepositSettlementReconciliation({
       status: record.status,
@@ -178,7 +184,7 @@ export class DepositSettlementReconciliationService {
       requestedAmount: record.requestedAmount.toString(),
       settledAmount: record.settledAmount?.toString() ?? null,
       latestBlockchainStatus: latestBlockchainTransaction?.status ?? null,
-      hasLedgerJournal: Boolean(record.ledgerJournal)
+      hasLedgerJournal: Boolean(settlementLedgerJournal)
     });
 
     return {
@@ -222,12 +228,12 @@ export class DepositSettlementReconciliationService {
             }
           : null
       },
-      ledgerJournal: record.ledgerJournal
+      ledgerJournal: settlementLedgerJournal
         ? {
-            id: record.ledgerJournal.id,
-            journalType: record.ledgerJournal.journalType,
-            postedAt: record.ledgerJournal.postedAt.toISOString(),
-            createdAt: record.ledgerJournal.createdAt.toISOString()
+            id: settlementLedgerJournal.id,
+            journalType: settlementLedgerJournal.journalType,
+            postedAt: settlementLedgerJournal.postedAt.toISOString(),
+            createdAt: settlementLedgerJournal.createdAt.toISOString()
           }
         : null,
       reconciliation
@@ -290,7 +296,11 @@ export class DepositSettlementReconciliationService {
             confirmedAt: true
           }
         },
-        ledgerJournal: {
+        ledgerJournals: {
+          where: {
+            journalType: LedgerJournalType.deposit_settlement
+          },
+          take: 1,
           select: {
             id: true,
             journalType: true,
@@ -370,7 +380,11 @@ export class DepositSettlementReconciliationService {
             confirmedAt: true
           }
         },
-        ledgerJournal: {
+        ledgerJournals: {
+          where: {
+            journalType: LedgerJournalType.deposit_settlement
+          },
+          take: 1,
           select: {
             id: true,
             journalType: true,

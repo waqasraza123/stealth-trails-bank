@@ -6,6 +6,7 @@ import {
 import { loadProductChainRuntimeConfig } from "@stealth-trails-bank/config/api";
 import {
   BlockchainTransactionStatus,
+  LedgerJournalType,
   Prisma,
   ReviewCaseType,
   TransactionIntentStatus,
@@ -71,7 +72,11 @@ type WithdrawalSettlementReconciliationRecord = Prisma.TransactionIntentGetPaylo
         confirmedAt: true;
       };
     };
-    ledgerJournal: {
+    ledgerJournals: {
+      where: {
+        journalType: "withdrawal_settlement";
+      };
+      take: 1;
       select: {
         id: true;
         journalType: true;
@@ -172,6 +177,7 @@ export class WithdrawalSettlementReconciliationService {
     }
 
     const latestBlockchainTransaction = record.blockchainTransactions[0] ?? null;
+    const settlementLedgerJournal = record.ledgerJournals?.[0] ?? null;
 
     const reconciliation = classifyWithdrawalSettlementReconciliation({
       status: record.status,
@@ -179,7 +185,7 @@ export class WithdrawalSettlementReconciliationService {
       requestedAmount: record.requestedAmount.toString(),
       settledAmount: record.settledAmount?.toString() ?? null,
       latestBlockchainStatus: latestBlockchainTransaction?.status ?? null,
-      hasLedgerJournal: Boolean(record.ledgerJournal)
+      hasLedgerJournal: Boolean(settlementLedgerJournal)
     });
 
     return {
@@ -224,12 +230,12 @@ export class WithdrawalSettlementReconciliationService {
             }
           : null
       },
-      ledgerJournal: record.ledgerJournal
+      ledgerJournal: settlementLedgerJournal
         ? {
-            id: record.ledgerJournal.id,
-            journalType: record.ledgerJournal.journalType,
-            postedAt: record.ledgerJournal.postedAt.toISOString(),
-            createdAt: record.ledgerJournal.createdAt.toISOString()
+            id: settlementLedgerJournal.id,
+            journalType: settlementLedgerJournal.journalType,
+            postedAt: settlementLedgerJournal.postedAt.toISOString(),
+            createdAt: settlementLedgerJournal.createdAt.toISOString()
           }
         : null,
       reconciliation
@@ -292,7 +298,11 @@ export class WithdrawalSettlementReconciliationService {
             confirmedAt: true
           }
         },
-        ledgerJournal: {
+        ledgerJournals: {
+          where: {
+            journalType: LedgerJournalType.withdrawal_settlement
+          },
+          take: 1,
           select: {
             id: true,
             journalType: true,
@@ -372,7 +382,11 @@ export class WithdrawalSettlementReconciliationService {
             confirmedAt: true
           }
         },
-        ledgerJournal: {
+        ledgerJournals: {
+          where: {
+            journalType: LedgerJournalType.withdrawal_settlement
+          },
+          take: 1,
           select: {
             id: true,
             journalType: true,

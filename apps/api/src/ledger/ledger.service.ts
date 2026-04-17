@@ -22,18 +22,25 @@ type SettledDepositLedgerResult = {
 };
 
 type ReserveWithdrawalBalanceParams = {
+  transactionIntentId: string;
   customerAccountId: string;
   assetId: string;
+  chainId: number;
   amount: Prisma.Decimal;
 };
 
 type ReleaseWithdrawalReservationParams = {
+  transactionIntentId: string;
   customerAccountId: string;
   assetId: string;
+  chainId: number;
   amount: Prisma.Decimal;
 };
 
 type WithdrawalBalanceTransitionResult = {
+  ledgerJournalId: string;
+  debitLedgerAccountId: string;
+  creditLedgerAccountId: string;
   availableBalance: string;
   pendingBalance: string;
 };
@@ -74,18 +81,40 @@ export class LedgerService {
     return `customer_asset_liability:${customerAccountId}:${assetId}`;
   }
 
-  async settleConfirmedDeposit(
+  private buildPendingWithdrawalLiabilityLedgerKey(
+    customerAccountId: string,
+    assetId: string
+  ): string {
+    return `customer_asset_pending_withdrawal_liability:${customerAccountId}:${assetId}`;
+  }
+
+  private async findLedgerJournalByIntentAndType(
     transaction: Prisma.TransactionClient,
-    params: SettleConfirmedDepositParams
-  ): Promise<SettledDepositLedgerResult> {
-    const existingJournal = await transaction.ledgerJournal.findUnique({
+    transactionIntentId: string,
+    journalType: LedgerJournalType
+  ): Promise<{ id: string } | null> {
+    return transaction.ledgerJournal.findUnique({
       where: {
-        transactionIntentId: params.transactionIntentId
+        transactionIntentId_journalType: {
+          transactionIntentId,
+          journalType
+        }
       },
       select: {
         id: true
       }
     });
+  }
+
+  async settleConfirmedDeposit(
+    transaction: Prisma.TransactionClient,
+    params: SettleConfirmedDepositParams
+  ): Promise<SettledDepositLedgerResult> {
+    const existingJournal = await this.findLedgerJournalByIntentAndType(
+      transaction,
+      params.transactionIntentId,
+      LedgerJournalType.deposit_settlement
+    );
 
     if (existingJournal) {
       throw new ConflictException(
@@ -190,6 +219,58 @@ export class LedgerService {
     transaction: Prisma.TransactionClient,
     params: ReserveWithdrawalBalanceParams
   ): Promise<WithdrawalBalanceTransitionResult> {
+    const existingJournal = await this.findLedgerJournalByIntentAndType(
+      transaction,
+      params.transactionIntentId,
+      LedgerJournalType.withdrawal_reservation
+    );
+
+    if (existingJournal) {
+      throw new ConflictException(
+        "Withdrawal reservation ledger journal already exists for this transaction intent."
+      );
+    }
+
+    const customerAvailableLiabilityAccount = await transaction.ledgerAccount.upsert({
+      where: {
+        ledgerKey: this.buildCustomerLiabilityLedgerKey(
+          params.customerAccountId,
+          params.assetId
+        )
+      },
+      update: {},
+      create: {
+        ledgerKey: this.buildCustomerLiabilityLedgerKey(
+          params.customerAccountId,
+          params.assetId
+        ),
+        accountType: LedgerAccountType.customer_asset_liability,
+        chainId: params.chainId,
+        assetId: params.assetId,
+        customerAccountId: params.customerAccountId
+      }
+    });
+
+    const customerPendingLiabilityAccount = await transaction.ledgerAccount.upsert({
+      where: {
+        ledgerKey: this.buildPendingWithdrawalLiabilityLedgerKey(
+          params.customerAccountId,
+          params.assetId
+        )
+      },
+      update: {},
+      create: {
+        ledgerKey: this.buildPendingWithdrawalLiabilityLedgerKey(
+          params.customerAccountId,
+          params.assetId
+        ),
+        accountType: LedgerAccountType.customer_asset_pending_withdrawal_liability,
+        chainId: params.chainId,
+        assetId: params.assetId,
+        customerAccountId: params.customerAccountId
+      }
+    });
+
     const updatedBalanceCount = await transaction.customerAssetBalance.updateMany({
       where: {
         customerAccountId: params.customerAccountId,
@@ -231,7 +312,36 @@ export class LedgerService {
       throw new ConflictException("Customer balance row not found.");
     }
 
+    const ledgerJournal = await transaction.ledgerJournal.create({
+      data: {
+        transactionIntentId: params.transactionIntentId,
+        journalType: LedgerJournalType.withdrawal_reservation,
+        chainId: params.chainId,
+        assetId: params.assetId
+      }
+    });
+
+    await transaction.ledgerPosting.createMany({
+      data: [
+        {
+          ledgerJournalId: ledgerJournal.id,
+          ledgerAccountId: customerAvailableLiabilityAccount.id,
+          direction: LedgerPostingDirection.debit,
+          amount: params.amount
+        },
+        {
+          ledgerJournalId: ledgerJournal.id,
+          ledgerAccountId: customerPendingLiabilityAccount.id,
+          direction: LedgerPostingDirection.credit,
+          amount: params.amount
+        }
+      ]
+    });
+
     return {
+      ledgerJournalId: ledgerJournal.id,
+      debitLedgerAccountId: customerAvailableLiabilityAccount.id,
+      creditLedgerAccountId: customerPendingLiabilityAccount.id,
       availableBalance: updatedBalance.availableBalance.toString(),
       pendingBalance: updatedBalance.pendingBalance.toString()
     };
@@ -241,6 +351,58 @@ export class LedgerService {
     transaction: Prisma.TransactionClient,
     params: ReleaseWithdrawalReservationParams
   ): Promise<WithdrawalBalanceTransitionResult> {
+    const existingJournal = await this.findLedgerJournalByIntentAndType(
+      transaction,
+      params.transactionIntentId,
+      LedgerJournalType.withdrawal_reservation_release
+    );
+
+    if (existingJournal) {
+      throw new ConflictException(
+        "Withdrawal reservation release ledger journal already exists for this transaction intent."
+      );
+    }
+
+    const customerAvailableLiabilityAccount = await transaction.ledgerAccount.upsert({
+      where: {
+        ledgerKey: this.buildCustomerLiabilityLedgerKey(
+          params.customerAccountId,
+          params.assetId
+        )
+      },
+      update: {},
+      create: {
+        ledgerKey: this.buildCustomerLiabilityLedgerKey(
+          params.customerAccountId,
+          params.assetId
+        ),
+        accountType: LedgerAccountType.customer_asset_liability,
+        chainId: params.chainId,
+        assetId: params.assetId,
+        customerAccountId: params.customerAccountId
+      }
+    });
+
+    const customerPendingLiabilityAccount = await transaction.ledgerAccount.upsert({
+      where: {
+        ledgerKey: this.buildPendingWithdrawalLiabilityLedgerKey(
+          params.customerAccountId,
+          params.assetId
+        )
+      },
+      update: {},
+      create: {
+        ledgerKey: this.buildPendingWithdrawalLiabilityLedgerKey(
+          params.customerAccountId,
+          params.assetId
+        ),
+        accountType: LedgerAccountType.customer_asset_pending_withdrawal_liability,
+        chainId: params.chainId,
+        assetId: params.assetId,
+        customerAccountId: params.customerAccountId
+      }
+    });
+
     const updatedBalanceCount = await transaction.customerAssetBalance.updateMany({
       where: {
         customerAccountId: params.customerAccountId,
@@ -282,7 +444,36 @@ export class LedgerService {
       throw new ConflictException("Customer balance row not found.");
     }
 
+    const ledgerJournal = await transaction.ledgerJournal.create({
+      data: {
+        transactionIntentId: params.transactionIntentId,
+        journalType: LedgerJournalType.withdrawal_reservation_release,
+        chainId: params.chainId,
+        assetId: params.assetId
+      }
+    });
+
+    await transaction.ledgerPosting.createMany({
+      data: [
+        {
+          ledgerJournalId: ledgerJournal.id,
+          ledgerAccountId: customerPendingLiabilityAccount.id,
+          direction: LedgerPostingDirection.debit,
+          amount: params.amount
+        },
+        {
+          ledgerJournalId: ledgerJournal.id,
+          ledgerAccountId: customerAvailableLiabilityAccount.id,
+          direction: LedgerPostingDirection.credit,
+          amount: params.amount
+        }
+      ]
+    });
+
     return {
+      ledgerJournalId: ledgerJournal.id,
+      debitLedgerAccountId: customerPendingLiabilityAccount.id,
+      creditLedgerAccountId: customerAvailableLiabilityAccount.id,
       availableBalance: updatedBalance.availableBalance.toString(),
       pendingBalance: updatedBalance.pendingBalance.toString()
     };
@@ -292,14 +483,11 @@ export class LedgerService {
     transaction: Prisma.TransactionClient,
     params: SettleConfirmedWithdrawalParams
   ): Promise<SettledWithdrawalLedgerResult> {
-    const existingJournal = await transaction.ledgerJournal.findUnique({
-      where: {
-        transactionIntentId: params.transactionIntentId
-      },
-      select: {
-        id: true
-      }
-    });
+    const existingJournal = await this.findLedgerJournalByIntentAndType(
+      transaction,
+      params.transactionIntentId,
+      LedgerJournalType.withdrawal_settlement
+    );
 
     if (existingJournal) {
       throw new ConflictException(
@@ -326,20 +514,20 @@ export class LedgerService {
       }
     });
 
-    const customerLiabilityAccount = await transaction.ledgerAccount.upsert({
+    const customerPendingLiabilityAccount = await transaction.ledgerAccount.upsert({
       where: {
-        ledgerKey: this.buildCustomerLiabilityLedgerKey(
+        ledgerKey: this.buildPendingWithdrawalLiabilityLedgerKey(
           params.customerAccountId,
           params.assetId
         )
       },
       update: {},
       create: {
-        ledgerKey: this.buildCustomerLiabilityLedgerKey(
+        ledgerKey: this.buildPendingWithdrawalLiabilityLedgerKey(
           params.customerAccountId,
           params.assetId
         ),
-        accountType: LedgerAccountType.customer_asset_liability,
+        accountType: LedgerAccountType.customer_asset_pending_withdrawal_liability,
         chainId: params.chainId,
         assetId: params.assetId,
         customerAccountId: params.customerAccountId
@@ -397,7 +585,7 @@ export class LedgerService {
       data: [
         {
           ledgerJournalId: ledgerJournal.id,
-          ledgerAccountId: customerLiabilityAccount.id,
+          ledgerAccountId: customerPendingLiabilityAccount.id,
           direction: LedgerPostingDirection.debit,
           amount: params.amount
         },
@@ -412,7 +600,7 @@ export class LedgerService {
 
     return {
       ledgerJournalId: ledgerJournal.id,
-      debitLedgerAccountId: customerLiabilityAccount.id,
+      debitLedgerAccountId: customerPendingLiabilityAccount.id,
       creditLedgerAccountId: outboundClearingAccount.id,
       availableBalance: updatedBalance.availableBalance.toString(),
       pendingBalance: updatedBalance.pendingBalance.toString()

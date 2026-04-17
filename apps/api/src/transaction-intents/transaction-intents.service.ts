@@ -12,6 +12,7 @@ import {
   AccountLifecycleStatus,
   AssetStatus,
   BlockchainTransactionStatus,
+  LedgerJournalType,
   PolicyDecision,
   Prisma,
   TransactionIntentStatus,
@@ -2040,8 +2041,10 @@ export class TransactionIntentsService {
         chainId: this.productChainId,
         status: TransactionIntentStatus.confirmed,
         policyDecision: PolicyDecision.approved,
-        ledgerJournal: {
-          is: null
+        ledgerJournals: {
+          none: {
+            journalType: LedgerJournalType.deposit_settlement
+          }
         },
         blockchainTransactions: {
           some: {
@@ -2443,7 +2446,10 @@ export class TransactionIntentsService {
 
     const existingLedgerJournal = await this.prismaService.ledgerJournal.findUnique({
       where: {
-        transactionIntentId: intentId
+        transactionIntentId_journalType: {
+          transactionIntentId: intentId,
+          journalType: LedgerJournalType.deposit_settlement
+        }
       },
       select: {
         id: true
@@ -2536,7 +2542,10 @@ export class TransactionIntentsService {
 
         const currentLedgerJournal = await transaction.ledgerJournal.findUnique({
           where: {
-            transactionIntentId: currentIntent.id
+            transactionIntentId_journalType: {
+              transactionIntentId: currentIntent.id,
+              journalType: LedgerJournalType.deposit_settlement
+            }
           },
           select: {
             id: true

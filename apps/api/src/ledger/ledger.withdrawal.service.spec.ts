@@ -12,6 +12,25 @@ describe("LedgerService withdrawal helpers", () => {
 
   it("reserves withdrawal balance by moving available into pending", async () => {
     const transaction = {
+      ledgerJournal: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({
+          id: "reservation_journal_1"
+        })
+      },
+      ledgerAccount: {
+        upsert: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: "available_liability_account_1"
+          })
+          .mockResolvedValueOnce({
+            id: "pending_liability_account_1"
+          })
+      },
+      ledgerPosting: {
+        createMany: jest.fn().mockResolvedValue({ count: 2 })
+      },
       customerAssetBalance: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findUnique: jest.fn().mockResolvedValue({
@@ -22,13 +41,18 @@ describe("LedgerService withdrawal helpers", () => {
     } as any;
 
     const result = await service.reserveWithdrawalBalance(transaction, {
+      transactionIntentId: "intent_1",
       customerAccountId: "account_1",
       assetId: "asset_1",
+      chainId: 8453,
       amount: new Prisma.Decimal("30")
     });
 
     expect(transaction.customerAssetBalance.updateMany).toHaveBeenCalled();
     expect(result).toEqual({
+      ledgerJournalId: "reservation_journal_1",
+      debitLedgerAccountId: "available_liability_account_1",
+      creditLedgerAccountId: "pending_liability_account_1",
       availableBalance: "70",
       pendingBalance: "30"
     });
@@ -36,6 +60,25 @@ describe("LedgerService withdrawal helpers", () => {
 
   it("releases withdrawal reservation back into available balance", async () => {
     const transaction = {
+      ledgerJournal: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({
+          id: "release_journal_1"
+        })
+      },
+      ledgerAccount: {
+        upsert: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: "available_liability_account_1"
+          })
+          .mockResolvedValueOnce({
+            id: "pending_liability_account_1"
+          })
+      },
+      ledgerPosting: {
+        createMany: jest.fn().mockResolvedValue({ count: 2 })
+      },
       customerAssetBalance: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findUnique: jest.fn().mockResolvedValue({
@@ -46,13 +89,18 @@ describe("LedgerService withdrawal helpers", () => {
     } as any;
 
     const result = await service.releaseWithdrawalReservation(transaction, {
+      transactionIntentId: "intent_1",
       customerAccountId: "account_1",
       assetId: "asset_1",
+      chainId: 8453,
       amount: new Prisma.Decimal("30")
     });
 
     expect(transaction.customerAssetBalance.updateMany).toHaveBeenCalled();
     expect(result).toEqual({
+      ledgerJournalId: "release_journal_1",
+      debitLedgerAccountId: "pending_liability_account_1",
+      creditLedgerAccountId: "available_liability_account_1",
       availableBalance: "100",
       pendingBalance: "0"
     });
@@ -109,7 +157,8 @@ describe("LedgerService withdrawal helpers", () => {
       2,
       expect.objectContaining({
         create: expect.objectContaining({
-          accountType: LedgerAccountType.customer_asset_liability
+          accountType:
+            LedgerAccountType.customer_asset_pending_withdrawal_liability
         })
       })
     );

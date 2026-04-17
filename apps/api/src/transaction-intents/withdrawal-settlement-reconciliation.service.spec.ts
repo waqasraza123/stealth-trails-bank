@@ -77,14 +77,16 @@ function buildRecord(
       }
     },
     blockchainTransactions,
-    ledgerJournal: overrides.hasLedgerJournal
-      ? {
-          id: "journal_1",
-          journalType: "withdrawal_settlement",
-          postedAt: new Date("2026-04-01T00:10:00.000Z"),
-          createdAt: new Date("2026-04-01T00:10:00.000Z")
-        }
-      : null
+    ledgerJournals: overrides.hasLedgerJournal
+      ? [
+          {
+            id: "journal_1",
+            journalType: "withdrawal_settlement",
+            postedAt: new Date("2026-04-01T00:10:00.000Z"),
+            createdAt: new Date("2026-04-01T00:10:00.000Z")
+          }
+        ]
+      : []
   };
 }
 
