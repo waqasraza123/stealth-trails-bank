@@ -1067,6 +1067,11 @@ export type ReleaseReadinessApproval = {
   id: string;
   releaseIdentifier: string;
   environment: string;
+  launchClosurePack: {
+    id: string;
+    version: number;
+    artifactChecksumSha256: string;
+  } | null;
   rollbackReleaseIdentifier: string | null;
   status: "pending_approval" | "approved" | "rejected";
   summary: string;
@@ -1176,6 +1181,26 @@ export type LaunchClosureValidationResponse = {
 export type LaunchClosureScaffoldResponse = LaunchClosureValidationResponse & {
   outputSubpath: string;
   files: LaunchClosurePackFile[];
+  pack: {
+    id: string;
+    releaseIdentifier: string;
+    environment: string;
+    version: number;
+    generatedByOperatorId: string;
+    generatedByOperatorRole: string | null;
+    artifactChecksumSha256: string;
+    artifactPayload: JsonValue;
+    createdAt: string;
+    updatedAt: string;
+  };
+};
+
+export type ReleaseLaunchClosurePack = LaunchClosureScaffoldResponse["pack"];
+
+export type ReleaseLaunchClosurePackList = {
+  packs: ReleaseLaunchClosurePack[];
+  limit: number;
+  totalCount: number;
 };
 
 export type LedgerReconciliationWorkspace = {

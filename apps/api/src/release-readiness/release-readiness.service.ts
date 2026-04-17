@@ -173,6 +173,11 @@ type ReleaseReadinessApprovalProjection = {
   id: string;
   releaseIdentifier: string;
   environment: ReleaseReadinessEnvironment;
+  launchClosurePack: {
+    id: string;
+    version: number;
+    artifactChecksumSha256: string;
+  } | null;
   rollbackReleaseIdentifier: string | null;
   status: ReleaseReadinessApprovalStatus;
   summary: string;
@@ -755,6 +760,15 @@ export class ReleaseReadinessService {
       id: record.id,
       releaseIdentifier: record.releaseIdentifier,
       environment: record.environment,
+      launchClosurePack: record.launchClosurePackId &&
+        record.launchClosurePackVersion !== null &&
+        record.launchClosurePackChecksumSha256
+        ? {
+            id: record.launchClosurePackId,
+            version: record.launchClosurePackVersion,
+            artifactChecksumSha256: record.launchClosurePackChecksumSha256
+          }
+        : null,
       rollbackReleaseIdentifier: record.rollbackReleaseIdentifier ?? null,
       status: record.status,
       summary: record.summary,
@@ -1354,7 +1368,8 @@ export class ReleaseReadinessService {
       );
     }
 
-    const [existingPendingApproval, readinessSummary] = await Promise.all([
+    const [existingPendingApproval, launchClosurePack, readinessSummary] =
+      await Promise.all([
       this.prismaService.releaseReadinessApproval.findFirst({
         where: {
           releaseIdentifier,
@@ -1362,6 +1377,11 @@ export class ReleaseReadinessService {
           status: ReleaseReadinessApprovalStatus.pending_approval
         },
         orderBy: [{ requestedAt: "desc" }]
+      }),
+      this.prismaService.releaseLaunchClosurePack.findUnique({
+        where: {
+          id: dto.launchClosurePackId.trim()
+        }
       }),
       this.getSummary({
         releaseIdentifier
@@ -1371,6 +1391,19 @@ export class ReleaseReadinessService {
     if (existingPendingApproval) {
       throw new ConflictException(
         "A pending launch approval already exists for this release identifier and environment."
+      );
+    }
+
+    if (!launchClosurePack) {
+      throw new NotFoundException("Launch-closure pack was not found.");
+    }
+
+    if (
+      launchClosurePack.releaseIdentifier !== releaseIdentifier ||
+      launchClosurePack.environment !== dto.environment
+    ) {
+      throw new BadRequestException(
+        "Launch approval requests must reference a launch-closure pack for the same release identifier and environment."
       );
     }
 
@@ -1387,6 +1420,10 @@ export class ReleaseReadinessService {
         data: {
           releaseIdentifier,
           environment: dto.environment,
+          launchClosurePackId: launchClosurePack.id,
+          launchClosurePackVersion: launchClosurePack.version,
+          launchClosurePackChecksumSha256:
+            launchClosurePack.artifactChecksumSha256,
           rollbackReleaseIdentifier: rollbackReleaseIdentifier ?? undefined,
           summary: summaryText,
           requestNote: requestNote ?? undefined,
@@ -1418,6 +1455,10 @@ export class ReleaseReadinessService {
           metadata: {
             releaseIdentifier,
             environment: dto.environment,
+            launchClosurePackId: launchClosurePack.id,
+            launchClosurePackVersion: launchClosurePack.version,
+            launchClosurePackChecksumSha256:
+              launchClosurePack.artifactChecksumSha256,
             rollbackReleaseIdentifier,
             summary: summaryText,
             operatorRole: normalizedOperatorRole,

@@ -1381,6 +1381,9 @@ model ReleaseReadinessApproval {
   id                            String                         @id @default(cuid())
   releaseIdentifier             String
   environment                   ReleaseReadinessEnvironment
+  launchClosurePackId           String?
+  launchClosurePackVersion      Int?
+  launchClosurePackChecksumSha256 String?
   rollbackReleaseIdentifier     String?
   status                        ReleaseReadinessApprovalStatus @default(pending_approval)
   summary                       String
@@ -1410,11 +1413,13 @@ model ReleaseReadinessApproval {
   rejectedAt                    DateTime?
   createdAt                     DateTime                       @default(now())
   updatedAt                     DateTime                       @updatedAt
+  launchClosurePack             ReleaseLaunchClosurePack?      @relation(fields: [launchClosurePackId], references: [id])
 
   @@index([releaseIdentifier, environment, requestedAt])
   @@index([status, requestedAt])
   @@index([requestedByOperatorId, requestedAt])
   @@index([approvedByOperatorId, approvedAt])
+  @@index([launchClosurePackId])
 }
 
 model ReleaseLaunchClosurePack {
@@ -1428,6 +1433,7 @@ model ReleaseLaunchClosurePack {
   artifactPayload        Json
   createdAt              DateTime                    @default(now())
   updatedAt              DateTime                    @updatedAt
+  approvals              ReleaseReadinessApproval[]
 
   @@unique([releaseIdentifier, environment, version])
   @@index([releaseIdentifier, environment, createdAt])

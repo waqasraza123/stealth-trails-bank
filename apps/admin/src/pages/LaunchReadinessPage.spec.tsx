@@ -9,6 +9,7 @@ import {
 import {
   getLaunchClosureStatus,
   getReleaseReadinessSummary,
+  listLaunchClosurePacks,
   listPendingReleases,
   listReleaseReadinessApprovals,
   listReleaseReadinessEvidence,
@@ -22,6 +23,7 @@ vi.mock("@/lib/api", () => ({
   listPendingReleases: vi.fn(),
   listReleasedReleases: vi.fn(),
   getLaunchClosureStatus: vi.fn(),
+  listLaunchClosurePacks: vi.fn(),
   createReleaseReadinessEvidence: vi.fn(),
   requestReleaseReadinessApproval: vi.fn(),
   approveReleaseReadinessApproval: vi.fn(),
@@ -118,6 +120,11 @@ function buildApproval(releaseIdentifier: string) {
     id: `${releaseIdentifier}-approval`,
     releaseIdentifier,
     environment: "production_like",
+    launchClosurePack: {
+      id: `${releaseIdentifier}-pack`,
+      version: 3,
+      artifactChecksumSha256: `checksum-${releaseIdentifier}`
+    },
     rollbackReleaseIdentifier: "launch-rollback-2026.04.12.4",
     status: "pending_approval" as const,
     summary: `Approval summary for ${releaseIdentifier}`,
@@ -308,6 +315,34 @@ describe("LaunchReadinessPage", () => {
     });
     vi.mocked(getLaunchClosureStatus).mockResolvedValue({
       ...buildLaunchClosureStatus(null)
+    });
+    vi.mocked(listLaunchClosurePacks).mockImplementation(async (_session, params) => {
+      const releaseIdentifier =
+        typeof params.releaseIdentifier === "string"
+          ? params.releaseIdentifier
+          : "launch-2026.04.13.1";
+
+      return {
+        packs: [
+          {
+            id: `${releaseIdentifier}-pack`,
+            releaseIdentifier,
+            environment:
+              typeof params.environment === "string"
+                ? params.environment
+                : "production_like",
+            version: 3,
+            generatedByOperatorId: "ops_1",
+            generatedByOperatorRole: "operations_admin",
+            artifactChecksumSha256: `checksum-${releaseIdentifier}`,
+            artifactPayload: {},
+            createdAt: "2026-04-14T10:00:00.000Z",
+            updatedAt: "2026-04-14T10:00:00.000Z"
+          }
+        ],
+        limit: typeof params.limit === "number" ? params.limit : 10,
+        totalCount: 1
+      };
     });
     vi.mocked(getReleaseReadinessSummary).mockImplementation(
       async (_session, params = {}) =>

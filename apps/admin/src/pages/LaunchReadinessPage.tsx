@@ -6,6 +6,7 @@ import {
   createReleaseReadinessEvidence,
   getLaunchClosureStatus,
   getReleaseReadinessSummary,
+  listLaunchClosurePacks,
   listPendingReleases,
   listReleaseReadinessApprovals,
   listReleaseReadinessEvidence,
@@ -17,7 +18,8 @@ import {
 } from "@/lib/api";
 import type {
   LaunchClosureManifest,
-  LaunchClosurePackFile
+  LaunchClosurePackFile,
+  ReleaseLaunchClosurePack
 } from "@/lib/types";
 import {
   formatCount,
@@ -461,6 +463,22 @@ export function LaunchReadinessPage() {
     enabled: Boolean(session)
   });
 
+  const scopedLaunchClosurePacksQuery = useQuery({
+    queryKey: [
+      "launch-closure-packs",
+      session?.baseUrl,
+      approvalDraft.releaseIdentifier.trim() || "none",
+      approvalDraft.environment
+    ],
+    queryFn: () =>
+      listLaunchClosurePacks(session!, {
+        limit: 10,
+        releaseIdentifier: approvalDraft.releaseIdentifier.trim(),
+        environment: approvalDraft.environment
+      }),
+    enabled: Boolean(session && approvalDraft.releaseIdentifier.trim())
+  });
+
   function updateSearchParams(
     updates: Partial<Record<"evidence" | "approval" | "release", string | null>>
   ) {
@@ -549,6 +567,9 @@ export function LaunchReadinessPage() {
       }),
       queryClient.invalidateQueries({
         queryKey: ["released-releases", session?.baseUrl]
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["launch-closure-packs", session?.baseUrl]
       })
     ]);
   }
@@ -594,6 +615,7 @@ export function LaunchReadinessPage() {
       requestReleaseReadinessApproval(session!, {
         releaseIdentifier: approvalDraft.releaseIdentifier.trim(),
         environment: approvalDraft.environment,
+        launchClosurePackId: latestScopedLaunchClosurePack!.id,
         rollbackReleaseIdentifier: trimToUndefined(
           approvalDraft.rollbackReleaseIdentifier
         ),
@@ -688,13 +710,19 @@ export function LaunchReadinessPage() {
   const scaffoldLaunchClosureMutation = useMutation({
     mutationFn: (manifest: LaunchClosureManifest) =>
       scaffoldLaunchClosurePack(session!, manifest),
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       setLaunchClosureSummary(result.summaryMarkdown);
       setLaunchClosureFlash("Launch-closure pack generated.");
       setLaunchClosureError(null);
       setLaunchClosureOutputSubpath(result.outputSubpath);
       setLaunchClosureFiles(result.files);
       setSelectedLaunchClosureFilePath(result.files[0]?.relativePath ?? null);
+      setApprovalDraft((current) => ({
+        ...current,
+        releaseIdentifier: result.pack.releaseIdentifier,
+        environment: result.pack.environment as ApprovalDraft["environment"]
+      }));
+      await refreshData();
     },
     onError: (error) => {
       setLaunchClosureError(
@@ -822,6 +850,8 @@ export function LaunchReadinessPage() {
   const missingApprovalMetadataFields = listMissingApprovalMetadataFields(
     approvalDraft
   );
+  const latestScopedLaunchClosurePack: ReleaseLaunchClosurePack | null =
+    scopedLaunchClosurePacksQuery.data?.packs[0] ?? null;
   const recordEvidenceDisabled =
     !evidenceConfirm ||
     recordEvidenceMutation.isPending ||
@@ -832,7 +862,8 @@ export function LaunchReadinessPage() {
     requestApprovalMutation.isPending ||
     approvalDraft.releaseIdentifier.trim().length === 0 ||
     approvalDraft.summary.trim().length === 0 ||
-    missingApprovalMetadataFields.length > 0;
+    missingApprovalMetadataFields.length > 0 ||
+    !latestScopedLaunchClosurePack;
 
   return (
     <div className="admin-page-grid">
@@ -1507,6 +1538,52 @@ export function LaunchReadinessPage() {
                   />
                 </div>
 
+                <div className="admin-field">
+                  <span>Bound launch-closure pack</span>
+                  <textarea
+                    aria-label="Bound launch-closure pack"
+                    readOnly
+                    value={
+                      latestScopedLaunchClosurePack
+                        ? [
+                            `Pack ID: ${latestScopedLaunchClosurePack.id}`,
+                            `Version: v${latestScopedLaunchClosurePack.version}`,
+                            `Checksum: ${latestScopedLaunchClosurePack.artifactChecksumSha256}`,
+                            `Generated: ${formatDateTime(
+                              latestScopedLaunchClosurePack.createdAt
+                            )}`,
+                            `Operator: ${latestScopedLaunchClosurePack.generatedByOperatorId}${
+                              latestScopedLaunchClosurePack.generatedByOperatorRole
+                                ? ` (${latestScopedLaunchClosurePack.generatedByOperatorRole})`
+                                : ""
+                            }`
+                          ].join("\n")
+                        : "Generate a launch-closure pack for this release and environment before requesting approval."
+                    }
+                  />
+                </div>
+
+                <InlineNotice
+                  title={
+                    latestScopedLaunchClosurePack
+                      ? "Immutable pack selected"
+                      : "Launch-closure pack required"
+                  }
+                  description={
+                    latestScopedLaunchClosurePack
+                      ? "The approval request will reference the latest stored scoped pack."
+                      : "Governed approval requests now require a stored launch-closure pack for the same release identifier and environment."
+                  }
+                  tone={latestScopedLaunchClosurePack ? "positive" : "warning"}
+                />
+                {scopedLaunchClosurePacksQuery.isError ? (
+                  <InlineNotice
+                    title="Stored packs unavailable"
+                    description="The latest launch-closure pack could not be loaded for this release scope."
+                    tone="warning"
+                  />
+                ) : null}
+
                 <InlineNotice
                   title="Rollback target required"
                   description={`Governed launch approval is bound to one rollback release identifier, and the latest rollback drill evidence must match it. Missing fields: ${
@@ -1641,6 +1718,24 @@ export function LaunchReadinessPage() {
               >
                 {selectedApproval ? (
                   <>
+                    <DetailList
+                      items={[
+                        {
+                          label: "Bound pack",
+                          value: selectedApproval.launchClosurePack
+                            ? `v${selectedApproval.launchClosurePack.version}`
+                            : "Legacy approval without stored pack"
+                        },
+                        {
+                          label: "Pack checksum",
+                          value:
+                            selectedApproval.launchClosurePack
+                              ?.artifactChecksumSha256 ?? "Unavailable",
+                          mono: true
+                        }
+                      ]}
+                    />
+
                     <div className="admin-field">
                       <span>Approval note</span>
                       <textarea

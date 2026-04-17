@@ -402,6 +402,7 @@ describe("ReleaseReadinessController", () => {
       .send({
         releaseIdentifier: "launch-2026.04.10.1",
         environment: "production_like",
+        launchClosurePackId: "pack_1",
         rollbackReleaseIdentifier: "launch-rollback-2026.04.09.4",
         summary: "Production-like candidate is ready for governed approval.",
         requestNote: "Accepted evidence is complete and current.",
@@ -422,6 +423,7 @@ describe("ReleaseReadinessController", () => {
       {
         releaseIdentifier: "launch-2026.04.10.1",
         environment: "production_like",
+        launchClosurePackId: "pack_1",
         rollbackReleaseIdentifier: "launch-rollback-2026.04.09.4",
         summary: "Production-like candidate is ready for governed approval.",
         requestNote: "Accepted evidence is complete and current.",

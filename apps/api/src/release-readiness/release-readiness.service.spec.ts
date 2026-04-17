@@ -44,6 +44,9 @@ function buildApprovalRecord(
     id: "approval_1",
     releaseIdentifier: "release-2026-04-08.1",
     environment: ReleaseReadinessEnvironment.production_like,
+    launchClosurePackId: "pack_1",
+    launchClosurePackVersion: 1,
+    launchClosurePackChecksumSha256: "checksum_1",
     rollbackReleaseIdentifier: "release-2026-04-07.3",
     status: ReleaseReadinessApprovalStatus.pending_approval,
     summary: "Phase 12 launch checklist reviewed against production-like proof.",
@@ -94,6 +97,7 @@ function buildApprovalRecord(
     rejectedAt: null,
     createdAt: new Date("2026-04-08T12:00:00.000Z"),
     updatedAt: new Date("2026-04-08T12:00:00.000Z"),
+    launchClosurePack: buildLaunchClosurePackRecord(),
     ...overrides
   };
 }
@@ -752,6 +756,9 @@ describe("ReleaseReadinessService", () => {
     (prismaService.releaseReadinessApproval.findFirst as jest.Mock).mockResolvedValue(
       null
     );
+    (prismaService.releaseLaunchClosurePack.findUnique as jest.Mock).mockResolvedValue(
+      buildLaunchClosurePackRecord()
+    );
     (prismaService.releaseReadinessEvidence.findMany as jest.Mock)
       .mockResolvedValueOnce(buildPassedRequiredEvidenceRecords())
       .mockResolvedValueOnce([buildEvidenceRecord()]);
@@ -763,6 +770,7 @@ describe("ReleaseReadinessService", () => {
       {
         releaseIdentifier: " release-2026-04-08.1 ",
         environment: "production_like",
+        launchClosurePackId: "pack_1",
         rollbackReleaseIdentifier: " release-2026-04-07.3 ",
         summary: " Launch posture reviewed. ",
         securityConfigurationComplete: true,
@@ -784,6 +792,9 @@ describe("ReleaseReadinessService", () => {
         data: expect.objectContaining({
           releaseIdentifier: "release-2026-04-08.1",
           environment: "production_like",
+          launchClosurePackId: "pack_1",
+          launchClosurePackVersion: 1,
+          launchClosurePackChecksumSha256: "checksum_1",
           evidenceSnapshot: expect.any(Object),
           blockerSnapshot: expect.any(Object)
         })
@@ -807,6 +818,9 @@ describe("ReleaseReadinessService", () => {
     const { service, prismaService, transactionClient } = createService();
     (prismaService.releaseReadinessApproval.findFirst as jest.Mock).mockResolvedValue(
       null
+    );
+    (prismaService.releaseLaunchClosurePack.findUnique as jest.Mock).mockResolvedValue(
+      buildLaunchClosurePackRecord()
     );
     (prismaService.releaseReadinessEvidence.findMany as jest.Mock).mockImplementation(
       async (args?: {
@@ -833,6 +847,7 @@ describe("ReleaseReadinessService", () => {
       {
         releaseIdentifier: "release-2026-04-08.1",
         environment: "production_like",
+        launchClosurePackId: "pack_1",
         rollbackReleaseIdentifier: "release-2026-04-07.3",
         summary: "Launch posture reviewed.",
         securityConfigurationComplete: true,
@@ -859,6 +874,48 @@ describe("ReleaseReadinessService", () => {
     );
   });
 
+  it("rejects launch approval requests when the referenced pack scope does not match", async () => {
+    const { service, prismaService, transactionClient } = createService();
+    (prismaService.releaseReadinessApproval.findFirst as jest.Mock).mockResolvedValue(
+      null
+    );
+    (prismaService.releaseLaunchClosurePack.findUnique as jest.Mock).mockResolvedValue(
+      buildLaunchClosurePackRecord({
+        releaseIdentifier: "release-2026-04-07.9"
+      })
+    );
+    (prismaService.releaseReadinessEvidence.findMany as jest.Mock)
+      .mockResolvedValueOnce(buildPassedRequiredEvidenceRecords())
+      .mockResolvedValueOnce([buildEvidenceRecord()]);
+
+    await expect(
+      service.requestApproval(
+        {
+          releaseIdentifier: "release-2026-04-08.1",
+          environment: "production_like",
+          launchClosurePackId: "pack_1",
+          rollbackReleaseIdentifier: "release-2026-04-07.3",
+          summary: "Launch posture reviewed.",
+          securityConfigurationComplete: true,
+          accessAndGovernanceComplete: true,
+          dataAndRecoveryComplete: true,
+          platformHealthComplete: true,
+          functionalProofComplete: true,
+          contractAndChainProofComplete: true,
+          finalSignoffComplete: true,
+          unresolvedRisksAccepted: true,
+          openBlockers: []
+        },
+        "ops_1",
+        "operations_admin"
+      )
+    ).rejects.toThrow(
+      "Launch approval requests must reference a launch-closure pack for the same release identifier and environment."
+    );
+
+    expect(transactionClient.releaseReadinessApproval.create).not.toHaveBeenCalled();
+  });
+
   it("rejects launch approval requests without rollback release identifier", async () => {
     const { service, prismaService, transactionClient } = createService();
     (prismaService.releaseReadinessApproval.findFirst as jest.Mock).mockResolvedValue(
@@ -870,6 +927,7 @@ describe("ReleaseReadinessService", () => {
         {
           releaseIdentifier: "release-2026-04-08.1",
           environment: "production_like",
+          launchClosurePackId: "pack_1",
           summary: "Launch posture reviewed.",
           securityConfigurationComplete: true,
           accessAndGovernanceComplete: true,
@@ -901,6 +959,9 @@ describe("ReleaseReadinessService", () => {
     (prismaService.releaseReadinessApproval.findFirst as jest.Mock).mockResolvedValue(
       null
     );
+    (prismaService.releaseLaunchClosurePack.findUnique as jest.Mock).mockResolvedValue(
+      buildLaunchClosurePackRecord()
+    );
     (prismaService.releaseReadinessEvidence.findMany as jest.Mock)
       .mockResolvedValueOnce(
         buildPassedRequiredEvidenceRecords().map((record) =>
@@ -923,6 +984,7 @@ describe("ReleaseReadinessService", () => {
       {
         releaseIdentifier: "release-2026-04-08.1",
         environment: "production_like",
+        launchClosurePackId: "pack_1",
         rollbackReleaseIdentifier: "release-2026-04-07.3",
         summary: "Launch posture reviewed.",
         securityConfigurationComplete: true,
@@ -961,6 +1023,7 @@ describe("ReleaseReadinessService", () => {
         {
           releaseIdentifier: "release-2026-04-08.1",
           environment: "production_like",
+          launchClosurePackId: "pack_1",
           rollbackReleaseIdentifier: "release-2026-04-07.3",
           summary: "Launch posture reviewed.",
           securityConfigurationComplete: true,
@@ -995,6 +1058,7 @@ describe("ReleaseReadinessService", () => {
         {
           releaseIdentifier: "release-2026-04-08.1",
           environment: "production_like",
+          launchClosurePackId: "pack_1",
           rollbackReleaseIdentifier: "release-2026-04-07.3",
           summary: "Launch posture reviewed.",
           securityConfigurationComplete: true,

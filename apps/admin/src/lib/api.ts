@@ -29,6 +29,7 @@ import type {
   OversightIncidentList,
   PlatformAlertDeliveryTargetHealthList,
   PlatformAlertList,
+  ReleaseLaunchClosurePackList,
   ReleaseReadinessApprovalList,
   ReleaseReadinessEvidenceList,
   ReleaseReadinessSummary,
@@ -602,6 +603,17 @@ export async function scaffoldLaunchClosurePack(
     data: {
       manifest
     }
+  });
+}
+
+export async function listLaunchClosurePacks(
+  session: OperatorSession,
+  params: Record<string, string | number | undefined> = {}
+): Promise<ReleaseLaunchClosurePackList> {
+  return requestData(session, {
+    method: "GET",
+    url: "/release-readiness/internal/launch-closure/packs",
+    params
   });
 }
 

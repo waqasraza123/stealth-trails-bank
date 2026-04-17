@@ -26,6 +26,11 @@ export class CreateReleaseReadinessApprovalDto {
   @IsIn(releaseReadinessEnvironments)
   environment!: (typeof releaseReadinessEnvironments)[number];
 
+  @IsString()
+  @MaxLength(RELEASE_READINESS_IDENTIFIER_MAX_LENGTH)
+  @Matches(OPERATOR_CASE_NOTE_CONTENT_PATTERN)
+  launchClosurePackId!: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(RELEASE_READINESS_IDENTIFIER_MAX_LENGTH)
