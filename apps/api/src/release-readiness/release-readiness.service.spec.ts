@@ -1221,6 +1221,20 @@ describe("ReleaseReadinessService", () => {
 
     expect(transactionClient.releaseReadinessApproval.create).not.toHaveBeenCalled();
     expect(transactionClient.releaseReadinessApproval.update).not.toHaveBeenCalled();
+    expect(transactionClient.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "release_readiness.approval_mutation_blocked",
+          targetId: "approval_1",
+          metadata: expect.objectContaining({
+            attemptedAction: "rebind_pack",
+            reason: "lineage_integrity_unhealthy",
+            integrityStatus: "critical",
+            selectedApprovalId: "approval_1"
+          })
+        })
+      })
+    );
   });
 
   it("reuses stored decision drift snapshots for non-pending approvals", async () => {
@@ -1868,6 +1882,20 @@ describe("ReleaseReadinessService", () => {
     );
 
     expect(transactionClient.releaseReadinessApproval.update).not.toHaveBeenCalled();
+    expect(transactionClient.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "release_readiness.approval_mutation_blocked",
+          targetId: "approval_1",
+          metadata: expect.objectContaining({
+            attemptedAction: "approve",
+            reason: "lineage_integrity_unhealthy",
+            integrityStatus: "critical",
+            selectedApprovalId: "approval_1"
+          })
+        })
+      })
+    );
   });
 
   it("blocks approval for operator roles outside the launch-approval roster", async () => {
@@ -2045,6 +2073,20 @@ describe("ReleaseReadinessService", () => {
     );
 
     expect(transactionClient.releaseReadinessApproval.update).not.toHaveBeenCalled();
+    expect(transactionClient.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "release_readiness.approval_mutation_blocked",
+          targetId: "approval_1",
+          metadata: expect.objectContaining({
+            attemptedAction: "reject",
+            reason: "lineage_integrity_unhealthy",
+            integrityStatus: "critical",
+            selectedApprovalId: "approval_1"
+          })
+        })
+      })
+    );
   });
 
   it("blocks self-rejection so the requester cannot reject their own launch request", async () => {

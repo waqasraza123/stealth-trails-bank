@@ -274,6 +274,9 @@ type ReleaseReadinessApprovalLookupClient = {
   releaseReadinessApproval: {
     findUnique(args: Prisma.ReleaseReadinessApprovalFindUniqueArgs): Promise<ReleaseReadinessApprovalRecord | null>;
   };
+  auditEvent?: {
+    create(args: Prisma.AuditEventCreateArgs): Promise<unknown>;
+  };
 };
 
 type ReleaseLaunchClosurePackProjection = {
@@ -1269,9 +1272,52 @@ export class ReleaseReadinessService {
     };
   }
 
+  private async recordBlockedApprovalLineageMutation(
+    client: ReleaseReadinessApprovalLookupClient,
+    approval: ReleaseReadinessApprovalRecord,
+    operatorId: string,
+    operatorRole: string | undefined,
+    attemptedAction:
+      | "approve"
+      | "reject"
+      | "rebind_pack",
+    integrity: ReleaseReadinessApprovalLineageIntegrity,
+    reason:
+      | "lineage_integrity_unhealthy"
+      | "selected_approval_not_actionable"
+  ) {
+    await client.auditEvent?.create({
+      data: {
+        actorType: "operator",
+        actorId: operatorId,
+        action: "release_readiness.approval_mutation_blocked",
+        targetType: "ReleaseReadinessApproval",
+        targetId: approval.id,
+        metadata: {
+          releaseIdentifier: approval.releaseIdentifier,
+          environment: approval.environment,
+          attemptedAction,
+          operatorRole: normalizeOperatorRole(operatorRole),
+          reason,
+          actionableApprovalId: integrity.actionableApprovalId,
+          headApprovalId: integrity.headApprovalId,
+          tailApprovalId: integrity.tailApprovalId,
+          integrityStatus: integrity.status,
+          integrityIssues: integrity.issues,
+          selectedApprovalId: approval.id
+        } as Prisma.InputJsonValue
+      }
+    });
+  }
+
   private async assertApprovalActionableInLineage(
     client: ReleaseReadinessApprovalLookupClient,
-    approval: ReleaseReadinessApprovalRecord
+    approval: ReleaseReadinessApprovalRecord,
+    context: {
+      operatorId: string;
+      operatorRole: string | undefined;
+      attemptedAction: "approve" | "reject" | "rebind_pack";
+    }
   ) {
     const { lineageRecords, issues } = await this.collectApprovalLineageRecords(
       client,
@@ -1287,17 +1333,44 @@ export class ReleaseReadinessService {
         integrity.actionableApprovalId &&
         integrity.actionableApprovalId !== approval.id
       ) {
+        await this.recordBlockedApprovalLineageMutation(
+          client,
+          approval,
+          context.operatorId,
+          context.operatorRole,
+          context.attemptedAction,
+          integrity,
+          "selected_approval_not_actionable"
+        );
         throw new ConflictException(
           `Selected launch approval is no longer actionable. Refresh and continue with ${integrity.actionableApprovalId}.`
         );
       }
 
+      await this.recordBlockedApprovalLineageMutation(
+        client,
+        approval,
+        context.operatorId,
+        context.operatorRole,
+        context.attemptedAction,
+        integrity,
+        "lineage_integrity_unhealthy"
+      );
       throw new ConflictException(
         "Launch approval lineage integrity must be healthy before this action can proceed. Refresh approval data and resolve lineage issues."
       );
     }
 
     if (integrity.actionableApprovalId !== approval.id) {
+      await this.recordBlockedApprovalLineageMutation(
+        client,
+        approval,
+        context.operatorId,
+        context.operatorRole,
+        context.attemptedAction,
+        integrity,
+        "selected_approval_not_actionable"
+      );
       throw new ConflictException(
         `Selected launch approval is no longer actionable. Refresh and continue with ${integrity.actionableApprovalId}.`
       );
@@ -2097,7 +2170,11 @@ export class ReleaseReadinessService {
           currentApproval,
           dto.expectedUpdatedAt
         );
-        await this.assertApprovalActionableInLineage(transaction, currentApproval);
+        await this.assertApprovalActionableInLineage(transaction, currentApproval, {
+          operatorId,
+          operatorRole,
+          attemptedAction: "approve"
+        });
 
         const nextApproval = await transaction.releaseReadinessApproval.update({
           where: {
@@ -2260,7 +2337,11 @@ export class ReleaseReadinessService {
           );
         }
 
-        await this.assertApprovalActionableInLineage(transaction, rebindableApproval);
+        await this.assertApprovalActionableInLineage(transaction, rebindableApproval, {
+          operatorId,
+          operatorRole,
+          attemptedAction: "rebind_pack"
+        });
 
         const nextApproval = await transaction.releaseReadinessApproval.create({
           data: {
@@ -2432,7 +2513,11 @@ export class ReleaseReadinessService {
           currentApproval,
           dto.expectedUpdatedAt
         );
-        await this.assertApprovalActionableInLineage(transaction, currentApproval);
+        await this.assertApprovalActionableInLineage(transaction, currentApproval, {
+          operatorId,
+          operatorRole,
+          attemptedAction: "reject"
+        });
 
         const nextApproval = await transaction.releaseReadinessApproval.update({
           where: {
