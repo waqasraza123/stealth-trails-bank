@@ -57,6 +57,9 @@ const mockProvider = {
     blockNumber: 123n,
     transactionIndex: 4,
     to: "0x0000000000000000000000000000000000000def"
+  })),
+  getTransaction: jest.fn(async () => ({
+    data: "0x1234"
   }))
 };
 
@@ -68,7 +71,13 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
 }));
 
 jest.mock("@stealth-trails-bank/contracts-sdk", () => ({
-  createJsonRpcProvider: jest.fn(() => mockProvider)
+  createJsonRpcProvider: jest.fn(() => mockProvider),
+  LOAN_BOOK_ABI: [
+    "function createLoan(address borrower, address borrowAsset, address collateralAsset, uint256 principalAmount, uint256 collateralAmount, uint256 serviceFeeAmount, uint256 installmentAmount, uint256 installmentCount, uint256 termMonths, bool autopayEnabled) external returns (uint256)"
+  ],
+  STAKING_CONTRACT_ABI: [
+    "function createPool(uint256 _rewardRate, uint256 externalPoolId) external"
+  ]
 }));
 
 function buildExecutorReceipt(args: {
@@ -238,6 +247,9 @@ function createExecutionRequestRecord(
     dispatchReference: string | null;
     dispatchVerificationChecksumSha256: string | null;
     dispatchFailureReason: string | null;
+    expectedExecutionCalldata: string | null;
+    expectedExecutionCalldataHash: string | null;
+    expectedExecutionMethodSelector: string | null;
     claimedByExecutorId: string | null;
     executorClaimedAt: Date | null;
     executorClaimExpiresAt: Date | null;
@@ -282,7 +294,8 @@ function createExecutionRequestRecord(
           stakingPoolId: 17
         }
       : null,
-    contractAddress: overrides?.contractAddress ?? "0xcontract",
+    contractAddress:
+      overrides?.contractAddress ?? "0x0000000000000000000000000000000000000def",
     contractMethod: overrides?.contractMethod ?? "createLoan",
     walletAddress:
       overrides?.walletAddress ?? "0x0000000000000000000000000000000000000abc",
@@ -322,6 +335,11 @@ function createExecutionRequestRecord(
     dispatchVerificationChecksumSha256:
       overrides?.dispatchVerificationChecksumSha256 ?? null,
     dispatchFailureReason: overrides?.dispatchFailureReason ?? null,
+    expectedExecutionCalldata: overrides?.expectedExecutionCalldata ?? null,
+    expectedExecutionCalldataHash:
+      overrides?.expectedExecutionCalldataHash ?? null,
+    expectedExecutionMethodSelector:
+      overrides?.expectedExecutionMethodSelector ?? null,
     claimedByExecutorId: overrides?.claimedByExecutorId ?? null,
     executorClaimedAt: overrides?.executorClaimedAt ?? null,
     executorClaimExpiresAt: overrides?.executorClaimExpiresAt ?? null,
@@ -360,6 +378,23 @@ function createService(args?: {
   const prismaService = {
     wallet: {
       findMany: jest.fn().mockResolvedValue(wallets)
+    },
+    asset: {
+      findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
+        if (where.id === "asset_usdc") {
+          return {
+            assetType: "erc20",
+            contractAddress: "0x00000000000000000000000000000000000000c1",
+            decimals: 6
+          };
+        }
+
+        return {
+          assetType: "native",
+          contractAddress: null,
+          decimals: 18
+        };
+      })
     },
     workerRuntimeHeartbeat: {
       findMany: jest.fn().mockResolvedValue(workers)
@@ -483,7 +518,13 @@ function createService(args?: {
           contractAddress: (data.contractAddress as string | undefined) ?? null,
           contractMethod: data.contractMethod as string,
           walletAddress: (data.walletAddress as string | undefined) ?? null,
-          assetId: (data.assetId as string | undefined) ?? null
+          assetId: (data.assetId as string | undefined) ?? null,
+          expectedExecutionCalldata:
+            (data.expectedExecutionCalldata as string | undefined) ?? null,
+          expectedExecutionCalldataHash:
+            (data.expectedExecutionCalldataHash as string | undefined) ?? null,
+          expectedExecutionMethodSelector:
+            (data.expectedExecutionMethodSelector as string | undefined) ?? null
         });
         executionRequestStore.unshift(next);
         return next;
@@ -519,6 +560,7 @@ function createService(args?: {
         governedExecutionOverrideRequest: prismaService.governedExecutionOverrideRequest,
         governedTreasuryExecutionRequest:
           prismaService.governedTreasuryExecutionRequest,
+        asset: prismaService.asset,
         loanEvent: prismaService.loanEvent,
         loanAgreement: prismaService.loanAgreement,
         stakingPoolGovernanceRequest: prismaService.stakingPoolGovernanceRequest,
@@ -542,6 +584,9 @@ describe("GovernedExecutionService", () => {
       blockNumber: 123n,
       transactionIndex: 4,
       to: "0x0000000000000000000000000000000000000def"
+    });
+    mockProvider.getTransaction.mockResolvedValue({
+      data: "0x1234"
     });
   });
 
@@ -657,11 +702,12 @@ describe("GovernedExecutionService", () => {
     const result = await service.requestLoanContractCreation({
       loanAgreementId: "loan_agreement_1",
       chainId: 8453,
-      assetId: "asset_usdc",
-      walletAddress: "0xwallet",
-      contractAddress: "0xcontract",
+      borrowAssetId: "asset_usdc",
+      collateralAssetId: "asset_eth",
+      walletAddress: "0x0000000000000000000000000000000000000abc",
+      contractAddress: "0x0000000000000000000000000000000000000def",
       contractMethod: "createLoan",
-      borrowerWalletAddress: "0xwallet",
+      borrowerWalletAddress: "0x0000000000000000000000000000000000000abc",
       principalAmount: "1000",
       collateralAmount: "1600",
       serviceFeeAmount: "20",
@@ -676,6 +722,8 @@ describe("GovernedExecutionService", () => {
 
     expect(result.stateReused).toBe(false);
     expect(result.request.executionType).toBe("loan_contract_creation");
+    expect(result.request.expectedExecutionCalldataHash).toBeTruthy();
+    expect(result.request.expectedExecutionMethodSelector).toBeTruthy();
     expect(prismaService.auditEvent.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         action: "governed_execution.loan_contract_creation.requested"
@@ -696,7 +744,7 @@ describe("GovernedExecutionService", () => {
       {
         blockchainTransactionHash: "0xloanhash",
         contractLoanId: "1234",
-        contractAddress: "0xloanbook"
+        contractAddress: "0x0000000000000000000000000000000000000def"
       },
       {
         operatorId: "operator_approver",
@@ -1058,5 +1106,62 @@ describe("GovernedExecutionService", () => {
         "executor_1"
       )
     ).rejects.toThrow("Governed execution transaction receipt was not found onchain");
+  });
+
+  it("rejects governed executor success when onchain calldata does not match the bound execution intent", async () => {
+    mockProvider.getTransaction.mockResolvedValueOnce({
+      data: "0x12345678"
+    });
+    const executionRecord = createExecutionRequestRecord({
+      id: "execution_executor_bad_calldata_1",
+      dispatchStatus: "dispatched",
+      dispatchReference: "dispatch:execution_executor_bad_calldata_1",
+      claimedByExecutorId: "executor_1",
+      executorClaimedAt: new Date("2030-04-18T10:02:00.000Z"),
+      executorClaimExpiresAt: new Date("2030-04-18T10:07:00.000Z"),
+      contractAddress: "0x0000000000000000000000000000000000000def",
+      expectedExecutionCalldataHash:
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      expectedExecutionMethodSelector: "0xbbbbbbbb"
+    });
+    const { service } = createService({
+      executionRequests: [executionRecord]
+    });
+    const signedReceipt = buildExecutorReceipt({
+      requestId: "execution_executor_bad_calldata_1",
+      executionType: "loan_contract_creation",
+      targetType: "LoanAgreement",
+      targetId: "target_1",
+      dispatchReference: "dispatch:execution_executor_bad_calldata_1",
+      executorId: "executor_1",
+      outcome: "executed",
+      transactionChainId: 8453,
+      transactionToAddress: "0x0000000000000000000000000000000000000def",
+      blockchainTransactionHash: "0xbadcalldata",
+      contractLoanId: "loan_1234"
+    });
+
+    await expect(
+      service.recordExecutionSuccessFromExecutor(
+        "execution_executor_bad_calldata_1",
+        {
+          dispatchReference: "dispatch:execution_executor_bad_calldata_1",
+          transactionChainId: 8453,
+          transactionToAddress: "0x0000000000000000000000000000000000000def",
+          blockchainTransactionHash: "0xbadcalldata",
+          contractLoanId: "loan_1234",
+          notedAt: "2030-04-18T10:03:00.000Z",
+          canonicalReceiptText: signedReceipt.canonicalReceiptText,
+          receiptHash: signedReceipt.receiptHash,
+          receiptChecksumSha256: signedReceipt.receiptChecksumSha256,
+          receiptSignature: signedReceipt.receiptSignature,
+          receiptSignerAddress: signedReceipt.receiptSignerAddress,
+          receiptSignatureAlgorithm: signedReceipt.receiptSignatureAlgorithm
+        },
+        "executor_1"
+      )
+    ).rejects.toThrow(
+      "Governed execution onchain transaction calldata does not match the expected execution binding"
+    );
   });
 });

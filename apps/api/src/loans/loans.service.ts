@@ -238,6 +238,7 @@ export class LoansService {
     agreement: {
       id: string;
       borrowAssetId: string;
+      collateralAssetId: string;
       principalAmount: Prisma.Decimal;
       collateralAmount: Prisma.Decimal;
       serviceFeeAmount: Prisma.Decimal;
@@ -259,7 +260,8 @@ export class LoansService {
     const queued = await this.governedExecutionService.requestLoanContractCreation({
       loanAgreementId: input.agreement.id,
       chainId: input.chainId,
-      assetId: input.agreement.borrowAssetId,
+      borrowAssetId: input.agreement.borrowAssetId,
+      collateralAssetId: input.agreement.collateralAssetId,
       walletAddress: input.borrowerWalletAddress,
       contractAddress: this.getLoanContractAddress(),
       contractMethod: "createLoan",
@@ -1284,6 +1286,7 @@ export class LoansService {
         agreement: {
           id: application.loanAgreement.id,
           borrowAssetId: application.loanAgreement.borrowAssetId,
+          collateralAssetId: application.loanAgreement.collateralAssetId,
           principalAmount: application.loanAgreement.principalAmount,
           collateralAmount: application.loanAgreement.collateralAmount,
           serviceFeeAmount: application.loanAgreement.serviceFeeAmount,
@@ -1484,6 +1487,7 @@ export class LoansService {
       agreement: {
         id: result.agreement.id,
         borrowAssetId: result.agreement.borrowAssetId,
+        collateralAssetId: result.agreement.collateralAssetId,
         principalAmount: result.agreement.principalAmount,
         collateralAmount: result.agreement.collateralAmount,
         serviceFeeAmount: result.agreement.serviceFeeAmount,

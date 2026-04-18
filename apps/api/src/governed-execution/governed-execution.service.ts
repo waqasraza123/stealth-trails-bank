@@ -11,8 +11,13 @@ import {
   type ApiRuntimeEnvironment,
   type GovernedExecutionRuntimeConfig
 } from "@stealth-trails-bank/config/api";
-import { createJsonRpcProvider } from "@stealth-trails-bank/contracts-sdk";
 import {
+  createJsonRpcProvider,
+  LOAN_BOOK_ABI,
+  STAKING_CONTRACT_ABI
+} from "@stealth-trails-bank/contracts-sdk";
+import {
+  AssetType,
   GovernedExecutionOverrideRequestStatus,
   GovernedTreasuryExecutionDispatchStatus,
   GovernedTreasuryExecutionRequestStatus,
@@ -171,6 +176,9 @@ type ExecutionRequestProjection = {
   dispatchReference: string | null;
   dispatchVerificationChecksumSha256: string | null;
   dispatchFailureReason: string | null;
+  expectedExecutionCalldata: string | null;
+  expectedExecutionCalldataHash: string | null;
+  expectedExecutionMethodSelector: string | null;
   claimedByExecutorId: string | null;
   executorClaimedAt: string | null;
   executorClaimExpiresAt: string | null;
@@ -374,6 +382,108 @@ export class GovernedExecutionService {
     };
   }
 
+  private buildExpectedExecutionCall(args: {
+    contractAddress: string | null;
+    contractMethod: string;
+    executionType: GovernedTreasuryExecutionRequestType;
+    executionPayload: Prisma.JsonValue;
+    walletAddress: string | null;
+    borrowAsset?:
+      | { assetType: AssetType; contractAddress: string | null; decimals: number }
+      | null;
+    collateralAsset?:
+      | { assetType: AssetType; contractAddress: string | null; decimals: number }
+      | null;
+  }): {
+    calldata: string | null;
+    calldataHash: string | null;
+    methodSelector: string | null;
+  } {
+    if (!args.contractAddress || !isRecord(args.executionPayload)) {
+      return {
+        calldata: null,
+        calldataHash: null,
+        methodSelector: null
+      };
+    }
+
+    if (
+      args.executionType ===
+      GovernedTreasuryExecutionRequestType.loan_contract_creation
+    ) {
+      if (!args.walletAddress) {
+        return {
+          calldata: null,
+          calldataHash: null,
+          methodSelector: null
+        };
+      }
+
+      const borrowAssetAddress =
+        args.borrowAsset?.assetType === AssetType.native
+          ? ethers.constants.AddressZero
+          : args.borrowAsset?.contractAddress ?? ethers.constants.AddressZero;
+      const collateralAssetAddress =
+        args.collateralAsset?.assetType === AssetType.native
+          ? ethers.constants.AddressZero
+          : args.collateralAsset?.contractAddress ?? ethers.constants.AddressZero;
+      const loanInterface = new ethers.utils.Interface(LOAN_BOOK_ABI);
+      const calldata = loanInterface.encodeFunctionData(args.contractMethod, [
+        args.walletAddress,
+        borrowAssetAddress,
+        collateralAssetAddress,
+        ethers.utils.parseUnits(
+          String(args.executionPayload.principalAmount ?? "0"),
+          args.borrowAsset?.decimals ?? 18
+        ),
+        ethers.utils.parseUnits(
+          String(args.executionPayload.collateralAmount ?? "0"),
+          args.collateralAsset?.decimals ?? 18
+        ),
+        ethers.utils.parseUnits(
+          String(args.executionPayload.serviceFeeAmount ?? "0"),
+          args.borrowAsset?.decimals ?? 18
+        ),
+        ethers.utils.parseUnits(
+          String(args.executionPayload.installmentAmount ?? "0"),
+          args.borrowAsset?.decimals ?? 18
+        ),
+        Number(args.executionPayload.installmentCount ?? 0),
+        Number(args.executionPayload.termMonths ?? 0),
+        Boolean(args.executionPayload.autopayEnabled ?? false)
+      ]);
+
+      return {
+        calldata,
+        calldataHash: ethers.utils.keccak256(calldata),
+        methodSelector: calldata.slice(0, 10)
+      };
+    }
+
+    if (
+      args.executionType ===
+      GovernedTreasuryExecutionRequestType.staking_pool_creation
+    ) {
+      const stakingInterface = new ethers.utils.Interface(STAKING_CONTRACT_ABI);
+      const calldata = stakingInterface.encodeFunctionData(args.contractMethod, [
+        Number(args.executionPayload.rewardRate ?? 0),
+        Number(args.executionPayload.stakingPoolId ?? 0)
+      ]);
+
+      return {
+        calldata,
+        calldataHash: ethers.utils.keccak256(calldata),
+        methodSelector: calldata.slice(0, 10)
+      };
+    }
+
+    return {
+      calldata: null,
+      calldataHash: null,
+      methodSelector: null
+    };
+  }
+
   private assertVerifiedExecutionReceipt(args: {
     payload: GovernedExecutionReceiptPayload;
     canonicalReceiptText: string;
@@ -416,11 +526,13 @@ export class GovernedExecutionService {
   }): Promise<{
     blockNumber: number;
     transactionIndex: number | null;
+    calldataHash: string | null;
   }> {
     if (!this.config.requireOnchainExecutorReceiptVerification) {
       return {
         blockNumber: -1,
-        transactionIndex: null
+        transactionIndex: null,
+        calldataHash: null
       };
     }
 
@@ -431,6 +543,9 @@ export class GovernedExecutionService {
     }
 
     const receipt = await this.provider.getTransactionReceipt(
+      args.blockchainTransactionHash
+    );
+    const transaction = await this.provider.getTransaction(
       args.blockchainTransactionHash
     );
 
@@ -464,12 +579,36 @@ export class GovernedExecutionService {
       );
     }
 
+    const observedCalldata = this.normalizeOptionalString(transaction?.data);
+    const observedCalldataHash = observedCalldata
+      ? ethers.utils.keccak256(observedCalldata)
+      : null;
+
+    if (
+      args.request.expectedExecutionCalldataHash &&
+      observedCalldataHash !== args.request.expectedExecutionCalldataHash
+    ) {
+      throw new ConflictException(
+        "Governed execution onchain transaction calldata does not match the expected execution binding."
+      );
+    }
+
+    if (
+      args.request.expectedExecutionMethodSelector &&
+      observedCalldata?.slice(0, 10) !== args.request.expectedExecutionMethodSelector
+    ) {
+      throw new ConflictException(
+        "Governed execution onchain transaction method selector does not match the expected execution binding."
+      );
+    }
+
     return {
       blockNumber: Number(receipt.blockNumber),
       transactionIndex:
         typeof receipt.transactionIndex === "number"
           ? receipt.transactionIndex
-          : null
+          : null,
+      calldataHash: observedCalldataHash
     };
   }
 
@@ -570,6 +709,11 @@ export class GovernedExecutionService {
       dispatchVerificationChecksumSha256:
         record.dispatchVerificationChecksumSha256 ?? null,
       dispatchFailureReason: record.dispatchFailureReason ?? null,
+      expectedExecutionCalldata: record.expectedExecutionCalldata ?? null,
+      expectedExecutionCalldataHash:
+        record.expectedExecutionCalldataHash ?? null,
+      expectedExecutionMethodSelector:
+        record.expectedExecutionMethodSelector ?? null,
       claimedByExecutorId: record.claimedByExecutorId ?? null,
       executorClaimedAt: record.executorClaimedAt?.toISOString() ?? null,
       executorClaimExpiresAt:
@@ -1776,7 +1920,8 @@ export class GovernedExecutionService {
             executorReceiptHash: input.receiptHash,
             executorReceiptSignerAddress: input.receiptSignerAddress,
             onchainReceiptBlockNumber: onchainReceipt.blockNumber,
-            onchainReceiptTransactionIndex: onchainReceipt.transactionIndex
+            onchainReceiptTransactionIndex: onchainReceipt.transactionIndex,
+            onchainTransactionCalldataHash: onchainReceipt.calldataHash
           } as PrismaJsonValue
         },
         include: executionRequestInclude
@@ -1852,7 +1997,8 @@ export class GovernedExecutionService {
             transactionToAddress: input.transactionToAddress,
             executorReceiptHash: input.receiptHash,
             executorReceiptSignerAddress: input.receiptSignerAddress,
-            onchainReceiptBlockNumber: onchainReceipt.blockNumber
+            onchainReceiptBlockNumber: onchainReceipt.blockNumber,
+            onchainTransactionCalldataHash: onchainReceipt.calldataHash
           } as PrismaJsonValue
         }
       });
@@ -2061,7 +2207,8 @@ export class GovernedExecutionService {
   async requestLoanContractCreation(input: {
     loanAgreementId: string;
     chainId: number;
-    assetId: string;
+    borrowAssetId: string;
+    collateralAssetId: string;
     walletAddress: string | null;
     contractAddress: string | null;
     contractMethod: string;
@@ -2082,6 +2229,28 @@ export class GovernedExecutionService {
     stateReused: boolean;
   }> {
     const requestNote = this.normalizeOptionalString(input.requestNote);
+    const [borrowAsset, collateralAsset] = await Promise.all([
+      this.prismaService.asset.findUnique({
+        where: {
+          id: input.borrowAssetId
+        },
+        select: {
+          assetType: true,
+          contractAddress: true,
+          decimals: true
+        }
+      }),
+      this.prismaService.asset.findUnique({
+        where: {
+          id: input.collateralAssetId
+        },
+        select: {
+          assetType: true,
+          contractAddress: true,
+          decimals: true
+        }
+      })
+    ]);
 
     const record = await this.prismaService.$transaction(async (transaction) => {
       const existing = await transaction.governedTreasuryExecutionRequest.findFirst({
@@ -2110,6 +2279,26 @@ export class GovernedExecutionService {
         };
       }
 
+      const expectedExecutionCall = this.buildExpectedExecutionCall({
+        contractAddress: input.contractAddress ?? null,
+        contractMethod: input.contractMethod,
+        executionType:
+          GovernedTreasuryExecutionRequestType.loan_contract_creation,
+        executionPayload: {
+          borrowerWalletAddress: input.borrowerWalletAddress,
+          principalAmount: input.principalAmount,
+          collateralAmount: input.collateralAmount,
+          serviceFeeAmount: input.serviceFeeAmount,
+          installmentAmount: input.installmentAmount,
+          installmentCount: input.installmentCount,
+          termMonths: input.termMonths,
+          autopayEnabled: input.autopayEnabled
+        } as PrismaJsonValue,
+        walletAddress: input.walletAddress,
+        borrowAsset,
+        collateralAsset
+      });
+
       const created = await transaction.governedTreasuryExecutionRequest.create({
         data: {
           environment: this.environment,
@@ -2122,7 +2311,7 @@ export class GovernedExecutionService {
           contractAddress: input.contractAddress ?? undefined,
           contractMethod: input.contractMethod,
           walletAddress: input.walletAddress ?? undefined,
-          assetId: input.assetId,
+          assetId: input.borrowAssetId,
           executionPayload: {
             borrowerWalletAddress: input.borrowerWalletAddress,
             principalAmount: input.principalAmount,
@@ -2133,6 +2322,12 @@ export class GovernedExecutionService {
             termMonths: input.termMonths,
             autopayEnabled: input.autopayEnabled
           } as PrismaJsonValue,
+          expectedExecutionCalldata:
+            expectedExecutionCall.calldata ?? undefined,
+          expectedExecutionCalldataHash:
+            expectedExecutionCall.calldataHash ?? undefined,
+          expectedExecutionMethodSelector:
+            expectedExecutionCall.methodSelector ?? undefined,
           requestedByActorType: input.requestedByActorType,
           requestedByActorId: input.requestedByActorId,
           requestedByActorRole: input.requestedByActorRole ?? undefined,
@@ -2172,9 +2367,13 @@ export class GovernedExecutionService {
           metadata: {
             environment: this.environment,
             loanAgreementId: input.loanAgreementId,
-            assetId: input.assetId,
+            assetId: input.borrowAssetId,
             contractAddress: created.contractAddress,
-            contractMethod: created.contractMethod
+            contractMethod: created.contractMethod,
+            expectedExecutionCalldataHash:
+              created.expectedExecutionCalldataHash,
+            expectedExecutionMethodSelector:
+              created.expectedExecutionMethodSelector
           } as PrismaJsonValue
         }
       });
@@ -2207,6 +2406,16 @@ export class GovernedExecutionService {
     stateReused: boolean;
   }> {
     const requestNote = this.normalizeOptionalString(input.requestNote);
+    const expectedExecutionCall = this.buildExpectedExecutionCall({
+      contractAddress: input.contractAddress ?? null,
+      contractMethod: input.contractMethod,
+      executionType: GovernedTreasuryExecutionRequestType.staking_pool_creation,
+      executionPayload: {
+        stakingPoolId: input.stakingPoolId,
+        rewardRate: input.rewardRate
+      } as PrismaJsonValue,
+      walletAddress: null
+    });
 
     const record = await this.prismaService.$transaction(async (transaction) => {
       const existing = await transaction.governedTreasuryExecutionRequest.findFirst({
@@ -2250,6 +2459,12 @@ export class GovernedExecutionService {
             stakingPoolId: input.stakingPoolId,
             rewardRate: input.rewardRate
           } as PrismaJsonValue,
+          expectedExecutionCalldata:
+            expectedExecutionCall.calldata ?? undefined,
+          expectedExecutionCalldataHash:
+            expectedExecutionCall.calldataHash ?? undefined,
+          expectedExecutionMethodSelector:
+            expectedExecutionCall.methodSelector ?? undefined,
           requestedByActorType: input.requestedByActorType,
           requestedByActorId: input.requestedByActorId,
           requestedByActorRole: input.requestedByActorRole ?? undefined,
@@ -2272,7 +2487,11 @@ export class GovernedExecutionService {
             stakingPoolId: input.stakingPoolId,
             rewardRate: input.rewardRate,
             contractAddress: created.contractAddress,
-            contractMethod: created.contractMethod
+            contractMethod: created.contractMethod,
+            expectedExecutionCalldataHash:
+              created.expectedExecutionCalldataHash,
+            expectedExecutionMethodSelector:
+              created.expectedExecutionMethodSelector
           } as PrismaJsonValue
         }
       });

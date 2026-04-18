@@ -848,6 +848,9 @@ model GovernedTreasuryExecutionRequest {
   dispatchReference            String?
   dispatchVerificationChecksumSha256 String?
   dispatchFailureReason        String?
+  expectedExecutionCalldata    String?
+  expectedExecutionCalldataHash String?
+  expectedExecutionMethodSelector String?
   claimedByExecutorId          String?
   executorClaimedAt            DateTime?
   executorClaimExpiresAt       DateTime?
