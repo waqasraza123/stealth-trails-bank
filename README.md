@@ -1,5 +1,7 @@
 # Stealth Trails Bank
 
+![React Native](https://img.shields.io/badge/React%20Native-20232A?style=flat&logo=react&logoColor=61DAFB)
+
 ## Screenshots
 
 ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 8.58.46 PM.jpg>) ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 8.59.31 PM.jpg>) ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 8.59.40 PM.jpg>) ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 8.59.50 PM.jpg>) ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 9.00.14 PM.jpg>) ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 9.00.32 PM.jpg>) ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 9.00.47 PM.jpg>) ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 9.00.57 PM.jpg>)
@@ -58,6 +60,7 @@ The system still needs broader production coverage in areas such as:
 | ------------------------ | -------------------------------------------------------------------------------- |
 | `apps/admin`             | Internal operator console for review, oversight, and governed export workflows   |
 | `apps/web`               | Customer-facing web application                                                  |
+| `apps/mobile`            | Customer-facing mobile app (Expo + React Native)                                 |
 | `apps/api`               | Backend API, workflow orchestration, persistence, and internal operational paths |
 | `apps/worker`            | Async worker runtime for internal execution and blockchain monitoring            |
 | `packages/config`        | Shared runtime config loading and validation                                     |
@@ -107,6 +110,16 @@ This is important because it means the repo is no longer only a prototype shell.
 
 ```bash
 pnpm install
+```
+
+### 1a. Mobile app (React Native / Expo)
+
+The mobile app lives at `apps/mobile` and expects:
+
+- `EXPO_PUBLIC_API_BASE_URL` (see `apps/mobile/.env.example`)
+
+```bash
+pnpm dev:mobile
 ```
 
 ### 2. Prepare environment files

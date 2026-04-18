@@ -24,6 +24,11 @@
       "types": "./src/web-runtime-config.ts",
       "import": "./src/web-runtime-config.ts",
       "require": "./dist/web.js"
+    },
+    "./mobile": {
+      "types": "./src/mobile-runtime-config.ts",
+      "import": "./src/mobile-runtime-config.ts",
+      "require": "./dist/mobile.js"
     }
   },
   "scripts": {

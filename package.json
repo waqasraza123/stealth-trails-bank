@@ -4,6 +4,7 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "./scripts/dev.sh",
+    "dev:mobile": "pnpm --filter @stealth-trails-bank/mobile dev",
     "dev:preflight": "node ./scripts/preflight-dev.mjs",
     "build": "turbo build",
     "lint": "turbo lint",
@@ -18,6 +19,9 @@
     "release:readiness:probe": "pnpm --filter @stealth-trails-bank/api release-readiness:probe",
     "release:readiness:verify": "pnpm --filter @stealth-trails-bank/api release-readiness:verify",
     "release:launch-closure": "pnpm --filter @stealth-trails-bank/api release-launch-closure",
+    "mobile:android": "pnpm --filter @stealth-trails-bank/mobile android",
+    "mobile:ios": "pnpm --filter @stealth-trails-bank/mobile ios",
+    "mobile:test": "pnpm --filter @stealth-trails-bank/mobile test",
     "verify:push": "./scripts/verify-push.sh",
     "push": "node ./scripts/push.mjs",
     "safe-push": "./scripts/safe-push.sh",

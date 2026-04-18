@@ -17,6 +17,7 @@
   "include": [
     "index.ts",
     "api.ts",
+    "mobile.ts",
     "web.ts",
     "src/**/*.ts"
   ]
