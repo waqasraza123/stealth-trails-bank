@@ -91,6 +91,7 @@ const DEFAULT_WORKER_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_WORKER_CONFIRMATION_BLOCKS = 1;
 const DEFAULT_WORKER_PLATFORM_ALERT_REESCALATION_INTERVAL_MS = 300_000;
 const DEFAULT_WORKER_SOLVENCY_SNAPSHOT_INTERVAL_MS = 300_000;
+const DEFAULT_WORKER_GOVERNED_EXECUTION_DISPATCH_INTERVAL_MS = 60_000;
 const DEFAULT_WORKER_INTERNAL_API_STARTUP_GRACE_PERIOD_MS = 45_000;
 const DEFAULT_WORKER_MANAGED_WITHDRAWAL_CLAIM_TIMEOUT_MS = 60_000;
 const DEFAULT_WORKER_POLICY_CONTROLLED_WITHDRAWAL_AUTHORIZATION_TTL_SECONDS = 300;
@@ -779,6 +780,7 @@ export type WorkerRuntimeConfig = {
   readonly reconciliationScanIntervalMs: number;
   readonly platformAlertReEscalationIntervalMs: number;
   readonly solvencySnapshotIntervalMs: number;
+  readonly governedExecutionDispatchIntervalMs: number;
   readonly managedWithdrawalClaimTimeoutMs: number;
   readonly policyControlledWithdrawalExecutorPrivateKey: string | null;
   readonly policyControlledWithdrawalPolicySignerPrivateKey: string | null;
@@ -1344,6 +1346,13 @@ export function loadWorkerRuntimeConfig(
       readOptionalRuntimeEnv(env, "WORKER_SOLVENCY_SNAPSHOT_INTERVAL_MS") ??
         String(DEFAULT_WORKER_SOLVENCY_SNAPSHOT_INTERVAL_MS),
       "WORKER_SOLVENCY_SNAPSHOT_INTERVAL_MS"
+    ),
+    governedExecutionDispatchIntervalMs: parsePositiveInteger(
+      readOptionalRuntimeEnv(
+        env,
+        "WORKER_GOVERNED_EXECUTION_DISPATCH_INTERVAL_MS"
+      ) ?? String(DEFAULT_WORKER_GOVERNED_EXECUTION_DISPATCH_INTERVAL_MS),
+      "WORKER_GOVERNED_EXECUTION_DISPATCH_INTERVAL_MS"
     ),
     managedWithdrawalClaimTimeoutMs: parsePositiveInteger(
       readOptionalRuntimeEnv(

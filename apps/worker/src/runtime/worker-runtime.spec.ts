@@ -20,6 +20,7 @@ test("worker runtime config defaults to monitor mode and requires rpc", () => {
   assert.equal(runtime.confirmationBlocks, 1);
   assert.equal(runtime.internalApiStartupGracePeriodMs, 45000);
   assert.equal(runtime.reconciliationScanIntervalMs, 300000);
+  assert.equal(runtime.governedExecutionDispatchIntervalMs, 60000);
   assert.equal(runtime.depositSignerPrivateKey, null);
   assert.equal(runtime.managedWithdrawalClaimTimeoutMs, 60000);
   assert.equal(runtime.policyControlledWithdrawalExecutorPrivateKey, null);
@@ -39,6 +40,7 @@ test("worker runtime config defaults local development to synthetic mode", () =>
   assert.equal(runtime.executionMode, "synthetic");
   assert.equal(runtime.internalApiStartupGracePeriodMs, 45000);
   assert.equal(runtime.rpcUrl, null);
+  assert.equal(runtime.governedExecutionDispatchIntervalMs, 60000);
   assert.equal(runtime.managedWithdrawalClaimTimeoutMs, 60000);
   assert.equal(runtime.policyControlledWithdrawalAuthorizationTtlSeconds, 300);
 });
@@ -46,10 +48,12 @@ test("worker runtime config defaults local development to synthetic mode", () =>
 test("worker runtime config allows overriding internal API startup grace period", () => {
   const runtime = loadWorkerRuntimeConfig({
     NODE_ENV: "development",
-    WORKER_INTERNAL_API_STARTUP_GRACE_PERIOD_MS: "15000"
+    WORKER_INTERNAL_API_STARTUP_GRACE_PERIOD_MS: "15000",
+    WORKER_GOVERNED_EXECUTION_DISPATCH_INTERVAL_MS: "45000"
   });
 
   assert.equal(runtime.internalApiStartupGracePeriodMs, 15000);
+  assert.equal(runtime.governedExecutionDispatchIntervalMs, 45000);
 });
 
 test("worker runtime config parses managed withdrawal signer mappings", () => {

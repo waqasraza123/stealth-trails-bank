@@ -187,6 +187,8 @@ export async function startWorkerRuntime(): Promise<void> {
           confirmationBlocks: runtime.confirmationBlocks,
           reconciliationScanIntervalMs: runtime.reconciliationScanIntervalMs,
           solvencySnapshotIntervalMs: runtime.solvencySnapshotIntervalMs,
+          governedExecutionDispatchIntervalMs:
+            runtime.governedExecutionDispatchIntervalMs,
           platformAlertReEscalationIntervalMs:
             runtime.platformAlertReEscalationIntervalMs,
           policyControlledWithdrawalReady: Boolean(
@@ -343,6 +345,8 @@ export async function startWorkerRuntime(): Promise<void> {
             confirmationBlocks: runtime.confirmationBlocks,
             reconciliationScanIntervalMs: runtime.reconciliationScanIntervalMs,
             solvencySnapshotIntervalMs: runtime.solvencySnapshotIntervalMs,
+            governedExecutionDispatchIntervalMs:
+              runtime.governedExecutionDispatchIntervalMs,
             platformAlertReEscalationIntervalMs:
               runtime.platformAlertReEscalationIntervalMs,
             policyControlledWithdrawalReady: Boolean(
@@ -417,6 +421,8 @@ export async function startWorkerRuntime(): Promise<void> {
             confirmationBlocks: runtime.confirmationBlocks,
             reconciliationScanIntervalMs: runtime.reconciliationScanIntervalMs,
             solvencySnapshotIntervalMs: runtime.solvencySnapshotIntervalMs,
+            governedExecutionDispatchIntervalMs:
+              runtime.governedExecutionDispatchIntervalMs,
             platformAlertReEscalationIntervalMs:
               runtime.platformAlertReEscalationIntervalMs,
             policyControlledWithdrawalReady: Boolean(

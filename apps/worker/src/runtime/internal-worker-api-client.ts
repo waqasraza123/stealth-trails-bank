@@ -6,6 +6,8 @@ import type {
   ClaimGovernedExecutionRequestResult,
   ConfirmIntentPayload,
   CriticalAlertReEscalationSweepResult,
+  DispatchGovernedExecutionRequestPayload,
+  DispatchGovernedExecutionRequestResult,
   ListClaimableGovernedExecutionRequestsResult,
   FailIntentPayload,
   GeneratedSolvencySnapshotResult,
@@ -288,6 +290,19 @@ export function createInternalWorkerApiClient(runtime: WorkerRuntime) {
       return readResponseData(
         httpClient.post<ApiEnvelope<ClaimGovernedExecutionRequestResult>>(
           `/governed-execution/internal/worker/execution-requests/${requestId}/claim`,
+          payload
+        ),
+        baseUrl
+      );
+    },
+
+    async dispatchGovernedExecutionRequest(
+      requestId: string,
+      payload: DispatchGovernedExecutionRequestPayload = {}
+    ): Promise<DispatchGovernedExecutionRequestResult> {
+      return readResponseData(
+        httpClient.post<ApiEnvelope<DispatchGovernedExecutionRequestResult>>(
+          `/governed-execution/internal/worker/execution-requests/${requestId}/dispatch`,
           payload
         ),
         baseUrl

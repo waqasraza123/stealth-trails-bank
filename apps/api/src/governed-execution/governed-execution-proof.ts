@@ -73,3 +73,90 @@ export function buildSignedGovernedExecutionPackage(
     executionPackageSignatureAlgorithm: "ethereum-secp256k1-keccak256-v1"
   };
 }
+
+export function verifySignedGovernedExecutionPackage(input: {
+  payload: GovernedExecutionPackagePayload;
+  canonicalPayloadText: string;
+  executionPackageHash: string;
+  executionPackageChecksumSha256: string;
+  executionPackageSignature: string;
+  executionPackageSignerAddress: string;
+  executionPackageSignatureAlgorithm: string;
+}): {
+  verified: boolean;
+  verificationChecksumSha256: string;
+  failureReason: string | null;
+} {
+  if (
+    input.executionPackageSignatureAlgorithm !==
+    "ethereum-secp256k1-keccak256-v1"
+  ) {
+    return {
+      verified: false,
+      verificationChecksumSha256: buildSha256Checksum(input.canonicalPayloadText),
+      failureReason: "Unsupported governed execution package signature algorithm."
+    };
+  }
+
+  const canonicalPayloadText = stableStringify(input.payload);
+  const verificationChecksumSha256 = buildSha256Checksum(canonicalPayloadText);
+
+  if (canonicalPayloadText !== input.canonicalPayloadText) {
+    return {
+      verified: false,
+      verificationChecksumSha256,
+      failureReason: "Canonical execution package payload text does not match the stored payload."
+    };
+  }
+
+  if (verificationChecksumSha256 !== input.executionPackageChecksumSha256) {
+    return {
+      verified: false,
+      verificationChecksumSha256,
+      failureReason: "Governed execution package checksum does not match the canonical payload."
+    };
+  }
+
+  const computedHash = ethers.utils.keccak256(
+    ethers.utils.toUtf8Bytes(canonicalPayloadText)
+  );
+
+  if (computedHash !== input.executionPackageHash) {
+    return {
+      verified: false,
+      verificationChecksumSha256,
+      failureReason: "Governed execution package hash does not match the canonical payload."
+    };
+  }
+
+  let recoveredAddress: string;
+  try {
+    recoveredAddress = ethers.utils.recoverAddress(
+      computedHash,
+      input.executionPackageSignature
+    );
+  } catch {
+    return {
+      verified: false,
+      verificationChecksumSha256,
+      failureReason: "Governed execution package signature could not be recovered."
+    };
+  }
+
+  if (
+    recoveredAddress.toLowerCase() !==
+    input.executionPackageSignerAddress.toLowerCase()
+  ) {
+    return {
+      verified: false,
+      verificationChecksumSha256,
+      failureReason: "Governed execution package signature does not recover the expected signer address."
+    };
+  }
+
+  return {
+    verified: true,
+    verificationChecksumSha256,
+    failureReason: null
+  };
+}

@@ -704,6 +704,12 @@ export type GovernedTreasuryExecutionRequest = {
   claimedByWorkerId: string | null;
   claimedAt: string | null;
   claimExpiresAt: string | null;
+  dispatchStatus: string;
+  dispatchPreparedAt: string | null;
+  dispatchedByWorkerId: string | null;
+  dispatchReference: string | null;
+  dispatchVerificationChecksumSha256: string | null;
+  dispatchFailureReason: string | null;
   updatedAt: string;
   asset: {
     id: string;

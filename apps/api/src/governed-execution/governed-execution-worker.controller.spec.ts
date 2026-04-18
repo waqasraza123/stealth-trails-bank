@@ -4,7 +4,8 @@ import { GovernedExecutionService } from "./governed-execution.service";
 function createController() {
   const governedExecutionService = {
     listClaimableExecutionRequests: jest.fn(),
-    claimExecutionRequest: jest.fn()
+    claimExecutionRequest: jest.fn(),
+    dispatchExecutionRequest: jest.fn()
   } as unknown as GovernedExecutionService;
 
   return {
@@ -63,6 +64,40 @@ describe("GovernedExecutionWorkerController", () => {
       "execution_request_1",
       "worker_1",
       120000
+    );
+  });
+
+  it("records dispatch for a claimed execution request", async () => {
+    const { controller, governedExecutionService } = createController();
+    (governedExecutionService.dispatchExecutionRequest as jest.Mock).mockResolvedValue(
+      {
+        request: {
+          id: "execution_request_1"
+        },
+        dispatchRecorded: true,
+        verificationSucceeded: true,
+        verificationFailureReason: null
+      }
+    );
+
+    await controller.dispatchExecutionRequest(
+      "execution_request_1",
+      {
+        dispatchReference: "worker:worker_1:execution_request_1"
+      },
+      {
+        internalWorker: {
+          workerId: "worker_1"
+        }
+      }
+    );
+
+    expect(governedExecutionService.dispatchExecutionRequest).toHaveBeenCalledWith(
+      "execution_request_1",
+      {
+        dispatchReference: "worker:worker_1:execution_request_1"
+      },
+      "worker_1"
     );
   });
 });

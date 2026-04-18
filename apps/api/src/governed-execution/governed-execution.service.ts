@@ -12,6 +12,7 @@ import {
 } from "@stealth-trails-bank/config/api";
 import {
   GovernedExecutionOverrideRequestStatus,
+  GovernedTreasuryExecutionDispatchStatus,
   GovernedTreasuryExecutionRequestStatus,
   GovernedTreasuryExecutionRequestType,
   Prisma,
@@ -26,7 +27,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { PrismaJsonValue } from "../prisma/prisma-json";
 import {
   buildSignedGovernedExecutionPackage,
-  type GovernedExecutionPackagePayload
+  type GovernedExecutionPackagePayload,
+  verifySignedGovernedExecutionPackage
 } from "./governed-execution-proof";
 
 const RESERVE_WALLET_KINDS = [
@@ -158,6 +160,12 @@ type ExecutionRequestProjection = {
   claimedByWorkerId: string | null;
   claimedAt: string | null;
   claimExpiresAt: string | null;
+  dispatchStatus: GovernedTreasuryExecutionDispatchStatus;
+  dispatchPreparedAt: string | null;
+  dispatchedByWorkerId: string | null;
+  dispatchReference: string | null;
+  dispatchVerificationChecksumSha256: string | null;
+  dispatchFailureReason: string | null;
   updatedAt: string;
   asset: {
     id: string;
@@ -396,6 +404,13 @@ export class GovernedExecutionService {
       claimedByWorkerId: record.claimedByWorkerId ?? null,
       claimedAt: record.claimedAt?.toISOString() ?? null,
       claimExpiresAt: record.claimExpiresAt?.toISOString() ?? null,
+      dispatchStatus: record.dispatchStatus,
+      dispatchPreparedAt: record.dispatchPreparedAt?.toISOString() ?? null,
+      dispatchedByWorkerId: record.dispatchedByWorkerId ?? null,
+      dispatchReference: record.dispatchReference ?? null,
+      dispatchVerificationChecksumSha256:
+        record.dispatchVerificationChecksumSha256 ?? null,
+      dispatchFailureReason: record.dispatchFailureReason ?? null,
       updatedAt: record.updatedAt.toISOString(),
       asset: record.asset
         ? {
@@ -947,6 +962,12 @@ export class GovernedExecutionService {
         executionPackagePublishedAt: {
           not: null
         },
+        dispatchStatus: {
+          in: [
+            GovernedTreasuryExecutionDispatchStatus.not_dispatched,
+            GovernedTreasuryExecutionDispatchStatus.dispatch_failed
+          ]
+        },
         OR: [
           {
             claimExpiresAt: null
@@ -1004,6 +1025,15 @@ export class GovernedExecutionService {
       if (!request.executionPackagePublishedAt || !request.executionPackageHash) {
         throw new ConflictException(
           "Governed treasury execution request is not yet packaged for external execution."
+        );
+      }
+
+      if (
+        request.dispatchStatus ===
+        GovernedTreasuryExecutionDispatchStatus.dispatched
+      ) {
+        throw new ConflictException(
+          "Governed treasury execution request has already been dispatched to the governed executor."
         );
       }
 
@@ -1075,6 +1105,168 @@ export class GovernedExecutionService {
     return {
       request: this.mapExecutionRequestProjection(result.request),
       claimReused: result.claimReused
+    };
+  }
+
+  async dispatchExecutionRequest(
+    requestId: string,
+    input: {
+      dispatchReference?: string;
+      dispatchNote?: string;
+    },
+    workerId: string
+  ): Promise<{
+    request: ExecutionRequestProjection;
+    dispatchRecorded: boolean;
+    verificationSucceeded: boolean;
+    verificationFailureReason: string | null;
+  }> {
+    const now = new Date();
+    const dispatchReference =
+      this.normalizeOptionalString(input.dispatchReference) ??
+      `worker:${workerId}:${requestId}:${now.toISOString()}`;
+    const dispatchNote = this.normalizeOptionalString(input.dispatchNote);
+
+    const result = await this.prismaService.$transaction(async (transaction) => {
+      const request = await transaction.governedTreasuryExecutionRequest.findUnique({
+        where: {
+          id: requestId
+        },
+        include: executionRequestInclude
+      });
+
+      if (!request || request.environment !== this.environment) {
+        throw new ConflictException(
+          "Governed treasury execution request was not found in this environment."
+        );
+      }
+
+      if (
+        request.status !== GovernedTreasuryExecutionRequestStatus.pending_execution &&
+        request.status !== GovernedTreasuryExecutionRequestStatus.execution_failed
+      ) {
+        throw new ConflictException(
+          "Governed treasury execution request is no longer dispatchable."
+        );
+      }
+
+      if (
+        request.dispatchStatus ===
+          GovernedTreasuryExecutionDispatchStatus.dispatched &&
+        request.dispatchReference
+      ) {
+        return {
+          request,
+          dispatchRecorded: false,
+          verificationSucceeded: true,
+          verificationFailureReason: null
+        };
+      }
+
+      if (request.claimedByWorkerId !== workerId) {
+        throw new ConflictException(
+          "Governed treasury execution request must be claimed by the current worker before dispatch."
+        );
+      }
+
+      if (
+        !request.claimExpiresAt ||
+        request.claimExpiresAt.getTime() <= now.getTime()
+      ) {
+        throw new ConflictException(
+          "Governed treasury execution request claim lease has expired."
+        );
+      }
+
+      const payload = this.buildExecutionPackagePayload(request);
+
+      if (
+        !request.canonicalExecutionPayloadText ||
+        !request.executionPackageHash ||
+        !request.executionPackageChecksumSha256 ||
+        !request.executionPackageSignature ||
+        !request.executionPackageSignerAddress ||
+        !request.executionPackageSignatureAlgorithm
+      ) {
+        throw new ConflictException(
+          "Governed treasury execution request does not have a complete execution package."
+        );
+      }
+
+      const verification = verifySignedGovernedExecutionPackage({
+        payload,
+        canonicalPayloadText: request.canonicalExecutionPayloadText,
+        executionPackageHash: request.executionPackageHash,
+        executionPackageChecksumSha256:
+          request.executionPackageChecksumSha256,
+        executionPackageSignature: request.executionPackageSignature,
+        executionPackageSignerAddress:
+          request.executionPackageSignerAddress,
+        executionPackageSignatureAlgorithm:
+          request.executionPackageSignatureAlgorithm
+      });
+
+      const nextDispatchStatus = verification.verified
+        ? GovernedTreasuryExecutionDispatchStatus.dispatched
+        : GovernedTreasuryExecutionDispatchStatus.dispatch_failed;
+      const updated = await transaction.governedTreasuryExecutionRequest.update({
+        where: {
+          id: request.id
+        },
+        data: {
+          dispatchStatus: nextDispatchStatus,
+          dispatchPreparedAt: now,
+          dispatchedByWorkerId: workerId,
+          dispatchReference,
+          dispatchVerificationChecksumSha256:
+            verification.verificationChecksumSha256,
+          dispatchFailureReason: verification.failureReason ?? undefined,
+          claimedByWorkerId: null,
+          claimedAt: null,
+          claimExpiresAt: null,
+          metadata: {
+            ...(isRecord(request.metadata) ? request.metadata : {}),
+            latestDispatchNote: dispatchNote ?? null
+          } as PrismaJsonValue
+        },
+        include: executionRequestInclude
+      });
+
+      await transaction.auditEvent.create({
+        data: {
+          customerId: null,
+          actorType: "worker",
+          actorId: workerId,
+          action: verification.verified
+            ? "governed_execution.request.dispatched"
+            : "governed_execution.request.dispatch_failed",
+          targetType: "GovernedTreasuryExecutionRequest",
+          targetId: updated.id,
+          metadata: {
+            environment: this.environment,
+            dispatchReference,
+            dispatchNote,
+            executionPackageHash: updated.executionPackageHash,
+            verificationChecksumSha256:
+              verification.verificationChecksumSha256,
+            verificationFailureReason: verification.failureReason
+          } as PrismaJsonValue
+        }
+      });
+
+      return {
+        request: updated,
+        dispatchRecorded: true,
+        verificationSucceeded: verification.verified,
+        verificationFailureReason: verification.failureReason
+      };
+    });
+
+    return {
+      request: this.mapExecutionRequestProjection(result.request),
+      dispatchRecorded: result.dispatchRecorded,
+      verificationSucceeded: result.verificationSucceeded,
+      verificationFailureReason: result.verificationFailureReason
     };
   }
 
@@ -1380,6 +1572,8 @@ export class GovernedExecutionService {
         },
         data: {
           status: GovernedTreasuryExecutionRequestStatus.executed,
+          dispatchStatus: GovernedTreasuryExecutionDispatchStatus.dispatched,
+          dispatchFailureReason: null,
           claimedByWorkerId: null,
           claimedAt: null,
           claimExpiresAt: null,
@@ -1543,6 +1737,8 @@ export class GovernedExecutionService {
         },
         data: {
           status: GovernedTreasuryExecutionRequestStatus.execution_failed,
+          dispatchStatus:
+            GovernedTreasuryExecutionDispatchStatus.dispatch_failed,
           claimedByWorkerId: null,
           claimedAt: null,
           claimExpiresAt: null,
@@ -1550,6 +1746,7 @@ export class GovernedExecutionService {
           externalExecutionReference: externalExecutionReference ?? undefined,
           failureReason,
           failedAt: new Date(),
+          dispatchFailureReason: failureReason,
           executionResult: {
             executionNote: executionNote ?? null,
             blockchainTransactionHash: blockchainTransactionHash ?? null,

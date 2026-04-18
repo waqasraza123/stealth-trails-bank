@@ -12,6 +12,7 @@ import {
 import { InternalWorkerApiKeyGuard } from "../auth/guards/internal-worker-api-key.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { ClaimGovernedExecutionRequestDto } from "./dto/claim-governed-execution-request.dto";
+import { DispatchGovernedExecutionRequestDto } from "./dto/dispatch-governed-execution-request.dto";
 import { ListGovernedExecutionRequestsDto } from "./dto/list-governed-execution-requests.dto";
 import { GovernedExecutionService } from "./governed-execution.service";
 
@@ -65,6 +66,31 @@ export class GovernedExecutionWorkerController {
     return {
       status: "success",
       message: "Governed execution request claimed successfully.",
+      data: result
+    };
+  }
+
+  @Post("execution-requests/:requestId/dispatch")
+  async dispatchExecutionRequest(
+    @Param("requestId") requestId: string,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
+    dto: DispatchGovernedExecutionRequestDto,
+    @Request() request: InternalWorkerRequest
+  ): Promise<CustomJsonResponse> {
+    const result = await this.governedExecutionService.dispatchExecutionRequest(
+      requestId,
+      dto,
+      request.internalWorker.workerId
+    );
+
+    return {
+      status: "success",
+      message: "Governed execution request dispatch recorded successfully.",
       data: result
     };
   }

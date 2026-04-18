@@ -793,6 +793,20 @@ export function GovernedExecutionPage() {
                                   request.claimExpiresAt ?? request.claimedAt ?? request.requestedAt
                                 )}`
                               : "Unclaimed"
+                          },
+                          {
+                            label: "Dispatch",
+                            value:
+                              request.dispatchStatus === "dispatched"
+                                ? `${request.dispatchedByWorkerId ?? "worker"} · ${
+                                    request.dispatchReference
+                                      ? shortenValue(request.dispatchReference)
+                                      : "no reference"
+                                  }`
+                                : request.dispatchStatus === "dispatch_failed"
+                                  ? request.dispatchFailureReason ??
+                                    "Dispatch verification failed"
+                                  : "Not yet dispatched"
                           }
                         ]}
                       />

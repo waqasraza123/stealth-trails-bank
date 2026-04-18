@@ -179,6 +179,10 @@ export type WorkerLogger = {
 export type WorkerIterationMetrics = {
   queuedDepositCount: number;
   queuedWithdrawalCount: number;
+  claimableGovernedExecutionRequestCount: number;
+  claimedGovernedExecutionRequestCount: number;
+  dispatchedGovernedExecutionRequestCount: number;
+  governedExecutionDispatchFailureCount: number;
   signedWithdrawalCount: number;
   broadcastDepositCount: number;
   broadcastWithdrawalCount: number;
@@ -264,6 +268,12 @@ export type GovernedExecutionRequestProjection = {
   claimedByWorkerId: string | null;
   claimedAt: string | null;
   claimExpiresAt: string | null;
+  dispatchStatus: string;
+  dispatchPreparedAt: string | null;
+  dispatchedByWorkerId: string | null;
+  dispatchReference: string | null;
+  dispatchVerificationChecksumSha256: string | null;
+  dispatchFailureReason: string | null;
   updatedAt: string;
 };
 
@@ -280,6 +290,18 @@ export type ClaimGovernedExecutionRequestPayload = {
 export type ClaimGovernedExecutionRequestResult = {
   request: GovernedExecutionRequestProjection;
   claimReused: boolean;
+};
+
+export type DispatchGovernedExecutionRequestPayload = {
+  dispatchReference?: string;
+  dispatchNote?: string;
+};
+
+export type DispatchGovernedExecutionRequestResult = {
+  request: GovernedExecutionRequestProjection;
+  dispatchRecorded: boolean;
+  verificationSucceeded: boolean;
+  verificationFailureReason: string | null;
 };
 
 export type TrackedLedgerReconciliationScanRun = {

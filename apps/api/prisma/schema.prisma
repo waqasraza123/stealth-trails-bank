@@ -552,6 +552,12 @@ enum GovernedTreasuryExecutionRequestStatus {
   cancelled
 }
 
+enum GovernedTreasuryExecutionDispatchStatus {
+  not_dispatched
+  dispatched
+  dispatch_failed
+}
+
 model SolvencySnapshot {
   id                         String                    @id @default(cuid())
   environment                WorkerRuntimeEnvironment
@@ -836,6 +842,12 @@ model GovernedTreasuryExecutionRequest {
   claimedByWorkerId            String?
   claimedAt                    DateTime?
   claimExpiresAt               DateTime?
+  dispatchStatus               GovernedTreasuryExecutionDispatchStatus @default(not_dispatched)
+  dispatchPreparedAt           DateTime?
+  dispatchedByWorkerId         String?
+  dispatchReference            String?
+  dispatchVerificationChecksumSha256 String?
+  dispatchFailureReason        String?
   executedByActorType          String?
   executedByActorId            String?
   executedByActorRole          String?
@@ -852,6 +864,7 @@ model GovernedTreasuryExecutionRequest {
   @@index([environment, status, requestedAt])
   @@index([environment, executionPackagePublishedAt, requestedAt])
   @@index([environment, claimExpiresAt, requestedAt])
+  @@index([environment, dispatchStatus, requestedAt])
   @@index([executionType, targetType, targetId, requestedAt])
   @@index([loanAgreementId, requestedAt])
   @@index([stakingPoolGovernanceRequestId, requestedAt])

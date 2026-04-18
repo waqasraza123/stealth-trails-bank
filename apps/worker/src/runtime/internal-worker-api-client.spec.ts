@@ -19,6 +19,7 @@ const runtime = {
   confirmationBlocks: 1,
   reconciliationScanIntervalMs: 300000,
   solvencySnapshotIntervalMs: 300000,
+  governedExecutionDispatchIntervalMs: 60000,
   platformAlertReEscalationIntervalMs: 300000,
   rpcUrl: null,
   depositSignerPrivateKey: null,
@@ -242,6 +243,10 @@ test("internal worker api client issues every worker request against the expecte
     await client.claimGovernedExecutionRequest("execution_request_1", {
       reclaimStaleAfterMs: 120000
     });
+    await client.dispatchGovernedExecutionRequest("execution_request_1", {
+      dispatchReference: "worker:worker-local-1:execution_request_1",
+      dispatchNote: "handoff prepared"
+    });
     await client.fundLoanAgreement("loan_1");
     await client.listDueLoanInstallments(20);
     await client.runLoanAutopay("loan_1");
@@ -258,6 +263,10 @@ test("internal worker api client issues every worker request against the expecte
       latestIterationMetrics: {
         queuedDepositCount: 0,
         queuedWithdrawalCount: 0,
+        claimableGovernedExecutionRequestCount: 0,
+        claimedGovernedExecutionRequestCount: 0,
+        dispatchedGovernedExecutionRequestCount: 0,
+        governedExecutionDispatchFailureCount: 0,
         broadcastDepositCount: 0,
         broadcastWithdrawalCount: 0,
         confirmedDepositReadyToSettleCount: 0,
@@ -315,6 +324,7 @@ test("internal worker api client issues every worker request against the expecte
         "get:/loans/internal/worker/agreements/awaiting-funding",
         "get:/governed-execution/internal/worker/execution-requests/claimable",
         "post:/governed-execution/internal/worker/execution-requests/execution_request_1/claim",
+        "post:/governed-execution/internal/worker/execution-requests/execution_request_1/dispatch",
         "post:/loans/internal/worker/agreements/loan_1/fund",
         "get:/loans/internal/worker/installments/due",
         "post:/loans/internal/worker/agreements/loan_1/run-autopay",

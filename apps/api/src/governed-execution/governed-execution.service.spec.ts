@@ -163,6 +163,12 @@ function createExecutionRequestRecord(
     claimedByWorkerId: string | null;
     claimedAt: Date | null;
     claimExpiresAt: Date | null;
+    dispatchStatus: "not_dispatched" | "dispatched" | "dispatch_failed";
+    dispatchPreparedAt: Date | null;
+    dispatchedByWorkerId: string | null;
+    dispatchReference: string | null;
+    dispatchVerificationChecksumSha256: string | null;
+    dispatchFailureReason: string | null;
   }>
 ) {
   return {
@@ -236,6 +242,13 @@ function createExecutionRequestRecord(
     claimedByWorkerId: overrides?.claimedByWorkerId ?? null,
     claimedAt: overrides?.claimedAt ?? null,
     claimExpiresAt: overrides?.claimExpiresAt ?? null,
+    dispatchStatus: overrides?.dispatchStatus ?? "not_dispatched",
+    dispatchPreparedAt: overrides?.dispatchPreparedAt ?? null,
+    dispatchedByWorkerId: overrides?.dispatchedByWorkerId ?? null,
+    dispatchReference: overrides?.dispatchReference ?? null,
+    dispatchVerificationChecksumSha256:
+      overrides?.dispatchVerificationChecksumSha256 ?? null,
+    dispatchFailureReason: overrides?.dispatchFailureReason ?? null,
     requestedByActorType: "operator",
     requestedByActorId: "operator_req",
     requestedByActorRole: "risk_manager",
@@ -661,5 +674,71 @@ describe("GovernedExecutionService", () => {
     expect(result.claimReused).toBe(false);
     expect(result.request.claimedByWorkerId).toBe("worker_1");
     expect(executionRequestStore[0]?.claimExpiresAt).toBeTruthy();
+  });
+
+  it("records a governed dispatch after verifying the signed package", async () => {
+    const executionRecord = createExecutionRequestRecord({
+      id: "execution_dispatch_1"
+    });
+    const { service, executionRequestStore, prismaService } = createService({
+      executionRequests: [executionRecord]
+    });
+
+    await service.publishExecutionPackage("execution_dispatch_1", {
+      operatorId: "operator_approver",
+      operatorRole: "risk_manager"
+    });
+    await service.claimExecutionRequest("execution_dispatch_1", "worker_1", 120000);
+
+    const result = await service.dispatchExecutionRequest(
+      "execution_dispatch_1",
+      {
+        dispatchReference: "worker:worker_1:execution_dispatch_1"
+      },
+      "worker_1"
+    );
+
+    expect(result.dispatchRecorded).toBe(true);
+    expect(result.verificationSucceeded).toBe(true);
+    expect(result.request.dispatchStatus).toBe("dispatched");
+    expect(executionRequestStore[0]?.claimedByWorkerId).toBeNull();
+    expect(prismaService.auditEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "governed_execution.request.dispatched"
+      })
+    });
+  });
+
+  it("persists dispatch failure when package verification does not match", async () => {
+    const executionRecord = createExecutionRequestRecord({
+      id: "execution_dispatch_bad_1",
+      canonicalExecutionPayloadText: "{\"broken\":true}",
+      executionPackageHash: "0x1234",
+      executionPackageChecksumSha256: "bad-checksum",
+      executionPackageSignature:
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa41",
+      executionPackageSignatureAlgorithm: "ethereum-secp256k1-keccak256-v1",
+      executionPackageSignerAddress:
+        "0x0000000000000000000000000000000000000abc",
+      executionPackagePublishedAt: new Date("2030-04-18T10:01:00.000Z"),
+      claimedByWorkerId: "worker_1",
+      claimedAt: new Date("2030-04-18T10:02:00.000Z"),
+      claimExpiresAt: new Date("2030-04-18T10:04:00.000Z")
+    });
+    const { service, executionRequestStore } = createService({
+      executionRequests: [executionRecord]
+    });
+
+    const result = await service.dispatchExecutionRequest(
+      "execution_dispatch_bad_1",
+      {},
+      "worker_1"
+    );
+
+    expect(result.dispatchRecorded).toBe(true);
+    expect(result.verificationSucceeded).toBe(false);
+    expect(result.request.dispatchStatus).toBe("dispatch_failed");
+    expect(result.verificationFailureReason).toBeTruthy();
+    expect(executionRequestStore[0]?.dispatchFailureReason).toBeTruthy();
   });
 });

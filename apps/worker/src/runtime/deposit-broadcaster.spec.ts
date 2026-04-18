@@ -48,6 +48,7 @@ function createManagedRuntime() {
     confirmationBlocks: 2,
     reconciliationScanIntervalMs: 300000,
     solvencySnapshotIntervalMs: 300000,
+    governedExecutionDispatchIntervalMs: 60000,
     platformAlertReEscalationIntervalMs: 300000,
     rpcUrl: "https://rpc.example.com",
     managedWithdrawalClaimTimeoutMs: 60000,
@@ -64,6 +65,7 @@ function withManagedWithdrawalDefaults<T extends Record<string, unknown>>(
   runtime: T
 ): T & {
   solvencySnapshotIntervalMs: number;
+  governedExecutionDispatchIntervalMs: number;
   managedWithdrawalClaimTimeoutMs: number;
   policyControlledWithdrawalExecutorPrivateKey: null;
   policyControlledWithdrawalPolicySignerPrivateKey: null;
@@ -72,6 +74,7 @@ function withManagedWithdrawalDefaults<T extends Record<string, unknown>>(
 } {
   return {
     solvencySnapshotIntervalMs: 300000,
+    governedExecutionDispatchIntervalMs: 60000,
     managedWithdrawalClaimTimeoutMs: 60000,
     policyControlledWithdrawalExecutorPrivateKey: null,
     policyControlledWithdrawalPolicySignerPrivateKey: null,

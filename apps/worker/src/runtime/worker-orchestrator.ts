@@ -51,6 +51,10 @@ function createEmptyIterationMetrics(): WorkerIterationMetrics {
   return {
     queuedDepositCount: 0,
     queuedWithdrawalCount: 0,
+    claimableGovernedExecutionRequestCount: 0,
+    claimedGovernedExecutionRequestCount: 0,
+    dispatchedGovernedExecutionRequestCount: 0,
+    governedExecutionDispatchFailureCount: 0,
     signedWithdrawalCount: 0,
     broadcastDepositCount: 0,
     broadcastWithdrawalCount: 0,
@@ -82,6 +86,8 @@ function createEmptyIterationMetrics(): WorkerIterationMetrics {
 }
 
 export class WorkerOrchestrator {
+  private lastGovernedExecutionDispatchAttemptedAt = 0;
+
   constructor(private readonly deps: WorkerOrchestratorDeps) {}
 
   async runOnce(): Promise<WorkerIterationMetrics> {
@@ -151,6 +157,24 @@ export class WorkerOrchestrator {
       metrics
     );
 
+    const now = Date.now();
+    if (
+      now - this.lastGovernedExecutionDispatchAttemptedAt >=
+      this.deps.runtime.governedExecutionDispatchIntervalMs
+    ) {
+      this.lastGovernedExecutionDispatchAttemptedAt = now;
+      const claimableGovernedExecutionRequests =
+        await this.deps.internalApiClient.listClaimableGovernedExecutionRequests(
+          this.deps.runtime.batchLimit
+        );
+      metrics.claimableGovernedExecutionRequestCount =
+        claimableGovernedExecutionRequests.requests.length;
+      await this.processGovernedExecutionRequests(
+        claimableGovernedExecutionRequests.requests,
+        metrics
+      );
+    }
+
     const awaitingFundingLoans =
       await this.deps.internalApiClient.listAwaitingFundingLoans(
         this.deps.runtime.batchLimit
@@ -206,6 +230,81 @@ export class WorkerOrchestrator {
       this.deps.logger.info("loan_funding_completed", {
         loanAgreementId: agreement.loanAgreementId
       });
+    }
+  }
+
+  private async processGovernedExecutionRequests(
+    requests: Array<{
+      id: string;
+      executionType: string;
+      targetType: string;
+      targetId: string;
+      executionPackageHash: string | null;
+      dispatchStatus: string;
+    }>,
+    metrics: WorkerIterationMetrics
+  ): Promise<void> {
+    for (const request of requests) {
+      try {
+        const claimResult =
+          await this.deps.internalApiClient.claimGovernedExecutionRequest(
+            request.id
+          );
+        metrics.claimedGovernedExecutionRequestCount += claimResult.claimReused
+          ? 0
+          : 1;
+
+        const dispatchReference = [
+          "worker",
+          this.deps.runtime.workerId,
+          request.id,
+          Date.now().toString(10)
+        ].join(":");
+        const dispatchResult =
+          await this.deps.internalApiClient.dispatchGovernedExecutionRequest(
+            request.id,
+            {
+              dispatchReference,
+              dispatchNote:
+                "Worker verified the signed governed execution package and staged the governed executor handoff."
+            }
+          );
+
+        if (dispatchResult.verificationSucceeded) {
+          metrics.dispatchedGovernedExecutionRequestCount +=
+            dispatchResult.dispatchRecorded ? 1 : 0;
+          this.deps.logger.info("governed_execution_request_dispatched", {
+            requestId: request.id,
+            executionType: request.executionType,
+            targetType: request.targetType,
+            targetId: request.targetId,
+            executionPackageHash:
+              dispatchResult.request.executionPackageHash ??
+              request.executionPackageHash,
+            dispatchReference
+          });
+        } else {
+          metrics.governedExecutionDispatchFailureCount += 1;
+          this.deps.logger.error("governed_execution_request_dispatch_failed", {
+            requestId: request.id,
+            executionType: request.executionType,
+            targetType: request.targetType,
+            targetId: request.targetId,
+            dispatchReference,
+            verificationFailureReason:
+              dispatchResult.verificationFailureReason
+          });
+        }
+      } catch (error) {
+        metrics.governedExecutionDispatchFailureCount += 1;
+        this.deps.logger.error("governed_execution_request_dispatch_failed", {
+          requestId: request.id,
+          executionType: request.executionType,
+          targetType: request.targetType,
+          targetId: request.targetId,
+          error
+        });
+      }
     }
   }
 

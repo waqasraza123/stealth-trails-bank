@@ -74,6 +74,28 @@ function createCapturingLogger() {
 
 function createInternalApiClient(overrides: Record<string, unknown>) {
   return {
+    async listClaimableGovernedExecutionRequests() {
+      return { requests: [], limit: 20, generatedAt: new Date().toISOString() };
+    },
+    async claimGovernedExecutionRequest() {
+      return {
+        request: {
+          id: "execution_request_1"
+        },
+        claimReused: false
+      };
+    },
+    async dispatchGovernedExecutionRequest() {
+      return {
+        request: {
+          id: "execution_request_1",
+          executionPackageHash: "0xpackage"
+        },
+        dispatchRecorded: true,
+        verificationSucceeded: true,
+        verificationFailureReason: null
+      };
+    },
     async listAwaitingFundingLoans() {
       return { agreements: [], limit: 20 };
     },
@@ -134,6 +156,7 @@ function createRuntime<T extends Record<string, unknown>>(
   overrides: T
 ): T & {
   solvencySnapshotIntervalMs: number;
+  governedExecutionDispatchIntervalMs: number;
   managedWithdrawalClaimTimeoutMs: number;
   policyControlledWithdrawalExecutorPrivateKey: null;
   policyControlledWithdrawalPolicySignerPrivateKey: null;
@@ -142,6 +165,7 @@ function createRuntime<T extends Record<string, unknown>>(
 } {
   return {
     solvencySnapshotIntervalMs: 300000,
+    governedExecutionDispatchIntervalMs: 60000,
     managedWithdrawalClaimTimeoutMs: 60000,
     policyControlledWithdrawalExecutorPrivateKey: null,
     policyControlledWithdrawalPolicySignerPrivateKey: null,
@@ -150,6 +174,103 @@ function createRuntime<T extends Record<string, unknown>>(
     ...overrides
   };
 }
+
+test("worker claims and dispatches governed execution requests before downstream funding", async () => {
+  const operations: string[] = [];
+  const client = createInternalApiClient({
+    async listQueuedDepositIntents() {
+      return { intents: [], limit: 20 };
+    },
+    async listQueuedWithdrawalIntents() {
+      return { intents: [], limit: 20 };
+    },
+    async listBroadcastDepositIntents() {
+      return { intents: [], limit: 20 };
+    },
+    async listBroadcastWithdrawalIntents() {
+      return { intents: [], limit: 20 };
+    },
+    async listConfirmedDepositIntentsReadyToSettle() {
+      return { intents: [], limit: 20 };
+    },
+    async listConfirmedWithdrawalIntentsReadyToSettle() {
+      return { intents: [], limit: 20 };
+    },
+    async listClaimableGovernedExecutionRequests() {
+      return {
+        requests: [
+          {
+            id: "execution_request_1",
+            executionType: "loan_contract_creation",
+            targetType: "LoanAgreement",
+            targetId: "loan_1",
+            executionPackageHash: "0xpackage",
+            dispatchStatus: "not_dispatched"
+          }
+        ],
+        limit: 20,
+        generatedAt: new Date().toISOString()
+      };
+    },
+    async claimGovernedExecutionRequest(requestId: string) {
+      operations.push(`claim:${requestId}`);
+      return {
+        request: {
+          id: requestId,
+          executionPackageHash: "0xpackage"
+        },
+        claimReused: false
+      };
+    },
+    async dispatchGovernedExecutionRequest(requestId: string) {
+      operations.push(`dispatch:${requestId}`);
+      return {
+        request: {
+          id: requestId,
+          executionPackageHash: "0xpackage"
+        },
+        dispatchRecorded: true,
+        verificationSucceeded: true,
+        verificationFailureReason: null
+      };
+    }
+  });
+
+  const orchestrator = new WorkerOrchestrator({
+    runtime: createRuntime({
+      environment: "production",
+      workerId: "worker_1",
+      internalApiBaseUrl: "https://internal.example.com",
+      internalWorkerApiKey: "worker-key",
+      batchLimit: 20,
+      executionMode: "monitor",
+      pollIntervalMs: 10,
+      requestTimeoutMs: 1000,
+      internalApiStartupGracePeriodMs: 45000,
+      confirmationBlocks: 1,
+      reconciliationScanIntervalMs: 300000,
+      platformAlertReEscalationIntervalMs: 300000,
+      rpcUrl: null,
+      depositSignerPrivateKey: null
+    }),
+    internalApiClient: client as never,
+    rpcClient: null,
+    depositBroadcaster: null,
+    withdrawalBroadcaster: null,
+    policyControlledWithdrawalBroadcaster: null,
+    logger: createLogger()
+  });
+
+  const metrics = await orchestrator.runOnce();
+
+  assert.equal(metrics.claimableGovernedExecutionRequestCount, 1);
+  assert.equal(metrics.claimedGovernedExecutionRequestCount, 1);
+  assert.equal(metrics.dispatchedGovernedExecutionRequestCount, 1);
+  assert.deepEqual(operations, [
+    "claim:execution_request_1",
+    "dispatch:execution_request_1"
+  ]);
+});
 
 test("synthetic mode records broadcasts and settles them", async () => {
   const queuedDepositIntent = createIntent("deposit_1");
