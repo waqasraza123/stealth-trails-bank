@@ -5,6 +5,7 @@ import {
   formatIntentStatusLabel,
   getIntentStatusTone,
   isEthereumAddress,
+  isPositiveIntegerString,
   isPositiveDecimalString
 } from "./finance";
 
@@ -21,6 +22,13 @@ describe("finance helpers", () => {
     expect(isPositiveDecimalString("0")).toBe(false);
     expect(isPositiveDecimalString("-1")).toBe(false);
     expect(isPositiveDecimalString("1.1234567890123456789")).toBe(false);
+  });
+
+  it("validates positive integer strings", () => {
+    expect(isPositiveIntegerString("6")).toBe(true);
+    expect(isPositiveIntegerString("01")).toBe(false);
+    expect(isPositiveIntegerString("0")).toBe(false);
+    expect(isPositiveIntegerString("1.5")).toBe(false);
   });
 
   it("validates ethereum addresses", () => {

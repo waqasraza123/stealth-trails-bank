@@ -19,11 +19,12 @@ import {
   normalizeIntentTypeLabel
 } from "../lib/finance";
 import { useSessionStore } from "../stores/session-store";
+import type { DashboardNavigationProp } from "../navigation/types";
 
 export function DashboardScreen() {
   const t = useT();
   const { locale } = useLocale();
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<DashboardNavigationProp>();
   const user = useSessionStore((state) => state.user);
   const balancesQuery = useBalancesQuery();
   const historyQuery = useTransactionHistoryQuery(5);

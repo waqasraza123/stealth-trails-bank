@@ -15,6 +15,7 @@ import {
 export type CustomerIntentType = "deposit" | "withdrawal";
 
 const positiveDecimalPattern = /^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/;
+const positiveIntegerPattern = /^[1-9]\d*$/;
 
 export function formatTokenAmount(
   value: string | null | undefined,
@@ -89,6 +90,10 @@ export function isPositiveDecimalString(value: string): boolean {
   }
 
   return compareDecimalStrings(trimmedValue, "0") === 1;
+}
+
+export function isPositiveIntegerString(value: string): boolean {
+  return positiveIntegerPattern.test(value.trim());
 }
 
 export function formatDateLabel(

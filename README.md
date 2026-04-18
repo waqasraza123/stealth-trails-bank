@@ -209,6 +209,7 @@ Use these docs first when working in the repo:
 - `docs/architecture/schema-transition-plan.md`
 - `docs/mobile/react-native-product-spec.md`
 - `docs/mobile/react-native-implementation-plan.md`
+- `docs/mobile/development-and-validation.md`
 
 Use the runbooks when operating or verifying implemented flows:
 

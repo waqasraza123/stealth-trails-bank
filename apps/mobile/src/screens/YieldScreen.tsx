@@ -86,7 +86,9 @@ export function YieldScreen() {
           <SectionCard className="min-w-[30%] flex-1">
             <AppText className="text-xs text-slate">{t("yield.execution")}</AppText>
             <AppText className="mt-2 text-base text-ink" weight="bold">
-              {executionEnabled ? "Enabled" : "Policy gated"}
+              {executionEnabled
+                ? t("yield.executionEnabled")
+                : t("yield.executionPolicyGated")}
             </AppText>
           </SectionCard>
           <SectionCard className="min-w-[30%] flex-1">
@@ -121,7 +123,7 @@ export function YieldScreen() {
             <OptionChips
               onChange={setSelectedPoolId}
               options={pools.map((pool) => ({
-                label: `Pool ${pool.id}`,
+                label: `${t("yield.poolLabel")} ${pool.id}`,
                 value: String(pool.id)
               }))}
               value={selectedPool ? String(selectedPool.id) : ""}

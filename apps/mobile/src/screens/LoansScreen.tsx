@@ -16,7 +16,12 @@ import {
 } from "../hooks/use-customer-queries";
 import { useLocale } from "../i18n/use-locale";
 import { useT } from "../i18n/use-t";
-import { formatDateLabel, formatTokenAmount } from "../lib/finance";
+import {
+  formatDateLabel,
+  formatTokenAmount,
+  isPositiveDecimalString,
+  isPositiveIntegerString
+} from "../lib/finance";
 
 export function LoansScreen() {
   const t = useT();
@@ -54,6 +59,21 @@ export function LoansScreen() {
   }, [dashboard?.agreements, selectedAgreementId]);
 
   async function previewQuote() {
+    if (!isPositiveDecimalString(borrowAmount)) {
+      Alert.alert(t("loans.quotePreview"), t("wallet.amountInvalid"));
+      return;
+    }
+
+    if (!isPositiveDecimalString(collateralAmount)) {
+      Alert.alert(t("loans.quotePreview"), t("wallet.amountInvalid"));
+      return;
+    }
+
+    if (!isPositiveIntegerString(termMonths)) {
+      Alert.alert(t("loans.quotePreview"), t("loans.termInvalid"));
+      return;
+    }
+
     try {
       await quotePreviewMutation.mutateAsync({
         autopayEnabled,
@@ -73,6 +93,26 @@ export function LoansScreen() {
   }
 
   async function submitApplication() {
+    if (!dashboard?.eligibility.eligible) {
+      Alert.alert(t("loans.submitApplication"), t("loans.noEligibility"));
+      return;
+    }
+
+    if (!isPositiveDecimalString(borrowAmount)) {
+      Alert.alert(t("loans.submitApplication"), t("wallet.amountInvalid"));
+      return;
+    }
+
+    if (!isPositiveDecimalString(collateralAmount)) {
+      Alert.alert(t("loans.submitApplication"), t("wallet.amountInvalid"));
+      return;
+    }
+
+    if (!isPositiveIntegerString(termMonths)) {
+      Alert.alert(t("loans.submitApplication"), t("loans.termInvalid"));
+      return;
+    }
+
     try {
       await applicationMutation.mutateAsync({
         autopayEnabled,
@@ -86,7 +126,7 @@ export function LoansScreen() {
         acceptServiceFeeDisclosure: acknowledged,
         supportNote: supportNote || undefined
       });
-      Alert.alert(t("loans.submitApplication"), "Application submitted.");
+      Alert.alert(t("loans.submitApplication"), t("loans.applicationSubmitted"));
     } catch (requestError) {
       Alert.alert(
         t("loans.submitApplication"),
@@ -104,7 +144,9 @@ export function LoansScreen() {
       await autopayMutation.mutateAsync({
         loanAgreementId: selectedAgreement.id,
         enabled: nextValue,
-        note: `Updated from mobile app to ${nextValue ? "enabled" : "disabled"}`
+        note: `${t("loans.autopay")}: ${
+          nextValue ? t("common.enabled") : t("common.disabled")
+        }`
       });
     } catch (requestError) {
       Alert.alert(
@@ -182,13 +224,24 @@ export function LoansScreen() {
               }))}
               value={jurisdiction}
             />
-            <FieldInput label="Borrow amount" onChangeText={setBorrowAmount} value={borrowAmount} />
             <FieldInput
-              label="Collateral amount"
+              keyboardType="decimal-pad"
+              label={t("loans.borrowAmount")}
+              onChangeText={setBorrowAmount}
+              value={borrowAmount}
+            />
+            <FieldInput
+              keyboardType="decimal-pad"
+              label={t("loans.collateralAmount")}
               onChangeText={setCollateralAmount}
               value={collateralAmount}
             />
-            <FieldInput label="Term months" onChangeText={setTermMonths} value={termMonths} />
+            <FieldInput
+              keyboardType="number-pad"
+              label={t("loans.termMonths")}
+              onChangeText={setTermMonths}
+              value={termMonths}
+            />
             <OptionChips
               onChange={(value) => setBorrowAssetSymbol(value as "ETH" | "USDC")}
               options={dashboard.supportedBorrowAssets.map((value) => ({
@@ -227,7 +280,7 @@ export function LoansScreen() {
               <Switch onValueChange={setAcknowledged} value={acknowledged} />
             </View>
             <AppButton
-              disabled={quotePreviewMutation.isPending}
+              disabled={!dashboard.eligibility.eligible || quotePreviewMutation.isPending}
               label={t("loans.quotePreview")}
               onPress={() => {
                 void previewQuote();
@@ -235,7 +288,11 @@ export function LoansScreen() {
               variant="secondary"
             />
             <AppButton
-              disabled={!acknowledged || applicationMutation.isPending}
+              disabled={
+                !dashboard.eligibility.eligible ||
+                !acknowledged ||
+                applicationMutation.isPending
+              }
               label={t("loans.submitApplication")}
               onPress={() => {
                 void submitApplication();
@@ -247,14 +304,17 @@ export function LoansScreen() {
                   {t("loans.quotePreview")}
                 </AppText>
                 <AppText className="text-sm text-slate">
-                  Principal: {quotePreviewMutation.data.principalAmount}{" "}
+                  {t("loans.principal")}:{" "}
+                  {formatTokenAmount(quotePreviewMutation.data.principalAmount, locale)}{" "}
                   {quotePreviewMutation.data.borrowAssetSymbol}
                 </AppText>
                 <AppText className="text-sm text-slate">
-                  Service fee: {quotePreviewMutation.data.serviceFeeAmount}
+                  {t("loans.serviceFee")}:{" "}
+                  {formatTokenAmount(quotePreviewMutation.data.serviceFeeAmount, locale)}
                 </AppText>
                 <AppText className="text-sm text-slate">
-                  Installment: {quotePreviewMutation.data.installmentAmount}
+                  {t("loans.installmentAmount")}:{" "}
+                  {formatTokenAmount(quotePreviewMutation.data.installmentAmount, locale)}
                 </AppText>
               </SectionCard>
             ) : null}
@@ -262,7 +322,7 @@ export function LoansScreen() {
 
           <SectionCard className="gap-4">
             <AppText className="text-xl text-ink" weight="bold">
-              Active agreements
+              {t("loans.activeAgreements")}
             </AppText>
             {dashboard.agreements.length > 0 ? (
               <>
@@ -277,20 +337,21 @@ export function LoansScreen() {
                 {selectedAgreement ? (
                   <View className="gap-3">
                     <AppText className="text-sm text-slate">
-                      Outstanding total:{" "}
+                      {t("loans.outstandingTotal")}:{" "}
                       {formatTokenAmount(
                         selectedAgreement.outstandingTotalAmount,
                         locale
-                      )}
+                      )}{" "}
+                      {selectedAgreement.borrowAsset.symbol}
                     </AppText>
                     <AppText className="text-sm text-slate">
-                      Next due:{" "}
+                      {t("loans.nextDue")}:{" "}
                       {selectedAgreement.nextDueAt
                         ? formatDateLabel(selectedAgreement.nextDueAt, locale)
                         : t("common.notAvailable")}
                     </AppText>
                     <AppText className="text-sm text-slate">
-                      Notice: {selectedAgreement.notice}
+                      {t("loans.notice")}: {selectedAgreement.notice}
                     </AppText>
                     <View className="flex-row items-center justify-between rounded-2xl border border-border bg-white px-4 py-4">
                       <AppText className="text-sm text-ink" weight="semibold">
@@ -311,13 +372,17 @@ export function LoansScreen() {
                             className="w-48 gap-2 bg-white"
                           >
                             <AppText className="text-sm text-ink" weight="semibold">
-                              Installment {installment.installmentNumber}
+                              {t("loans.installment")} {installment.installmentNumber}
                             </AppText>
                             <AppText className="text-xs text-slate">
                               {formatDateLabel(installment.dueAt, locale)}
                             </AppText>
                             <AppText className="text-sm text-slate">
-                              {installment.scheduledTotalAmount}
+                              {formatTokenAmount(
+                                installment.scheduledTotalAmount,
+                                locale
+                              )}{" "}
+                              {selectedAgreement.borrowAsset.symbol}
                             </AppText>
                           </SectionCard>
                         ))}
