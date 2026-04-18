@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException
 } from "@nestjs/common";
 import { loadOptionalBlockchainContractWriteRuntimeConfig } from "@stealth-trails-bank/config/api";
@@ -30,6 +31,7 @@ import {
 } from "../auth/auth.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { PrismaJsonValue } from "../prisma/prisma-json";
+import { SolvencyService } from "../solvency/solvency.service";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 
 type LegacyUserRecord = {
@@ -126,7 +128,9 @@ export class StakingService {
 
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly authService: AuthService
+    private readonly authService: AuthService,
+    @Optional()
+    private readonly solvencyService?: Pick<SolvencyService, "assertStakingWritesAllowed">
   ) {
     const runtimeConfig = loadOptionalBlockchainContractWriteRuntimeConfig();
 
@@ -686,6 +690,7 @@ export class StakingService {
     amount: string,
     supabaseUserId: string
   ): Promise<CustomJsonResponse> {
+    await this.solvencyService?.assertStakingWritesAllowed?.();
     const context = await this.getCustomerStakingContext(supabaseUserId);
     const actor: StakingAuditActor = {
       actorType: "customer",
@@ -812,6 +817,7 @@ export class StakingService {
     amount: string,
     supabaseUserId: string
   ): Promise<CustomJsonResponse> {
+    await this.solvencyService?.assertStakingWritesAllowed?.();
     const context = await this.getCustomerStakingContext(supabaseUserId);
     const actor: StakingAuditActor = {
       actorType: "customer",
@@ -948,6 +954,7 @@ export class StakingService {
     poolId: number,
     supabaseUserId: string
   ): Promise<CustomJsonResponse> {
+    await this.solvencyService?.assertStakingWritesAllowed?.();
     const context = await this.getCustomerStakingContext(supabaseUserId);
     const actor: StakingAuditActor = {
       actorType: "customer",
@@ -1031,6 +1038,7 @@ export class StakingService {
     poolId: number,
     supabaseUserId: string
   ): Promise<CustomJsonResponse> {
+    await this.solvencyService?.assertStakingWritesAllowed?.();
     const context = await this.getCustomerStakingContext(supabaseUserId);
     const actor: StakingAuditActor = {
       actorType: "customer",

@@ -5,6 +5,7 @@ import type {
   ConfirmIntentPayload,
   CriticalAlertReEscalationSweepResult,
   FailIntentPayload,
+  GeneratedSolvencySnapshotResult,
   ListIntentsResult,
   ListWorkerLoanAgreementsResult,
   ListWorkerLoanInstallmentsResult,
@@ -467,6 +468,15 @@ export function createInternalWorkerApiClient(runtime: WorkerRuntime) {
         httpClient.post<ApiEnvelope<CriticalAlertReEscalationSweepResult>>(
           "/operations/internal/worker/alerts/re-escalate-critical",
           payload
+        ),
+        baseUrl
+      );
+    },
+
+    async triggerSolvencySnapshot(): Promise<GeneratedSolvencySnapshotResult> {
+      return readResponseData(
+        httpClient.post<ApiEnvelope<GeneratedSolvencySnapshotResult>>(
+          "/solvency/internal/worker/snapshots/run"
         ),
         baseUrl
       );

@@ -1,4 +1,5 @@
 import {
+  Optional,
   BadRequestException,
   ConflictException,
   Injectable,
@@ -37,6 +38,7 @@ import {
 import { LedgerService } from "../ledger/ledger.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { PrismaJsonValue } from "../prisma/prisma-json";
+import { SolvencyService } from "../solvency/solvency.service";
 import { CreateLoanApplicationDto } from "./dto/create-loan-application.dto";
 import { ListOperatorLoanAgreementsDto } from "./dto/list-operator-loan-agreements.dto";
 import { ListOperatorLoanApplicationsDto } from "./dto/list-operator-loan-applications.dto";
@@ -169,7 +171,9 @@ export class LoansService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authService: AuthService,
-    private readonly ledgerService: LedgerService
+    private readonly ledgerService: LedgerService,
+    @Optional()
+    private readonly solvencyService?: Pick<SolvencyService, "assertLoanFundingAllowed">
   ) {
     const runtimeConfig = loadOptionalBlockchainContractWriteRuntimeConfig();
     this.provider = createJsonRpcProvider(runtimeConfig.rpcUrl);
@@ -1200,6 +1204,7 @@ export class LoansService {
     operatorRole: string | undefined,
     dto: OperatorLoanActionDto
   ) {
+    await this.solvencyService?.assertLoanFundingAllowed?.();
     const application = await this.getLoanApplicationOrThrow(loanApplicationId);
 
     if (application.status === LoanLifecycleStatus.rejected) {
@@ -1905,6 +1910,7 @@ export class LoansService {
   }
 
   async fundAgreement(loanAgreementId: string, workerId: string) {
+    await this.solvencyService?.assertLoanFundingAllowed?.();
     const result = await this.prismaService.$transaction(async (transaction) => {
       const currentAgreement = await transaction.loanAgreement.findUnique({
         where: {

@@ -4,6 +4,7 @@ import { InternalWorkerApiKeyGuard } from "../auth/guards/internal-worker-api-ke
 import { LedgerModule } from "../ledger/ledger.module";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReviewCasesModule } from "../review-cases/review-cases.module";
+import { SolvencyModule } from "../solvency/solvency.module";
 import { DepositSettlementReconciliationController } from "./deposit-settlement-reconciliation.controller";
 import { DepositSettlementReconciliationService } from "./deposit-settlement-reconciliation.service";
 import { TransactionHistoryController } from "./transaction-history.controller";
@@ -21,7 +22,7 @@ import { WithdrawalSettlementReconciliationController } from "./withdrawal-settl
 import { WithdrawalSettlementReconciliationService } from "./withdrawal-settlement-reconciliation.service";
 
 @Module({
-  imports: [LedgerModule, ReviewCasesModule],
+  imports: [LedgerModule, ReviewCasesModule, SolvencyModule],
   controllers: [
     TransactionIntentsController,
     TransactionHistoryController,

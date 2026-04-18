@@ -5,12 +5,14 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthService } from "../auth/auth.service";
 import { LedgerService } from "../ledger/ledger.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { SolvencyModule } from "../solvency/solvency.module";
 import { CustomerLoansController } from "./customer-loans.controller";
 import { LoansService } from "./loans.service";
 import { OperatorLoansController } from "./operator-loans.controller";
 import { WorkerLoansController } from "./worker-loans.controller";
 
 @Module({
+  imports: [SolvencyModule],
   controllers: [
     CustomerLoansController,
     OperatorLoansController,

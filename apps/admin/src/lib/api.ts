@@ -56,6 +56,8 @@ import type {
   ReviewCaseNoteMutationResult,
   ReviewCaseWorkspace,
   ScanLedgerReconciliationResult,
+  SolvencySnapshotDetail,
+  SolvencyWorkspace,
   TreasuryOverview,
   WorkerRuntimeHealthList
 } from "./types";
@@ -118,6 +120,41 @@ export async function getTreasuryOverview(
     method: "GET",
     url: "/treasury/internal/overview",
     params
+  });
+}
+
+export async function getSolvencyWorkspace(
+  session: OperatorSession,
+  params: Record<string, string | number | undefined>
+): Promise<SolvencyWorkspace> {
+  return requestData(session, {
+    method: "GET",
+    url: "/solvency/internal/workspace",
+    params
+  });
+}
+
+export async function getSolvencySnapshotDetail(
+  session: OperatorSession,
+  snapshotId: string
+): Promise<SolvencySnapshotDetail> {
+  return requestData(session, {
+    method: "GET",
+    url: `/solvency/internal/snapshots/${snapshotId}`
+  });
+}
+
+export async function runSolvencySnapshot(
+  session: OperatorSession
+): Promise<{
+  snapshot: SolvencyWorkspace["latestSnapshot"];
+  policyState: SolvencyWorkspace["policyState"];
+  issueCount: number;
+  criticalIssueCount: number;
+}> {
+  return requestData(session, {
+    method: "POST",
+    url: "/solvency/internal/snapshots/run"
   });
 }
 

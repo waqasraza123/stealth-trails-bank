@@ -116,6 +116,7 @@ export async function startWorkerRuntime(): Promise<void> {
   let shutdownRequested = false;
   let lastReconciliationScanAttemptedAt = 0;
   let lastPlatformAlertReEscalationAttemptedAt = 0;
+  let lastSolvencySnapshotAttemptedAt = 0;
   let lastReconciliationScanResult: TrackedLedgerReconciliationScanResult | null =
     null;
   let lastReconciliationScanFailure: {
@@ -185,6 +186,7 @@ export async function startWorkerRuntime(): Promise<void> {
             runtime.internalApiStartupGracePeriodMs,
           confirmationBlocks: runtime.confirmationBlocks,
           reconciliationScanIntervalMs: runtime.reconciliationScanIntervalMs,
+          solvencySnapshotIntervalMs: runtime.solvencySnapshotIntervalMs,
           platformAlertReEscalationIntervalMs:
             runtime.platformAlertReEscalationIntervalMs
         }
@@ -256,6 +258,27 @@ export async function startWorkerRuntime(): Promise<void> {
         }
       }
 
+      if (now - lastSolvencySnapshotAttemptedAt >= runtime.solvencySnapshotIntervalMs) {
+        lastSolvencySnapshotAttemptedAt = now;
+
+        try {
+          const solvencySnapshotResult =
+            await internalApiClient.triggerSolvencySnapshot();
+          logger.info("scheduled_solvency_snapshot_completed", {
+            snapshotId: solvencySnapshotResult.snapshot.id,
+            status: solvencySnapshotResult.snapshot.status,
+            evidenceFreshness: solvencySnapshotResult.snapshot.evidenceFreshness,
+            issueCount: solvencySnapshotResult.issueCount,
+            criticalIssueCount: solvencySnapshotResult.criticalIssueCount,
+            policyStatus: solvencySnapshotResult.policyState.status
+          });
+        } catch (error) {
+          logger.error("scheduled_solvency_snapshot_failed", {
+            error
+          });
+        }
+      }
+
       if (
         now - lastPlatformAlertReEscalationAttemptedAt >=
         runtime.platformAlertReEscalationIntervalMs
@@ -315,6 +338,7 @@ export async function startWorkerRuntime(): Promise<void> {
               runtime.internalApiStartupGracePeriodMs,
             confirmationBlocks: runtime.confirmationBlocks,
             reconciliationScanIntervalMs: runtime.reconciliationScanIntervalMs,
+            solvencySnapshotIntervalMs: runtime.solvencySnapshotIntervalMs,
             platformAlertReEscalationIntervalMs:
               runtime.platformAlertReEscalationIntervalMs
           },
@@ -384,6 +408,7 @@ export async function startWorkerRuntime(): Promise<void> {
               runtime.internalApiStartupGracePeriodMs,
             confirmationBlocks: runtime.confirmationBlocks,
             reconciliationScanIntervalMs: runtime.reconciliationScanIntervalMs,
+            solvencySnapshotIntervalMs: runtime.solvencySnapshotIntervalMs,
             platformAlertReEscalationIntervalMs:
               runtime.platformAlertReEscalationIntervalMs
           },

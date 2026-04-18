@@ -133,6 +133,7 @@ function createPolicyControlledWithdrawalBroadcaster(
 function createRuntime<T extends Record<string, unknown>>(
   overrides: T
 ): T & {
+  solvencySnapshotIntervalMs: number;
   managedWithdrawalClaimTimeoutMs: number;
   policyControlledWithdrawalExecutorPrivateKey: null;
   policyControlledWithdrawalPolicySignerPrivateKey: null;
@@ -140,6 +141,7 @@ function createRuntime<T extends Record<string, unknown>>(
   managedWithdrawalSigners: [];
 } {
   return {
+    solvencySnapshotIntervalMs: 300000,
     managedWithdrawalClaimTimeoutMs: 60000,
     policyControlledWithdrawalExecutorPrivateKey: null,
     policyControlledWithdrawalPolicySignerPrivateKey: null,

@@ -253,6 +253,45 @@ export type TrackedLedgerReconciliationScanResult = {
   };
 };
 
+export type GeneratedSolvencySnapshotResult = {
+  snapshot: {
+    id: string;
+    environment: "development" | "test" | "production";
+    status: string;
+    evidenceFreshness: string;
+    generatedAt: string;
+    completedAt: string | null;
+    totalLiabilityAmount: string;
+    totalObservedReserveAmount: string;
+    totalUsableReserveAmount: string;
+    totalEncumberedReserveAmount: string;
+    totalReserveDeltaAmount: string;
+    assetCount: number;
+    issueCount: number;
+    policyActionsTriggered: boolean;
+    failureCode: string | null;
+    failureMessage: string | null;
+  };
+  policyState: {
+    environment: "development" | "test" | "production";
+    status: string;
+    pauseWithdrawalApprovals: boolean;
+    pauseManagedWithdrawalExecution: boolean;
+    pauseLoanFunding: boolean;
+    pauseStakingWrites: boolean;
+    requireManualOperatorReview: boolean;
+    latestSnapshotId: string | null;
+    triggeredAt: string | null;
+    clearedAt: string | null;
+    reasonCode: string | null;
+    reasonSummary: string | null;
+    metadata: unknown;
+    updatedAt: string;
+  };
+  issueCount: number;
+  criticalIssueCount: number;
+};
+
 export type WorkerHeartbeatPayload = {
   environment: "development" | "test" | "production";
   executionMode: "monitor" | "synthetic" | "managed";

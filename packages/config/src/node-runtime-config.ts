@@ -90,6 +90,7 @@ const DEFAULT_WORKER_BATCH_LIMIT = 20;
 const DEFAULT_WORKER_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_WORKER_CONFIRMATION_BLOCKS = 1;
 const DEFAULT_WORKER_PLATFORM_ALERT_REESCALATION_INTERVAL_MS = 300_000;
+const DEFAULT_WORKER_SOLVENCY_SNAPSHOT_INTERVAL_MS = 300_000;
 const DEFAULT_WORKER_INTERNAL_API_STARTUP_GRACE_PERIOD_MS = 45_000;
 const DEFAULT_WORKER_MANAGED_WITHDRAWAL_CLAIM_TIMEOUT_MS = 60_000;
 const DEFAULT_WORKER_POLICY_CONTROLLED_WITHDRAWAL_AUTHORIZATION_TTL_SECONDS = 300;
@@ -741,6 +742,7 @@ export type WorkerRuntimeConfig = {
   readonly confirmationBlocks: number;
   readonly reconciliationScanIntervalMs: number;
   readonly platformAlertReEscalationIntervalMs: number;
+  readonly solvencySnapshotIntervalMs: number;
   readonly managedWithdrawalClaimTimeoutMs: number;
   readonly policyControlledWithdrawalExecutorPrivateKey: string | null;
   readonly policyControlledWithdrawalPolicySignerPrivateKey: string | null;
@@ -872,6 +874,13 @@ export type PlatformAlertReEscalationRuntimeConfig = {
   readonly unacknowledgedCriticalAlertThresholdSeconds: number;
   readonly unownedCriticalAlertThresholdSeconds: number;
   readonly repeatIntervalSeconds: number;
+};
+
+export type SolvencyRuntimeConfig = {
+  readonly environment: ApiRuntimeEnvironment;
+  readonly evidenceStaleAfterSeconds: number;
+  readonly warningReserveRatioBps: number;
+  readonly criticalReserveRatioBps: number;
 };
 
 function parsePlatformAlertDeliveryHealthSloConfig(
@@ -1276,6 +1285,11 @@ export function loadWorkerRuntimeConfig(
         "WORKER_PLATFORM_ALERT_REESCALATION_INTERVAL_MS"
       ) ?? String(DEFAULT_WORKER_PLATFORM_ALERT_REESCALATION_INTERVAL_MS),
       "WORKER_PLATFORM_ALERT_REESCALATION_INTERVAL_MS"
+    ),
+    solvencySnapshotIntervalMs: parsePositiveInteger(
+      readOptionalRuntimeEnv(env, "WORKER_SOLVENCY_SNAPSHOT_INTERVAL_MS") ??
+        String(DEFAULT_WORKER_SOLVENCY_SNAPSHOT_INTERVAL_MS),
+      "WORKER_SOLVENCY_SNAPSHOT_INTERVAL_MS"
     ),
     managedWithdrawalClaimTimeoutMs: parsePositiveInteger(
       readOptionalRuntimeEnv(
@@ -1763,5 +1777,43 @@ export function loadPlatformAlertReEscalationRuntimeConfig(
         String(DEFAULT_PLATFORM_ALERT_REESCALATION_REPEAT_SECONDS),
       "PLATFORM_ALERT_REESCALATION_REPEAT_SECONDS"
     )
+  };
+}
+
+export function loadSolvencyRuntimeConfig(
+  env: RuntimeEnvShape = getNodeRuntimeEnv()
+): SolvencyRuntimeConfig {
+  const environment = parseApiRuntimeEnvironment(
+    readOptionalRuntimeEnv(env, "NODE_ENV")
+  );
+  const evidenceStaleAfterSeconds = parsePositiveInteger(
+    readOptionalRuntimeEnv(env, "SOLVENCY_EVIDENCE_STALE_AFTER_SECONDS") ??
+      "300",
+    "SOLVENCY_EVIDENCE_STALE_AFTER_SECONDS"
+  );
+  const criticalReserveRatioBps = parseIntegerInRange(
+    Number(
+      readOptionalRuntimeEnv(env, "SOLVENCY_CRITICAL_RESERVE_RATIO_BPS") ??
+        "10000"
+    ),
+    "SOLVENCY_CRITICAL_RESERVE_RATIO_BPS",
+    0,
+    100000
+  );
+  const warningReserveRatioBps = parseIntegerInRange(
+    Number(
+      readOptionalRuntimeEnv(env, "SOLVENCY_WARNING_RESERVE_RATIO_BPS") ??
+        "10500"
+    ),
+    "SOLVENCY_WARNING_RESERVE_RATIO_BPS",
+    criticalReserveRatioBps,
+    100000
+  );
+
+  return {
+    environment,
+    evidenceStaleAfterSeconds,
+    warningReserveRatioBps,
+    criticalReserveRatioBps
   };
 }

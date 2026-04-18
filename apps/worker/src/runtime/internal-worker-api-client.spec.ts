@@ -18,6 +18,7 @@ const runtime = {
   internalApiStartupGracePeriodMs: 45000,
   confirmationBlocks: 1,
   reconciliationScanIntervalMs: 300000,
+  solvencySnapshotIntervalMs: 300000,
   platformAlertReEscalationIntervalMs: 300000,
   rpcUrl: null,
   depositSignerPrivateKey: null,
@@ -283,6 +284,7 @@ test("internal worker api client issues every worker request against the expecte
     await client.triggerLedgerReconciliationScan({
       scope: "customer_balance"
     });
+    await client.triggerSolvencySnapshot();
     await client.triggerCriticalAlertReEscalationSweep({
       limit: 10
     });
@@ -317,6 +319,7 @@ test("internal worker api client issues every worker request against the expecte
         "get:/loans/internal/worker/agreements/liquidation-candidates",
         "post:/operations/internal/worker/heartbeat",
         "post:/ledger/internal/worker/reconciliation/scan",
+        "post:/solvency/internal/worker/snapshots/run",
         "post:/operations/internal/worker/alerts/re-escalate-critical"
       ]
     );

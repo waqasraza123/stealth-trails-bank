@@ -577,6 +577,148 @@ export type TreasuryOverview = {
   }>;
 };
 
+export type SolvencyWorkspace = {
+  generatedAt: string;
+  policyState: {
+    environment: string;
+    status: string;
+    pauseWithdrawalApprovals: boolean;
+    pauseManagedWithdrawalExecution: boolean;
+    pauseLoanFunding: boolean;
+    pauseStakingWrites: boolean;
+    requireManualOperatorReview: boolean;
+    latestSnapshotId: string | null;
+    triggeredAt: string | null;
+    clearedAt: string | null;
+    reasonCode: string | null;
+    reasonSummary: string | null;
+    metadata: JsonValue | null;
+    updatedAt: string;
+  };
+  latestSnapshot: {
+    id: string;
+    environment: string;
+    status: string;
+    evidenceFreshness: string;
+    generatedAt: string;
+    completedAt: string | null;
+    totalLiabilityAmount: string;
+    totalObservedReserveAmount: string;
+    totalUsableReserveAmount: string;
+    totalEncumberedReserveAmount: string;
+    totalReserveDeltaAmount: string;
+    assetCount: number;
+    issueCount: number;
+    policyActionsTriggered: boolean;
+    failureCode: string | null;
+    failureMessage: string | null;
+  } | null;
+  latestHealthySnapshotAt: string | null;
+  recentSnapshots: Array<{
+    id: string;
+    environment: string;
+    status: string;
+    evidenceFreshness: string;
+    generatedAt: string;
+    completedAt: string | null;
+    totalLiabilityAmount: string;
+    totalObservedReserveAmount: string;
+    totalUsableReserveAmount: string;
+    totalEncumberedReserveAmount: string;
+    totalReserveDeltaAmount: string;
+    assetCount: number;
+    issueCount: number;
+    policyActionsTriggered: boolean;
+    failureCode: string | null;
+    failureMessage: string | null;
+  }>;
+  limit: number;
+};
+
+export type SolvencySnapshotDetail = {
+  snapshot: {
+    id: string;
+    environment: string;
+    status: string;
+    evidenceFreshness: string;
+    generatedAt: string;
+    completedAt: string | null;
+    totalLiabilityAmount: string;
+    totalObservedReserveAmount: string;
+    totalUsableReserveAmount: string;
+    totalEncumberedReserveAmount: string;
+    totalReserveDeltaAmount: string;
+    assetCount: number;
+    issueCount: number;
+    policyActionsTriggered: boolean;
+    failureCode: string | null;
+    failureMessage: string | null;
+    summarySnapshot: JsonValue | null;
+    policyActionSnapshot: JsonValue | null;
+  };
+  policyState: SolvencyWorkspace["policyState"];
+  assetSnapshots: Array<{
+    asset: {
+      id: string;
+      symbol: string;
+      displayName: string;
+      decimals: number;
+      chainId: number;
+      assetType: string;
+    };
+    status: string;
+    evidenceFreshness: string;
+    liabilityAvailableAmount: string;
+    liabilityReservedAmount: string;
+    pendingCreditAmount: string;
+    totalLiabilityAmount: string;
+    projectionAvailableAmount: string;
+    projectionPendingAmount: string;
+    observedReserveAmount: string;
+    usableReserveAmount: string;
+    encumberedReserveAmount: string;
+    excludedReserveAmount: string;
+    reserveDeltaAmount: string;
+    reserveRatioBps: number | null;
+    openReconciliationMismatchCount: number;
+    criticalReconciliationMismatchCount: number;
+    issueCount: number;
+    summarySnapshot: JsonValue | null;
+  }>;
+  issues: Array<{
+    id: string;
+    assetId: string | null;
+    classification: string;
+    severity: string;
+    reasonCode: string;
+    summary: string;
+    description: string;
+    recommendedAction: string | null;
+    metadata: JsonValue | null;
+    createdAt: string;
+  }>;
+  reserveEvidence: Array<{
+    id: string;
+    assetId: string;
+    walletId: string | null;
+    reserveSourceType: string;
+    walletAddress: string | null;
+    walletKind: string | null;
+    custodyType: string | null;
+    evidenceFreshness: string;
+    observedBalanceAmount: string | null;
+    usableBalanceAmount: string | null;
+    encumberedBalanceAmount: string | null;
+    excludedBalanceAmount: string | null;
+    observedAt: string | null;
+    staleAfterSeconds: number;
+    readErrorCode: string | null;
+    readErrorMessage: string | null;
+    metadata: JsonValue | null;
+    createdAt: string;
+  }>;
+};
+
 export type LoanOperationsSummary = {
   applicationBacklog: Array<{
     status: string;

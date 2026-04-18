@@ -87,6 +87,7 @@ model Wallet {
   updatedAt          DateTime            @updatedAt
   sourceIntents      TransactionIntent[] @relation("SourceWallet")
   destinationIntents TransactionIntent[] @relation("DestinationWallet")
+  solvencyReserveEvidence SolvencyReserveEvidence[]
 
   @@unique([chainId, address])
   @@index([customerAccountId])
@@ -114,6 +115,9 @@ model Asset {
   ledgerJournals     LedgerJournal[]
   customerBalances   CustomerAssetBalance[]
   ledgerReconciliationMismatches LedgerReconciliationMismatch[]
+  solvencyAssetSnapshots SolvencyAssetSnapshot[]
+  solvencyReserveEvidence SolvencyReserveEvidence[]
+  solvencyIssues     SolvencyIssue[]
   requestedBorrowLoanApplications LoanApplication[] @relation("RequestedBorrowAsset")
   requestedCollateralLoanApplications LoanApplication[] @relation("RequestedCollateralAsset")
   borrowedLoanAgreements LoanAgreement[] @relation("LoanBorrowAsset")
@@ -477,6 +481,187 @@ model CustomerAssetBalance {
   @@index([assetId])
 }
 
+enum SolvencySnapshotStatus {
+  healthy
+  warning
+  critical
+  failed
+}
+
+enum SolvencyEvidenceFreshness {
+  fresh
+  stale
+  missing
+  unknown
+}
+
+enum SolvencyIssueClassification {
+  healthy
+  informational_drift
+  stale_evidence
+  reconciliation_mismatch
+  reserve_shortfall
+  unknown_reserve_state
+  liability_computation_failure
+  critical_solvency_risk
+}
+
+enum SolvencyIssueSeverity {
+  info
+  warning
+  critical
+}
+
+enum SolvencyReserveSourceType {
+  treasury_wallet
+  operational_wallet
+  contract_wallet
+}
+
+enum SolvencyPolicyStateStatus {
+  normal
+  guarded
+  paused
+}
+
+model SolvencySnapshot {
+  id                         String                    @id @default(cuid())
+  environment                WorkerRuntimeEnvironment
+  chainId                    Int
+  status                     SolvencySnapshotStatus
+  evidenceFreshness          SolvencyEvidenceFreshness
+  generatedAt                DateTime                  @default(now())
+  completedAt                DateTime?
+  latestReconciliationScanRunId String?
+  latestReconciliationScanRun LedgerReconciliationScanRun? @relation(fields: [latestReconciliationScanRunId], references: [id])
+  totalLiabilityAmount       Decimal                   @default(0) @db.Decimal(36, 18)
+  totalUsableReserveAmount   Decimal                   @default(0) @db.Decimal(36, 18)
+  totalObservedReserveAmount Decimal                   @default(0) @db.Decimal(36, 18)
+  totalEncumberedReserveAmount Decimal                 @default(0) @db.Decimal(36, 18)
+  totalReserveDeltaAmount    Decimal                   @default(0) @db.Decimal(36, 18)
+  assetCount                 Int                       @default(0)
+  issueCount                 Int                       @default(0)
+  policyActionsTriggered     Boolean                   @default(false)
+  summarySnapshot            Json?
+  policyActionSnapshot       Json?
+  failureCode                String?
+  failureMessage             String?
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
+  assetSnapshots             SolvencyAssetSnapshot[]
+  issues                     SolvencyIssue[]
+  reserveEvidence            SolvencyReserveEvidence[]
+  policyStates               SolvencyPolicyState[]
+
+  @@index([environment, generatedAt])
+  @@index([status, generatedAt])
+  @@index([evidenceFreshness, generatedAt])
+  @@index([latestReconciliationScanRunId])
+}
+
+model SolvencyAssetSnapshot {
+  id                         String                    @id @default(cuid())
+  snapshotId                 String
+  snapshot                   SolvencySnapshot          @relation(fields: [snapshotId], references: [id])
+  assetId                    String
+  asset                      Asset                     @relation(fields: [assetId], references: [id])
+  status                     SolvencySnapshotStatus
+  evidenceFreshness          SolvencyEvidenceFreshness
+  liabilityAvailableAmount   Decimal                   @default(0) @db.Decimal(36, 18)
+  liabilityReservedAmount    Decimal                   @default(0) @db.Decimal(36, 18)
+  pendingCreditAmount        Decimal                   @default(0) @db.Decimal(36, 18)
+  totalLiabilityAmount       Decimal                   @default(0) @db.Decimal(36, 18)
+  projectionAvailableAmount  Decimal                   @default(0) @db.Decimal(36, 18)
+  projectionPendingAmount    Decimal                   @default(0) @db.Decimal(36, 18)
+  observedReserveAmount      Decimal                   @default(0) @db.Decimal(36, 18)
+  usableReserveAmount        Decimal                   @default(0) @db.Decimal(36, 18)
+  encumberedReserveAmount    Decimal                   @default(0) @db.Decimal(36, 18)
+  excludedReserveAmount      Decimal                   @default(0) @db.Decimal(36, 18)
+  reserveDeltaAmount         Decimal                   @default(0) @db.Decimal(36, 18)
+  reserveRatioBps            Int?
+  openReconciliationMismatchCount Int                  @default(0)
+  criticalReconciliationMismatchCount Int              @default(0)
+  issueCount                 Int                       @default(0)
+  summarySnapshot            Json?
+  createdAt                  DateTime                  @default(now())
+
+  @@unique([snapshotId, assetId])
+  @@index([assetId, createdAt])
+  @@index([status, createdAt])
+}
+
+model SolvencyReserveEvidence {
+  id                         String                    @id @default(cuid())
+  snapshotId                 String
+  snapshot                   SolvencySnapshot          @relation(fields: [snapshotId], references: [id])
+  assetId                    String
+  asset                      Asset                     @relation(fields: [assetId], references: [id])
+  walletId                   String?
+  wallet                     Wallet?                   @relation(fields: [walletId], references: [id])
+  reserveSourceType          SolvencyReserveSourceType
+  walletAddress              String?
+  walletKind                 WalletKind?
+  custodyType                WalletCustodyType?
+  evidenceFreshness          SolvencyEvidenceFreshness
+  observedBalanceAmount      Decimal?                  @db.Decimal(36, 18)
+  usableBalanceAmount        Decimal?                  @db.Decimal(36, 18)
+  encumberedBalanceAmount    Decimal?                  @db.Decimal(36, 18)
+  excludedBalanceAmount      Decimal?                  @db.Decimal(36, 18)
+  observedAt                 DateTime?
+  staleAfterSeconds          Int
+  readErrorCode              String?
+  readErrorMessage           String?
+  metadata                   Json?
+  createdAt                  DateTime                  @default(now())
+
+  @@index([snapshotId, assetId, createdAt])
+  @@index([walletId, assetId, createdAt])
+  @@index([evidenceFreshness, createdAt])
+}
+
+model SolvencyIssue {
+  id                         String                    @id @default(cuid())
+  snapshotId                 String
+  snapshot                   SolvencySnapshot          @relation(fields: [snapshotId], references: [id])
+  assetId                    String?
+  asset                      Asset?                    @relation(fields: [assetId], references: [id])
+  classification             SolvencyIssueClassification
+  severity                   SolvencyIssueSeverity
+  reasonCode                 String
+  summary                    String
+  description                String
+  recommendedAction          String?
+  metadata                   Json?
+  createdAt                  DateTime                  @default(now())
+
+  @@index([snapshotId, severity, createdAt])
+  @@index([assetId, classification, createdAt])
+  @@index([classification, severity, createdAt])
+}
+
+model SolvencyPolicyState {
+  id                         String                    @id @default(cuid())
+  environment                WorkerRuntimeEnvironment  @unique
+  status                     SolvencyPolicyStateStatus
+  pauseWithdrawalApprovals   Boolean                   @default(false)
+  pauseManagedWithdrawalExecution Boolean              @default(false)
+  pauseLoanFunding           Boolean                   @default(false)
+  pauseStakingWrites         Boolean                   @default(false)
+  requireManualOperatorReview Boolean                  @default(false)
+  latestSnapshotId           String?
+  latestSnapshot             SolvencySnapshot?         @relation(fields: [latestSnapshotId], references: [id])
+  triggeredAt                DateTime?
+  clearedAt                  DateTime?
+  reasonCode                 String?
+  reasonSummary              String?
+  metadata                   Json?
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
+
+  @@index([status, updatedAt])
+  @@index([latestSnapshotId])
+}
+
 model LedgerReconciliationMismatch {
   id                    String                                @id @default(cuid())
   mismatchKey           String                                @unique
@@ -597,6 +782,7 @@ model LedgerReconciliationScanRun {
   resultSnapshot       Json?
   createdAt            DateTime                             @default(now())
   updatedAt            DateTime                             @updatedAt
+  solvencySnapshots    SolvencySnapshot[]
 
   @@index([status, startedAt])
   @@index([triggerSource, startedAt])

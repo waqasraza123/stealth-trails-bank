@@ -14,6 +14,7 @@ import { ReleaseReadinessModule } from "./release-readiness/release-readiness.mo
 import { ReviewCasesModule } from "./review-cases/review-cases.module";
 import { StakingPoolModule } from "./staking/staking.module";
 import { SupportedAssetsModule } from "./supported-assets/supported-assets.module";
+import { SolvencyModule } from "./solvency/solvency.module";
 import { TransactionIntentsModule } from "./transaction-intents/transaction-intents.module";
 import { TreasuryModule } from "./treasury/treasury.module";
 import { UserModule } from "./user/user.module";
@@ -25,6 +26,7 @@ import { UserModule } from "./user/user.module";
     UserModule,
     PoolsModule,
     StakingPoolModule,
+    SolvencyModule,
     EthereumModule,
     LoansModule,
     LedgerReconciliationModule,

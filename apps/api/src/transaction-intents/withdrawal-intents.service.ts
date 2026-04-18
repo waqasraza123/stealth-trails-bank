@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException
 } from "@nestjs/common";
+import { Optional } from "@nestjs/common";
 import {
   loadProductChainRuntimeConfig,
   loadSensitiveOperatorActionPolicyRuntimeConfig
@@ -27,6 +28,7 @@ import { assertOperatorRoleAuthorized } from "../auth/internal-operator-role-pol
 import { LedgerService } from "../ledger/ledger.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReviewCasesService } from "../review-cases/review-cases.service";
+import { SolvencyService } from "../solvency/solvency.service";
 import { ConfirmWithdrawalIntentDto } from "./dto/confirm-withdrawal-intent.dto";
 import { CreateWithdrawalIntentDto } from "./dto/create-withdrawal-intent.dto";
 import { DecideWithdrawalIntentDto } from "./dto/decide-withdrawal-intent.dto";
@@ -359,7 +361,13 @@ export class WithdrawalIntentsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly ledgerService: LedgerService,
-    private readonly reviewCasesService: ReviewCasesService
+    private readonly reviewCasesService: ReviewCasesService,
+    @Optional()
+    private readonly solvencyService?: Pick<
+      SolvencyService,
+      | "assertWithdrawalApprovalAllowed"
+      | "assertManagedWithdrawalExecutionAllowed"
+    >
   ) {
     this.productChainId = loadProductChainRuntimeConfig().productChainId;
     const sensitiveActionPolicyConfig =
@@ -1181,6 +1189,9 @@ export class WithdrawalIntentsService {
     dto: DecideWithdrawalIntentDto,
     operatorRole?: string
   ): Promise<DecideWithdrawalIntentResult> {
+    if (dto.decision === "approved") {
+      await this.solvencyService?.assertWithdrawalApprovalAllowed?.();
+    }
     const normalizedOperatorRole =
       this.assertCanDecideTransactionIntent(operatorRole);
 
@@ -1445,6 +1456,7 @@ export class WithdrawalIntentsService {
     dto: QueueApprovedWithdrawalIntentDto,
     operatorRole?: string
   ): Promise<QueueApprovedWithdrawalIntentResult> {
+    await this.solvencyService?.assertWithdrawalApprovalAllowed?.();
     const normalizedOperatorRole = this.assertCanOperateCustody(operatorRole);
     const existingIntent = await this.findWithdrawalIntentForReview(intentId);
 
@@ -1662,6 +1674,7 @@ export class WithdrawalIntentsService {
     workerId: string,
     dto: StartManagedWithdrawalExecutionDto
   ): Promise<StartManagedWithdrawalExecutionResult> {
+    await this.solvencyService?.assertManagedWithdrawalExecutionAllowed?.();
     const existingIntent = await this.findWithdrawalIntentForReview(intentId);
 
     if (!existingIntent) {
