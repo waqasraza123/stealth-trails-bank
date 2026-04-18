@@ -17,53 +17,52 @@
 
 ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 8.58.46 PM.jpg>) ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 8.59.31 PM.jpg>) ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 8.59.40 PM.jpg>) ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 8.59.50 PM.jpg>) ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 9.00.14 PM.jpg>) ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 9.00.32 PM.jpg>) ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 9.00.47 PM.jpg>) ![alt text](<.github/screenshots/Screenshot 2026-04-10 at 9.00.57 PM.jpg>)
 
-## Description
+## Overview
 
-Stealth Trails Bank is a monorepo for a blockchain-backed banking platform.
+Stealth Trails Bank is a monorepo for a blockchain-backed banking platform with:
 
-This repository is not only a website and an API. It is the working product codebase for a system that is moving from prototype banking flows into a production-grade platform with:
+- customer web and mobile applications
+- a backend API with governed money-movement workflows
+- an internal admin console for operator controls
+- an async worker for blockchain execution and monitoring
+- shared packages for config, types, security, contracts, and i18n
 
-- customer identity and account lifecycle
-- wallet ownership and projection repair tooling
-- transaction intent workflows
-- internal operator review paths
-- internal worker execution paths
-- blockchain transaction tracking
-- durable auditability around important state transitions
+The codebase is no longer a prototype shell. It already contains real customer account lifecycle, wallet ownership, deposit and withdrawal intent workflows, ledger-backed balance reads, internal review controls, worker execution paths, auditability, and release-readiness infrastructure.
 
-The repo is being built in controlled stages so the platform can move forward without losing correctness in the areas that matter most for money movement.
+## Current status
 
-## What exists today
+- Phase 1 is complete at the repo-boundary level.
+- Phases 2, 3, 6, 8, 9, and 10 are materially advanced or complete in live code.
+- Phase 11 observability and incident safety is materially advanced.
+- Phase 12 security hardening and release readiness has begun, but final staged proof remains outstanding.
 
-The repository already includes real backend foundation for:
+Current execution frontier:
 
-- customer, customer account, and wallet projections
-- migration, audit, and repair tooling for legacy to new model adoption
-- customer balance read models and early ledger posting coverage
-- deposit and withdrawal transaction intent request, review, and replay-safe workflow slices
-- internal operator review cases, oversight incidents, and account hold governance
-- operator queueing, settlement reconciliation, and incident package release governance
-- async worker runtime with synthetic, monitor, and managed execution modes
-- worker heartbeat, scheduled reconciliation scanning, and scan history reporting
-- customer web flows backed by real APIs for auth, dashboard, wallet, profile, yield, and transaction history
-- internal admin console for review, oversight, hold-release, and export-governance workflows
-- durable audit trails across those implemented workflow slices
+- Phase 11/12 boundary hardening
 
-That means the project has moved beyond pure scaffolding. It now contains early but real money-state workflow slices.
+Immediate next step:
 
-## What is still in progress
+- run the remaining staged drills and release-readiness evidence flow for delivery-target SLOs, critical alert re-escalation, restore and rollback, secret handling, role review, and governed launch approval
 
-This is not yet a finished banking product.
+## Implemented product surfaces
 
-The system still needs broader production coverage in areas such as:
+- Customer web app with auth, dashboard, wallet, yield, transactions, profile, and lending surfaces
+- Customer mobile app in `apps/mobile` with Expo + React Native covering the same primary customer surfaces
+- Backend API for customer identity, balances, transaction intents, staking, loans, audit, and release-readiness workflows
+- Admin console for review queues, oversight, hold/release, reconciliation mismatch, governed export, treasury visibility, and audit-log workflows
+- Worker runtime with synthetic, monitor, and managed execution modes, heartbeat reporting, scheduled scans, and execution monitoring
 
-- broader confirmation and settlement automation
-- generalized ledger coverage across more money flows
-- deeper reconciliation, replay, and operator repair safety
-- fuller custody execution coverage for withdrawals and treasury operations
-- completion of remaining customer settings and release-hardening gaps
-- broader internal admin coverage for treasury, reconciliation, and audit operations
-- broader observability, incident tooling, and release hardening
+## Current workflow coverage
+
+- customer auth and account lookup
+- managed wallet ownership and customer profile projection
+- supported assets and ledger-backed customer balances
+- deposit and withdrawal intent request flows with review and execution state
+- transaction history, reference IDs, and status timelines
+- staking/yield snapshot and governed mutation paths
+- customer loan dashboard, quote preview, application submission, and autopay preferences
+- internal review cases, oversight incidents, hold governance, governed exports, and release-approval workflows
+- durable audit trails, platform alerts, metrics surfaces, and release-readiness evidence tracking
 
 ## Repository layout
 
@@ -99,21 +98,6 @@ The direction of the repo is intentional:
 - durable persistence and auditability next
 - UI and operational visibility layered on top
 - correctness over speed in money-critical areas
-
-## Current implemented flow coverage
-
-The implemented slices today go beyond the initial deposit path and now cover:
-
-1. customer auth, account lookup, balances, wallet, yield, and transaction history reads
-2. deposit and withdrawal intent request flows with operator review paths
-3. queueing, replay, reconciliation, and settlement handling across transaction intent slices
-4. internal review cases, manual resolution governance, and oversight incident workflows
-5. account hold placement and release review workflows
-6. worker broadcast, monitoring, and managed execution coverage for approved deposit work
-7. governed customer incident package exports and release approvals
-8. internal admin UI coverage for the review, oversight, hold-release, and export-governance loops
-
-This is important because it means the repo is no longer only a prototype shell. It already contains real workflow state, internal review, internal execution reporting, and auditability.
 
 ## Quick start
 
@@ -158,6 +142,8 @@ For contract-connected flows where relevant:
 
 Frontend environment values should be configured from the web app env examples where present and pointed at the local or deployed API.
 
+For mobile development, create `apps/mobile/.env` from `apps/mobile/.env.example` and point it at a reachable API base URL for your simulator or device.
+
 ### 3. Generate Prisma client and run database migrations
 
 ```bash
@@ -195,6 +181,10 @@ Run these from the repository root unless noted otherwise.
 | `pnpm compile`                            | Run compile tasks where defined                                     |
 | `pnpm release:readiness:probe -- --help`  | Run a Phase 12 drill probe and optionally record evidence           |
 | `pnpm release:readiness:verify -- --help` | Run Phase 12 automated proof suites or manual review attestations   |
+| `pnpm dev:mobile`                         | Start the Expo mobile app                                           |
+| `pnpm mobile:ios`                         | Open the Expo app in an iOS simulator                               |
+| `pnpm mobile:android`                     | Open the Expo app in an Android emulator                            |
+| `pnpm mobile:test`                        | Run the mobile Jest suite                                           |
 | `pnpm push --validate-before-push`        | Run repo push validation and push only if it passes                 |
 | `pnpm safe-push`                          | Alias for `pnpm push --validate-before-push`                        |
 
@@ -217,6 +207,8 @@ Use these docs first when working in the repo:
 - `docs/architecture/critical-feature-e2e-plan.md`
 - `docs/architecture/data-model-target.md`
 - `docs/architecture/schema-transition-plan.md`
+- `docs/mobile/react-native-product-spec.md`
+- `docs/mobile/react-native-implementation-plan.md`
 
 Use the runbooks when operating or verifying implemented flows:
 
