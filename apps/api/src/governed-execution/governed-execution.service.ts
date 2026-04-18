@@ -6,10 +6,12 @@ import {
   ServiceUnavailableException
 } from "@nestjs/common";
 import {
+  loadOptionalBlockchainContractReadRuntimeConfig,
   loadGovernedExecutionRuntimeConfig,
   type ApiRuntimeEnvironment,
   type GovernedExecutionRuntimeConfig
 } from "@stealth-trails-bank/config/api";
+import { createJsonRpcProvider } from "@stealth-trails-bank/contracts-sdk";
 import {
   GovernedExecutionOverrideRequestStatus,
   GovernedTreasuryExecutionDispatchStatus,
@@ -22,12 +24,15 @@ import {
   WorkerRuntimeEnvironment,
   WorkerRuntimeExecutionMode
 } from "@prisma/client";
+import { ethers } from "ethers";
 import { assertOperatorRoleAuthorized } from "../auth/internal-operator-role-policy";
 import { PrismaService } from "../prisma/prisma.service";
 import type { PrismaJsonValue } from "../prisma/prisma-json";
 import {
   buildSignedGovernedExecutionPackage,
+  type GovernedExecutionReceiptPayload,
   type GovernedExecutionPackagePayload,
+  verifySignedGovernedExecutionReceipt,
   verifySignedGovernedExecutionPackage
 } from "./governed-execution-proof";
 
@@ -284,9 +289,12 @@ export class GovernedExecutionService {
   private readonly requestAllowedRoles: readonly string[];
   private readonly approverAllowedRoles: readonly string[];
   private readonly executionPackageSignerPrivateKey: string;
+  private readonly executorAllowedSignerAddresses: Set<string>;
+  private readonly provider: ethers.providers.JsonRpcProvider | null;
 
   constructor(private readonly prismaService: PrismaService) {
     this.config = loadGovernedExecutionRuntimeConfig();
+    const chainRuntimeConfig = loadOptionalBlockchainContractReadRuntimeConfig();
     this.governedReserveCustodyTypes = new Set(
       this.config.governedReserveCustodyTypes
     );
@@ -294,6 +302,14 @@ export class GovernedExecutionService {
     this.approverAllowedRoles = [...this.config.approverAllowedOperatorRoles];
     this.executionPackageSignerPrivateKey =
       this.config.executionPackageSignerPrivateKey;
+    this.executorAllowedSignerAddresses = new Set(
+      this.config.executorAllowedSignerAddresses.map((address) =>
+        address.toLowerCase()
+      )
+    );
+    this.provider = chainRuntimeConfig.rpcUrl
+      ? createJsonRpcProvider(chainRuntimeConfig.rpcUrl)
+      : null;
   }
 
   private normalizeEnvironment(
@@ -317,6 +333,144 @@ export class GovernedExecutionService {
   private normalizeOptionalString(value?: string | null): string | null {
     const normalizedValue = value?.trim() ?? null;
     return normalizedValue && normalizedValue.length > 0 ? normalizedValue : null;
+  }
+
+  private buildExecutionReceiptPayload(args: {
+    request: ExecutionRequestRecord;
+    executorId: string;
+    outcome: "executed" | "failed";
+    dispatchReference: string;
+    transactionChainId?: number;
+    transactionToAddress?: string;
+    blockchainTransactionHash?: string | null;
+    externalExecutionReference?: string | null;
+    contractLoanId?: string | null;
+    contractAddress?: string | null;
+    failureReason?: string | null;
+    notedAt: string;
+  }): GovernedExecutionReceiptPayload {
+    return {
+      version: 1,
+      requestId: args.request.id,
+      environment: args.request.environment,
+      chainId: args.request.chainId,
+      executionType: args.request.executionType,
+      targetType: args.request.targetType,
+      targetId: args.request.targetId,
+      dispatchReference: args.dispatchReference,
+      executorId: args.executorId,
+      outcome: args.outcome,
+      transactionChainId: args.transactionChainId ?? null,
+      transactionToAddress:
+        this.normalizeOptionalString(args.transactionToAddress) ?? null,
+      blockchainTransactionHash:
+        this.normalizeOptionalString(args.blockchainTransactionHash) ?? null,
+      externalExecutionReference:
+        this.normalizeOptionalString(args.externalExecutionReference) ?? null,
+      contractLoanId: this.normalizeOptionalString(args.contractLoanId) ?? null,
+      contractAddress: this.normalizeOptionalString(args.contractAddress) ?? null,
+      failureReason: this.normalizeOptionalString(args.failureReason) ?? null,
+      notedAt: args.notedAt
+    };
+  }
+
+  private assertVerifiedExecutionReceipt(args: {
+    payload: GovernedExecutionReceiptPayload;
+    canonicalReceiptText: string;
+    receiptHash: string;
+    receiptChecksumSha256: string;
+    receiptSignature: string;
+    receiptSignerAddress: string;
+    receiptSignatureAlgorithm: string;
+  }): {
+    verificationChecksumSha256: string;
+  } {
+    const verification = verifySignedGovernedExecutionReceipt({
+      payload: args.payload,
+      canonicalReceiptText: args.canonicalReceiptText,
+      receiptHash: args.receiptHash,
+      receiptChecksumSha256: args.receiptChecksumSha256,
+      receiptSignature: args.receiptSignature,
+      receiptSignerAddress: args.receiptSignerAddress,
+      receiptSignatureAlgorithm: args.receiptSignatureAlgorithm,
+      expectedSignerAddresses: [...this.executorAllowedSignerAddresses]
+    });
+
+    if (!verification.verified) {
+      throw new ConflictException(
+        verification.failureReason ??
+          "Governed execution receipt signature could not be verified."
+      );
+    }
+
+    return {
+      verificationChecksumSha256: verification.verificationChecksumSha256
+    };
+  }
+
+  private async assertOnchainExecutionReceiptMatchesRequest(args: {
+    request: ExecutionRequestRecord;
+    transactionChainId: number;
+    transactionToAddress: string;
+    blockchainTransactionHash: string;
+  }): Promise<{
+    blockNumber: number;
+    transactionIndex: number | null;
+  }> {
+    if (!this.config.requireOnchainExecutorReceiptVerification) {
+      return {
+        blockNumber: -1,
+        transactionIndex: null
+      };
+    }
+
+    if (!this.provider) {
+      throw new ServiceUnavailableException(
+        "Governed execution onchain receipt verification is unavailable because RPC_URL is not configured."
+      );
+    }
+
+    const receipt = await this.provider.getTransactionReceipt(
+      args.blockchainTransactionHash
+    );
+
+    if (!receipt) {
+      throw new ConflictException(
+        "Governed execution transaction receipt was not found onchain."
+      );
+    }
+
+    if (Number(receipt.status ?? 0) !== 1) {
+      throw new ConflictException(
+        "Governed execution transaction receipt indicates a failed onchain transaction."
+      );
+    }
+
+    const observedToAddress =
+      this.normalizeOptionalString(receipt.to)?.toLowerCase() ??
+      this.normalizeOptionalString(args.transactionToAddress)?.toLowerCase();
+    const expectedToAddress =
+      this.normalizeOptionalString(args.transactionToAddress)?.toLowerCase();
+
+    if (expectedToAddress && observedToAddress !== expectedToAddress) {
+      throw new ConflictException(
+        "Governed execution onchain receipt target does not match the execution request."
+      );
+    }
+
+    if (args.transactionChainId !== args.request.chainId) {
+      throw new ConflictException(
+        "Governed execution onchain receipt chain id does not match the execution request."
+      );
+    }
+
+    return {
+      blockNumber: Number(receipt.blockNumber),
+      transactionIndex:
+        typeof receipt.transactionIndex === "number"
+          ? receipt.transactionIndex
+          : null
+    };
   }
 
   private assertCanRequest(operatorRole?: string | null): string {
@@ -1475,11 +1629,18 @@ export class GovernedExecutionService {
       dispatchReference: string;
       transactionChainId: number;
       transactionToAddress: string;
-      blockchainTransactionHash?: string;
+      blockchainTransactionHash: string;
       externalExecutionReference?: string;
       contractLoanId?: string;
       contractAddress?: string;
       executionNote?: string;
+      notedAt: string;
+      canonicalReceiptText: string;
+      receiptHash: string;
+      receiptChecksumSha256: string;
+      receiptSignature: string;
+      receiptSignerAddress: string;
+      receiptSignatureAlgorithm: string;
     },
     executorId: string
   ): Promise<{
@@ -1495,9 +1656,9 @@ export class GovernedExecutionService {
     const contractLoanId = this.normalizeOptionalString(input.contractLoanId);
     const contractAddress = this.normalizeOptionalString(input.contractAddress);
 
-    if (!blockchainTransactionHash && !externalExecutionReference) {
+    if (!blockchainTransactionHash) {
       throw new BadRequestException(
-        "Governed executor success requires a blockchain transaction hash or external execution reference."
+        "Governed executor success requires a blockchain transaction hash."
       );
     }
 
@@ -1532,6 +1693,35 @@ export class GovernedExecutionService {
 
       this.assertExecutorReceiptMatchesRequest(request, input);
 
+      const receiptPayload = this.buildExecutionReceiptPayload({
+        request,
+        executorId,
+        outcome: "executed",
+        dispatchReference: input.dispatchReference,
+        transactionChainId: input.transactionChainId,
+        transactionToAddress: input.transactionToAddress,
+        blockchainTransactionHash,
+        externalExecutionReference,
+        contractLoanId,
+        contractAddress,
+        notedAt: input.notedAt
+      });
+      const verification = this.assertVerifiedExecutionReceipt({
+        payload: receiptPayload,
+        canonicalReceiptText: input.canonicalReceiptText,
+        receiptHash: input.receiptHash,
+        receiptChecksumSha256: input.receiptChecksumSha256,
+        receiptSignature: input.receiptSignature,
+        receiptSignerAddress: input.receiptSignerAddress,
+        receiptSignatureAlgorithm: input.receiptSignatureAlgorithm
+      });
+      const onchainReceipt = await this.assertOnchainExecutionReceiptMatchesRequest({
+        request,
+        transactionChainId: input.transactionChainId,
+        transactionToAddress: input.transactionToAddress,
+        blockchainTransactionHash
+      });
+
       if (
         request.executionType ===
           GovernedTreasuryExecutionRequestType.loan_contract_creation &&
@@ -1556,6 +1746,16 @@ export class GovernedExecutionService {
           executorClaimedAt: null,
           executorClaimExpiresAt: null,
           executorReceiptSubmittedAt: new Date(),
+          executorReceiptPayload: receiptPayload as PrismaJsonValue,
+          executorReceiptPayloadText: input.canonicalReceiptText,
+          executorReceiptHash: input.receiptHash,
+          executorReceiptChecksumSha256: input.receiptChecksumSha256,
+          executorReceiptSignature: input.receiptSignature,
+          executorReceiptSignatureAlgorithm: input.receiptSignatureAlgorithm,
+          executorReceiptSignerAddress: input.receiptSignerAddress,
+          executorReceiptVerificationChecksumSha256:
+            verification.verificationChecksumSha256,
+          executorReceiptVerifiedAt: new Date(),
           executedByActorType: "governed_executor",
           executedByActorId: executorId,
           executedByActorRole: null,
@@ -1572,7 +1772,11 @@ export class GovernedExecutionService {
             blockchainTransactionHash: blockchainTransactionHash ?? null,
             externalExecutionReference: externalExecutionReference ?? null,
             contractLoanId: contractLoanId ?? null,
-            dispatchReference: request.dispatchReference
+            dispatchReference: request.dispatchReference,
+            executorReceiptHash: input.receiptHash,
+            executorReceiptSignerAddress: input.receiptSignerAddress,
+            onchainReceiptBlockNumber: onchainReceipt.blockNumber,
+            onchainReceiptTransactionIndex: onchainReceipt.transactionIndex
           } as PrismaJsonValue
         },
         include: executionRequestInclude
@@ -1645,7 +1849,10 @@ export class GovernedExecutionService {
             contractLoanId,
             dispatchReference: request.dispatchReference,
             transactionChainId: input.transactionChainId,
-            transactionToAddress: input.transactionToAddress
+            transactionToAddress: input.transactionToAddress,
+            executorReceiptHash: input.receiptHash,
+            executorReceiptSignerAddress: input.receiptSignerAddress,
+            onchainReceiptBlockNumber: onchainReceipt.blockNumber
           } as PrismaJsonValue
         }
       });
@@ -1668,6 +1875,13 @@ export class GovernedExecutionService {
       transactionToAddress?: string;
       blockchainTransactionHash?: string;
       externalExecutionReference?: string;
+      notedAt: string;
+      canonicalReceiptText: string;
+      receiptHash: string;
+      receiptChecksumSha256: string;
+      receiptSignature: string;
+      receiptSignerAddress: string;
+      receiptSignatureAlgorithm: string;
     },
     executorId: string
   ): Promise<{
@@ -1730,6 +1944,28 @@ export class GovernedExecutionService {
         );
       }
 
+      const receiptPayload = this.buildExecutionReceiptPayload({
+        request,
+        executorId,
+        outcome: "failed",
+        dispatchReference: input.dispatchReference,
+        transactionChainId: input.transactionChainId,
+        transactionToAddress: input.transactionToAddress,
+        blockchainTransactionHash,
+        externalExecutionReference,
+        failureReason,
+        notedAt: input.notedAt
+      });
+      const verification = this.assertVerifiedExecutionReceipt({
+        payload: receiptPayload,
+        canonicalReceiptText: input.canonicalReceiptText,
+        receiptHash: input.receiptHash,
+        receiptChecksumSha256: input.receiptChecksumSha256,
+        receiptSignature: input.receiptSignature,
+        receiptSignerAddress: input.receiptSignerAddress,
+        receiptSignatureAlgorithm: input.receiptSignatureAlgorithm
+      });
+
       const next = await transaction.governedTreasuryExecutionRequest.update({
         where: {
           id: request.id
@@ -1744,6 +1980,16 @@ export class GovernedExecutionService {
           executorClaimedAt: null,
           executorClaimExpiresAt: null,
           executorReceiptSubmittedAt: new Date(),
+          executorReceiptPayload: receiptPayload as PrismaJsonValue,
+          executorReceiptPayloadText: input.canonicalReceiptText,
+          executorReceiptHash: input.receiptHash,
+          executorReceiptChecksumSha256: input.receiptChecksumSha256,
+          executorReceiptSignature: input.receiptSignature,
+          executorReceiptSignatureAlgorithm: input.receiptSignatureAlgorithm,
+          executorReceiptSignerAddress: input.receiptSignerAddress,
+          executorReceiptVerificationChecksumSha256:
+            verification.verificationChecksumSha256,
+          executorReceiptVerifiedAt: new Date(),
           blockchainTransactionHash: blockchainTransactionHash ?? undefined,
           externalExecutionReference: externalExecutionReference ?? undefined,
           failureReason,
@@ -1754,7 +2000,9 @@ export class GovernedExecutionService {
             blockchainTransactionHash: blockchainTransactionHash ?? null,
             externalExecutionReference: externalExecutionReference ?? null,
             failureReason,
-            dispatchReference: request.dispatchReference
+            dispatchReference: request.dispatchReference,
+            executorReceiptHash: input.receiptHash,
+            executorReceiptSignerAddress: input.receiptSignerAddress
           } as PrismaJsonValue
         },
         include: executionRequestInclude
@@ -1795,7 +2043,9 @@ export class GovernedExecutionService {
             blockchainTransactionHash,
             externalExecutionReference,
             failureReason,
-            dispatchReference: request.dispatchReference
+            dispatchReference: request.dispatchReference,
+            executorReceiptHash: input.receiptHash,
+            executorReceiptSignerAddress: input.receiptSignerAddress
           } as PrismaJsonValue
         }
       });

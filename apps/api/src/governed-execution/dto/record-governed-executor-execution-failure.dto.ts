@@ -29,4 +29,25 @@ export class RecordGovernedExecutorExecutionFailureDto {
   @IsOptional()
   @IsString()
   externalExecutionReference?: string;
+
+  @IsString()
+  notedAt!: string;
+
+  @IsString()
+  canonicalReceiptText!: string;
+
+  @IsString()
+  receiptHash!: string;
+
+  @IsString()
+  receiptChecksumSha256!: string;
+
+  @IsString()
+  receiptSignature!: string;
+
+  @IsString()
+  receiptSignerAddress!: string;
+
+  @IsString()
+  receiptSignatureAlgorithm!: string;
 }

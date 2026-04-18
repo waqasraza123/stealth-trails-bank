@@ -84,7 +84,14 @@ describe("GovernedExecutionExecutorController", () => {
         dispatchReference: "dispatch_1",
         transactionChainId: 8453,
         transactionToAddress: "0x0000000000000000000000000000000000000abc",
-        blockchainTransactionHash: "0xhash"
+        blockchainTransactionHash: "0xhash",
+        notedAt: "2030-04-18T10:03:00.000Z",
+        canonicalReceiptText: "{\"receipt\":true}",
+        receiptHash: "0xreceipt",
+        receiptChecksumSha256: "checksum",
+        receiptSignature: "0xsig",
+        receiptSignerAddress: "0xsigner",
+        receiptSignatureAlgorithm: "ethereum-secp256k1-keccak256-v1"
       },
       {
         internalGovernedExecutor: {
@@ -101,7 +108,14 @@ describe("GovernedExecutionExecutorController", () => {
         dispatchReference: "dispatch_1",
         transactionChainId: 8453,
         transactionToAddress: "0x0000000000000000000000000000000000000abc",
-        blockchainTransactionHash: "0xhash"
+        blockchainTransactionHash: "0xhash",
+        notedAt: "2030-04-18T10:03:00.000Z",
+        canonicalReceiptText: "{\"receipt\":true}",
+        receiptHash: "0xreceipt",
+        receiptChecksumSha256: "checksum",
+        receiptSignature: "0xsig",
+        receiptSignerAddress: "0xsigner",
+        receiptSignatureAlgorithm: "ethereum-secp256k1-keccak256-v1"
       },
       "executor_1"
     );
@@ -121,7 +135,14 @@ describe("GovernedExecutionExecutorController", () => {
       "execution_request_1",
       {
         dispatchReference: "dispatch_1",
-        failureReason: "multisig_rejected"
+        failureReason: "multisig_rejected",
+        notedAt: "2030-04-18T10:03:00.000Z",
+        canonicalReceiptText: "{\"receipt\":true}",
+        receiptHash: "0xreceipt",
+        receiptChecksumSha256: "checksum",
+        receiptSignature: "0xsig",
+        receiptSignerAddress: "0xsigner",
+        receiptSignatureAlgorithm: "ethereum-secp256k1-keccak256-v1"
       },
       {
         internalGovernedExecutor: {
@@ -136,7 +157,14 @@ describe("GovernedExecutionExecutorController", () => {
       "execution_request_1",
       {
         dispatchReference: "dispatch_1",
-        failureReason: "multisig_rejected"
+        failureReason: "multisig_rejected",
+        notedAt: "2030-04-18T10:03:00.000Z",
+        canonicalReceiptText: "{\"receipt\":true}",
+        receiptHash: "0xreceipt",
+        receiptChecksumSha256: "checksum",
+        receiptSignature: "0xsig",
+        receiptSignerAddress: "0xsigner",
+        receiptSignatureAlgorithm: "ethereum-secp256k1-keccak256-v1"
       },
       "executor_1"
     );

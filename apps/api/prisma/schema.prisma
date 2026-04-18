@@ -852,6 +852,15 @@ model GovernedTreasuryExecutionRequest {
   executorClaimedAt            DateTime?
   executorClaimExpiresAt       DateTime?
   executorReceiptSubmittedAt   DateTime?
+  executorReceiptPayload       Json?
+  executorReceiptPayloadText   String?
+  executorReceiptHash          String?
+  executorReceiptChecksumSha256 String?
+  executorReceiptSignature     String?
+  executorReceiptSignatureAlgorithm String?
+  executorReceiptSignerAddress String?
+  executorReceiptVerificationChecksumSha256 String?
+  executorReceiptVerifiedAt    DateTime?
   executedByActorType          String?
   executedByActorId            String?
   executedByActorRole          String?

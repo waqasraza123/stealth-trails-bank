@@ -8,6 +8,8 @@ import {
   WorkerRuntimeEnvironment,
   WorkerRuntimeExecutionMode
 } from "@prisma/client";
+import { ethers } from "ethers";
+import { buildSignedGovernedExecutionReceipt } from "./governed-execution-proof";
 import type { PrismaService } from "../prisma/prisma.service";
 import { GovernedExecutionService } from "./governed-execution.service";
 
@@ -23,6 +25,8 @@ const mockConfig: {
   executionPackageSignerPrivateKey: string;
   executionClaimLeaseSeconds: number;
   executorClaimLeaseSeconds: number;
+  executorAllowedSignerAddresses: string[];
+  requireOnchainExecutorReceiptVerification: boolean;
 } = {
   environment: "production" as const,
   governedExecutionRequiredInProduction: true,
@@ -38,12 +42,75 @@ const mockConfig: {
   executionPackageSignerPrivateKey:
     "0x59c6995e998f97a5a0044976f094538e2d7db6d63dd7f6c5f495fac1cac7e31d",
   executionClaimLeaseSeconds: 300,
-  executorClaimLeaseSeconds: 300
+  executorClaimLeaseSeconds: 300,
+  executorAllowedSignerAddresses: [
+    new ethers.Wallet(
+      "0x59c6995e998f97a5a0044966f094538c5f6d4e07f16b8ad8cc7658f0f1b0f9d8"
+    ).address
+  ],
+  requireOnchainExecutorReceiptVerification: true
+};
+
+const mockProvider = {
+  getTransactionReceipt: jest.fn(async () => ({
+    status: 1,
+    blockNumber: 123n,
+    transactionIndex: 4,
+    to: "0x0000000000000000000000000000000000000def"
+  }))
 };
 
 jest.mock("@stealth-trails-bank/config/api", () => ({
-  loadGovernedExecutionRuntimeConfig: jest.fn(() => mockConfig)
+  loadGovernedExecutionRuntimeConfig: jest.fn(() => mockConfig),
+  loadOptionalBlockchainContractReadRuntimeConfig: jest.fn(() => ({
+    rpcUrl: "http://localhost:8545"
+  }))
 }));
+
+jest.mock("@stealth-trails-bank/contracts-sdk", () => ({
+  createJsonRpcProvider: jest.fn(() => mockProvider)
+}));
+
+function buildExecutorReceipt(args: {
+  requestId: string;
+  executionType: string;
+  targetType: string;
+  targetId: string;
+  dispatchReference: string;
+  executorId: string;
+  outcome: "executed" | "failed";
+  transactionChainId?: number;
+  transactionToAddress?: string;
+  blockchainTransactionHash?: string | null;
+  externalExecutionReference?: string | null;
+  contractLoanId?: string | null;
+  contractAddress?: string | null;
+  failureReason?: string | null;
+}) {
+  return buildSignedGovernedExecutionReceipt(
+    {
+      version: 1,
+      requestId: args.requestId,
+      environment: "production",
+      chainId: 8453,
+      executionType: args.executionType,
+      targetType: args.targetType,
+      targetId: args.targetId,
+      dispatchReference: args.dispatchReference,
+      executorId: args.executorId,
+      outcome: args.outcome,
+      transactionChainId: args.transactionChainId ?? null,
+      transactionToAddress: args.transactionToAddress ?? null,
+      blockchainTransactionHash: args.blockchainTransactionHash ?? null,
+      externalExecutionReference: args.externalExecutionReference ?? null,
+      contractLoanId: args.contractLoanId ?? null,
+      contractAddress: args.contractAddress ?? null,
+      failureReason: args.failureReason ?? null,
+      notedAt: "2030-04-18T10:03:00.000Z"
+    },
+    "0x59c6995e998f97a5a0044966f094538c5f6d4e07f16b8ad8cc7658f0f1b0f9d8"
+  );
+}
 
 function createWallet(
   overrides?: Partial<{
@@ -470,6 +537,12 @@ function createService(args?: {
 describe("GovernedExecutionService", () => {
   afterEach(() => {
     jest.clearAllMocks();
+    mockProvider.getTransactionReceipt.mockResolvedValue({
+      status: 1,
+      blockNumber: 123n,
+      transactionIndex: 4,
+      to: "0x0000000000000000000000000000000000000def"
+    });
   });
 
   it("builds a healthy workspace when reserve custody and execution modes are governed", async () => {
@@ -786,6 +859,20 @@ describe("GovernedExecutionService", () => {
     const { service, prismaService, executionRequestStore } = createService({
       executionRequests: [executionRecord]
     });
+    const signedReceipt = buildExecutorReceipt({
+      requestId: "execution_executor_success_1",
+      executionType: "loan_contract_creation",
+      targetType: "LoanAgreement",
+      targetId: "target_1",
+      dispatchReference: "dispatch:execution_executor_success_1",
+      executorId: "executor_1",
+      outcome: "executed",
+      transactionChainId: 8453,
+      transactionToAddress: "0x0000000000000000000000000000000000000def",
+      blockchainTransactionHash: "0xexecutorhash",
+      contractLoanId: "loan_1234",
+      contractAddress: "0x0000000000000000000000000000000000000def"
+    });
 
     const result = await service.recordExecutionSuccessFromExecutor(
       "execution_executor_success_1",
@@ -794,7 +881,15 @@ describe("GovernedExecutionService", () => {
         transactionChainId: 8453,
         transactionToAddress: "0x0000000000000000000000000000000000000def",
         blockchainTransactionHash: "0xexecutorhash",
-        contractLoanId: "loan_1234"
+        contractLoanId: "loan_1234",
+        contractAddress: "0x0000000000000000000000000000000000000def",
+        notedAt: "2030-04-18T10:03:00.000Z",
+        canonicalReceiptText: signedReceipt.canonicalReceiptText,
+        receiptHash: signedReceipt.receiptHash,
+        receiptChecksumSha256: signedReceipt.receiptChecksumSha256,
+        receiptSignature: signedReceipt.receiptSignature,
+        receiptSignerAddress: signedReceipt.receiptSignerAddress,
+        receiptSignatureAlgorithm: signedReceipt.receiptSignatureAlgorithm
       },
       "executor_1"
     );
@@ -811,6 +906,9 @@ describe("GovernedExecutionService", () => {
         activationTransactionHash: "0xexecutorhash"
       })
     });
+    expect(mockProvider.getTransactionReceipt).toHaveBeenCalledWith(
+      "0xexecutorhash"
+    );
   });
 
   it("rejects governed executor success receipts when dispatch details do not match", async () => {
@@ -826,6 +924,19 @@ describe("GovernedExecutionService", () => {
     const { service } = createService({
       executionRequests: [executionRecord]
     });
+    const signedReceipt = buildExecutorReceipt({
+      requestId: "execution_executor_bad_receipt_1",
+      executionType: "loan_contract_creation",
+      targetType: "LoanAgreement",
+      targetId: "target_1",
+      dispatchReference: "dispatch:execution_executor_bad_receipt_1",
+      executorId: "executor_1",
+      outcome: "executed",
+      transactionChainId: 8453,
+      transactionToAddress: "0x0000000000000000000000000000000000000abc",
+      blockchainTransactionHash: "0xexecutorhash",
+      contractLoanId: "loan_1234"
+    });
 
     await expect(
       service.recordExecutionSuccessFromExecutor(
@@ -835,7 +946,14 @@ describe("GovernedExecutionService", () => {
           transactionChainId: 8453,
           transactionToAddress: "0x0000000000000000000000000000000000000abc",
           blockchainTransactionHash: "0xexecutorhash",
-          contractLoanId: "loan_1234"
+          contractLoanId: "loan_1234",
+          notedAt: "2030-04-18T10:03:00.000Z",
+          canonicalReceiptText: signedReceipt.canonicalReceiptText,
+          receiptHash: signedReceipt.receiptHash,
+          receiptChecksumSha256: signedReceipt.receiptChecksumSha256,
+          receiptSignature: signedReceipt.receiptSignature,
+          receiptSignerAddress: signedReceipt.receiptSignerAddress,
+          receiptSignatureAlgorithm: signedReceipt.receiptSignatureAlgorithm
         },
         "executor_1"
       )
@@ -855,6 +973,18 @@ describe("GovernedExecutionService", () => {
     const { service, executionRequestStore } = createService({
       executionRequests: [executionRecord]
     });
+    const signedReceipt = buildExecutorReceipt({
+      requestId: "execution_executor_failure_1",
+      executionType: "loan_contract_creation",
+      targetType: "LoanAgreement",
+      targetId: "target_1",
+      dispatchReference: "dispatch:execution_executor_failure_1",
+      executorId: "executor_1",
+      outcome: "failed",
+      transactionChainId: 8453,
+      transactionToAddress: "0x0000000000000000000000000000000000000def",
+      failureReason: "multisig_rejected"
+    });
 
     const result = await service.recordExecutionFailureFromExecutor(
       "execution_executor_failure_1",
@@ -862,7 +992,14 @@ describe("GovernedExecutionService", () => {
         dispatchReference: "dispatch:execution_executor_failure_1",
         failureReason: "multisig_rejected",
         transactionChainId: 8453,
-        transactionToAddress: "0x0000000000000000000000000000000000000def"
+        transactionToAddress: "0x0000000000000000000000000000000000000def",
+        notedAt: "2030-04-18T10:03:00.000Z",
+        canonicalReceiptText: signedReceipt.canonicalReceiptText,
+        receiptHash: signedReceipt.receiptHash,
+        receiptChecksumSha256: signedReceipt.receiptChecksumSha256,
+        receiptSignature: signedReceipt.receiptSignature,
+        receiptSignerAddress: signedReceipt.receiptSignerAddress,
+        receiptSignatureAlgorithm: signedReceipt.receiptSignatureAlgorithm
       },
       "executor_1"
     );
@@ -871,5 +1008,55 @@ describe("GovernedExecutionService", () => {
     expect(result.request.dispatchStatus).toBe("dispatch_failed");
     expect(executionRequestStore[0]?.claimedByExecutorId).toBeNull();
     expect(executionRequestStore[0]?.executorReceiptSubmittedAt).toBeTruthy();
+  });
+
+  it("rejects governed executor success when the transaction receipt is missing onchain", async () => {
+    mockProvider.getTransactionReceipt.mockResolvedValueOnce(null as never);
+    const executionRecord = createExecutionRequestRecord({
+      id: "execution_executor_missing_chain_receipt_1",
+      dispatchStatus: "dispatched",
+      dispatchReference: "dispatch:execution_executor_missing_chain_receipt_1",
+      claimedByExecutorId: "executor_1",
+      executorClaimedAt: new Date("2030-04-18T10:02:00.000Z"),
+      executorClaimExpiresAt: new Date("2030-04-18T10:07:00.000Z"),
+      contractAddress: "0x0000000000000000000000000000000000000def"
+    });
+    const { service } = createService({
+      executionRequests: [executionRecord]
+    });
+    const signedReceipt = buildExecutorReceipt({
+      requestId: "execution_executor_missing_chain_receipt_1",
+      executionType: "loan_contract_creation",
+      targetType: "LoanAgreement",
+      targetId: "target_1",
+      dispatchReference: "dispatch:execution_executor_missing_chain_receipt_1",
+      executorId: "executor_1",
+      outcome: "executed",
+      transactionChainId: 8453,
+      transactionToAddress: "0x0000000000000000000000000000000000000def",
+      blockchainTransactionHash: "0xmissingreceipt",
+      contractLoanId: "loan_1234"
+    });
+
+    await expect(
+      service.recordExecutionSuccessFromExecutor(
+        "execution_executor_missing_chain_receipt_1",
+        {
+          dispatchReference: "dispatch:execution_executor_missing_chain_receipt_1",
+          transactionChainId: 8453,
+          transactionToAddress: "0x0000000000000000000000000000000000000def",
+          blockchainTransactionHash: "0xmissingreceipt",
+          contractLoanId: "loan_1234",
+          notedAt: "2030-04-18T10:03:00.000Z",
+          canonicalReceiptText: signedReceipt.canonicalReceiptText,
+          receiptHash: signedReceipt.receiptHash,
+          receiptChecksumSha256: signedReceipt.receiptChecksumSha256,
+          receiptSignature: signedReceipt.receiptSignature,
+          receiptSignerAddress: signedReceipt.receiptSignerAddress,
+          receiptSignatureAlgorithm: signedReceipt.receiptSignatureAlgorithm
+        },
+        "executor_1"
+      )
+    ).rejects.toThrow("Governed execution transaction receipt was not found onchain");
   });
 });

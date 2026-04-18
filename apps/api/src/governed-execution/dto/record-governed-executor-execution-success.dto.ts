@@ -13,13 +13,12 @@ export class RecordGovernedExecutorExecutionSuccessDto {
   @IsString()
   transactionToAddress!: string;
 
-  @IsOptional()
   @IsString()
-  executionNote?: string;
+  blockchainTransactionHash!: string;
 
   @IsOptional()
   @IsString()
-  blockchainTransactionHash?: string;
+  executionNote?: string;
 
   @IsOptional()
   @IsString()
@@ -32,4 +31,25 @@ export class RecordGovernedExecutorExecutionSuccessDto {
   @IsOptional()
   @IsString()
   contractAddress?: string;
+
+  @IsString()
+  notedAt!: string;
+
+  @IsString()
+  canonicalReceiptText!: string;
+
+  @IsString()
+  receiptHash!: string;
+
+  @IsString()
+  receiptChecksumSha256!: string;
+
+  @IsString()
+  receiptSignature!: string;
+
+  @IsString()
+  receiptSignerAddress!: string;
+
+  @IsString()
+  receiptSignatureAlgorithm!: string;
 }

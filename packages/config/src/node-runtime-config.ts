@@ -120,6 +120,9 @@ const DEFAULT_LOCAL_INTERNAL_WORKER_API_KEY = "local-dev-worker-key";
 const DEFAULT_LOCAL_INTERNAL_OPERATOR_API_KEY = "local-dev-operator-key";
 const DEFAULT_LOCAL_INTERNAL_GOVERNED_EXECUTOR_API_KEY =
   "local-dev-governed-executor-key";
+const DEFAULT_LOCAL_GOVERNED_EXECUTOR_SIGNER_ADDRESSES = [
+  "0x7E5F4552091A69125d5DfCb7b8C2659029395BDF"
+] as const;
 const DEFAULT_SHARED_LOGIN_ENABLED = true;
 const DEFAULT_SHARED_LOGIN_EMAIL = "admin@gmail.com";
 const DEFAULT_SHARED_LOGIN_PASSWORD = "P@ssw0rd";
@@ -944,6 +947,8 @@ export type GovernedExecutionRuntimeConfig = {
   readonly executionPackageSignerPrivateKey: string;
   readonly executionClaimLeaseSeconds: number;
   readonly executorClaimLeaseSeconds: number;
+  readonly executorAllowedSignerAddresses: readonly string[];
+  readonly requireOnchainExecutorReceiptVerification: boolean;
 };
 
 function parsePlatformAlertDeliveryHealthSloConfig(
@@ -1959,6 +1964,10 @@ export function loadGovernedExecutionRuntimeConfig(
     env,
     "GOVERNED_EXECUTION_ALLOWED_RESERVE_CUSTODY_TYPES"
   );
+  const configuredExecutorSignerAddresses = readOptionalRuntimeEnv(
+    env,
+    "GOVERNED_EXECUTOR_ALLOWED_SIGNER_ADDRESSES"
+  );
   const executionPackageSignerPrivateKey =
     readOptionalRuntimeEnv(env, "GOVERNED_EXECUTION_PACKAGE_SIGNER_PRIVATE_KEY") ??
     readOptionalRuntimeEnv(env, "SOLVENCY_REPORT_SIGNER_PRIVATE_KEY");
@@ -1966,6 +1975,19 @@ export function loadGovernedExecutionRuntimeConfig(
   if (!executionPackageSignerPrivateKey) {
     throw new Error(
       "GOVERNED_EXECUTION_PACKAGE_SIGNER_PRIVATE_KEY is required."
+    );
+  }
+
+  const executorAllowedSignerAddresses = configuredExecutorSignerAddresses
+    ? parseCommaSeparatedValues(
+        configuredExecutorSignerAddresses,
+        "GOVERNED_EXECUTOR_ALLOWED_SIGNER_ADDRESSES"
+      )
+    : [...DEFAULT_LOCAL_GOVERNED_EXECUTOR_SIGNER_ADDRESSES];
+
+  if (environment === "production" && !configuredExecutorSignerAddresses) {
+    throw new Error(
+      "GOVERNED_EXECUTOR_ALLOWED_SIGNER_ADDRESSES is required in production."
     );
   }
 
@@ -2019,6 +2041,14 @@ export function loadGovernedExecutionRuntimeConfig(
         "GOVERNED_EXECUTOR_CLAIM_LEASE_SECONDS"
       ) ?? "300",
       "GOVERNED_EXECUTOR_CLAIM_LEASE_SECONDS"
+    ),
+    executorAllowedSignerAddresses,
+    requireOnchainExecutorReceiptVerification: parseBoolean(
+      readOptionalRuntimeEnv(
+        env,
+        "GOVERNED_EXECUTOR_REQUIRE_ONCHAIN_RECEIPT_VERIFICATION"
+      ) ?? "true",
+      "GOVERNED_EXECUTOR_REQUIRE_ONCHAIN_RECEIPT_VERIFICATION"
     )
   };
 }
