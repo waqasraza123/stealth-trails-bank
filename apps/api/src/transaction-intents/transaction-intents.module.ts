@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
 import { InternalWorkerApiKeyGuard } from "../auth/guards/internal-worker-api-key.guard";
+import { GovernedExecutionModule } from "../governed-execution/governed-execution.module";
 import { LedgerModule } from "../ledger/ledger.module";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReviewCasesModule } from "../review-cases/review-cases.module";
@@ -22,7 +23,7 @@ import { WithdrawalSettlementReconciliationController } from "./withdrawal-settl
 import { WithdrawalSettlementReconciliationService } from "./withdrawal-settlement-reconciliation.service";
 
 @Module({
-  imports: [LedgerModule, ReviewCasesModule, SolvencyModule],
+  imports: [LedgerModule, ReviewCasesModule, SolvencyModule, GovernedExecutionModule],
   controllers: [
     TransactionIntentsController,
     TransactionHistoryController,

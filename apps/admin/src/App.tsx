@@ -23,6 +23,7 @@ import { OperatorSessionProvider } from "@/state/operator-session";
 import { AlertsPage } from "@/pages/AlertsPage";
 import { AuditPage } from "@/pages/AuditPage";
 import { AccountsPage } from "@/pages/AccountsPage";
+import { GovernedExecutionPage } from "@/pages/GovernedExecutionPage";
 import { IncidentPackagesPage } from "@/pages/IncidentPackagesPage";
 import { LaunchReadinessPage } from "@/pages/LaunchReadinessPage";
 import { LoansPage } from "@/pages/LoansPage";
@@ -52,6 +53,7 @@ const navItems = [
   { label: "Incident Packages", path: "/incident-packages" },
   { label: "Lending", path: "/lending" },
   { label: "Staking Governance", path: "/staking-governance" },
+  { label: "Governed Execution", path: "/governed-execution" },
   { label: "Solvency", path: "/solvency" },
   { label: "Reconciliation", path: "/reconciliation" },
   { label: "Treasury", path: "/treasury" },
@@ -151,6 +153,7 @@ function AdminConsole() {
         <Route path="/incident-packages" element={<IncidentPackagesPage />} />
         <Route path="/lending" element={<LoansPage />} />
         <Route path="/staking-governance" element={<StakingGovernancePage />} />
+        <Route path="/governed-execution" element={<GovernedExecutionPage />} />
         <Route path="/solvency" element={<SolvencyPage />} />
         <Route path="/reconciliation" element={<ReconciliationPage />} />
         <Route path="/treasury" element={<TreasuryPage />} />

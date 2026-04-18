@@ -15,6 +15,8 @@ const Wallet = lazy(() => import("./pages/Wallet"));
 const Loans = lazy(() => import("./pages/Loans"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Yield = lazy(() => import("./pages/Yield"));
+const TrustCenter = lazy(() => import("./pages/TrustCenter"));
+const ProofVerification = lazy(() => import("./pages/ProofVerification"));
 const SignIn = lazy(() => import("./pages/auth/SignIn"));
 const SignUp = lazy(() => import("./pages/auth/SignUp"));
 
@@ -61,6 +63,10 @@ const App = () => (
           <Routes>
             <Route path="/auth/sign-in" element={withRouteBoundary(<SignIn />)} />
             <Route path="/auth/sign-up" element={withRouteBoundary(<SignUp />)} />
+            <Route
+              path="/trust/solvency"
+              element={withRouteBoundary(<TrustCenter />)}
+            />
 
             <Route
               path="/"
@@ -102,6 +108,12 @@ const App = () => (
               path="/profile"
               element={
                 <ProtectedRoute>{withRouteBoundary(<Profile />)}</ProtectedRoute>
+              }
+            />
+            <Route
+              path="/proofs/me"
+              element={
+                <ProtectedRoute>{withRouteBoundary(<ProofVerification />)}</ProtectedRoute>
               }
             />
             <Route path="/create-pool" element={<Navigate to="/yield" replace />} />

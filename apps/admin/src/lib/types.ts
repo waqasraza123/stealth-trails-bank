@@ -577,6 +577,90 @@ export type TreasuryOverview = {
   }>;
 };
 
+export type GovernedExecutionWorkspace = {
+  generatedAt: string;
+  environment: string;
+  policy: {
+    governedExecutionRequiredInProduction: boolean;
+    governedReserveCustodyTypes: string[];
+    loanFundingExecutionMode: string;
+    stakingWriteExecutionMode: string;
+    overrideMaxHours: number;
+  };
+  posture: {
+    status: "healthy" | "warning" | "critical";
+    reasons: Array<{
+      code: string;
+      severity: "warning" | "critical";
+      summary: string;
+    }>;
+    totalReserveWalletCount: number;
+    governedReserveWalletCount: number;
+    unsafeReserveWalletCount: number;
+    contractControlledReserveWalletCount: number;
+    multisigControlledReserveWalletCount: number;
+    policyControlledReadyWorkerCount: number;
+    managedWorkerCount: number;
+    activeApprovedOverrideCount: number;
+    pendingOverrideCount: number;
+  };
+  reserveWallets: Array<{
+    id: string;
+    chainId: number;
+    address: string;
+    kind: string;
+    custodyType: string;
+    status: string;
+    governanceStatus: "governed" | "unsafe";
+    governanceReason: string;
+    customerAssignment: {
+      customerAccountId: string;
+      accountStatus: string;
+      email: string | null;
+      supabaseUserId: string | null;
+    } | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  latestPendingOverrideRequest: GovernedExecutionOverrideRequest | null;
+  activeApprovedOverrides: GovernedExecutionOverrideRequest[];
+  recentOverrideRequests: GovernedExecutionOverrideRequest[];
+  governance: {
+    currentOperator: {
+      operatorId: string | null;
+      operatorRole: string | null;
+      canRequestOverride: boolean;
+      canApproveOverride: boolean;
+    };
+    requestAllowedOperatorRoles: string[];
+    approverAllowedOperatorRoles: string[];
+  };
+};
+
+export type GovernedExecutionOverrideRequest = {
+  id: string;
+  environment: string;
+  status: string;
+  allowUnsafeWithdrawalExecution: boolean;
+  allowDirectLoanFunding: boolean;
+  allowDirectStakingWrites: boolean;
+  reasonCode: string;
+  requestNote: string | null;
+  requestedByOperatorId: string;
+  requestedByOperatorRole: string;
+  requestedAt: string;
+  expiresAt: string;
+  approvedByOperatorId: string | null;
+  approvedByOperatorRole: string | null;
+  approvalNote: string | null;
+  approvedAt: string | null;
+  rejectedByOperatorId: string | null;
+  rejectedByOperatorRole: string | null;
+  rejectionNote: string | null;
+  rejectedAt: string | null;
+  updatedAt: string;
+};
+
 export type SolvencyWorkspace = {
   generatedAt: string;
   policyState: {
@@ -592,9 +676,44 @@ export type SolvencyWorkspace = {
     clearedAt: string | null;
     reasonCode: string | null;
     reasonSummary: string | null;
+    manualResumeRequired: boolean;
+    manualResumeRequestedAt: string | null;
+    manualResumeApprovedAt: string | null;
+    manualResumeApprovedByOperatorId: string | null;
+    manualResumeApprovedByOperatorRole: string | null;
     metadata: JsonValue | null;
     updatedAt: string;
   };
+  resumeGovernance: {
+    requestAllowedOperatorRoles: string[];
+    approverAllowedOperatorRoles: string[];
+    currentOperator: {
+      operatorId: string | null;
+      operatorRole: string | null;
+      canRequestResume: boolean;
+      canApproveResume: boolean;
+    };
+  };
+  latestPendingResumeRequest: {
+    id: string;
+    environment: string;
+    snapshotId: string;
+    status: string;
+    requestedByOperatorId: string;
+    requestedByOperatorRole: string;
+    requestNote: string | null;
+    expectedPolicyUpdatedAt: string;
+    requestedAt: string;
+    approvedByOperatorId: string | null;
+    approvedByOperatorRole: string | null;
+    approvalNote: string | null;
+    approvedAt: string | null;
+    rejectedByOperatorId: string | null;
+    rejectedByOperatorRole: string | null;
+    rejectionNote: string | null;
+    rejectedAt: string | null;
+    updatedAt: string;
+  } | null;
   latestSnapshot: {
     id: string;
     environment: string;
@@ -612,6 +731,21 @@ export type SolvencyWorkspace = {
     policyActionsTriggered: boolean;
     failureCode: string | null;
     failureMessage: string | null;
+    report: {
+      id: string;
+      snapshotId: string;
+      environment: string;
+      chainId: number;
+      reportVersion: number;
+      reportHash: string;
+      reportChecksumSha256: string;
+      canonicalPayload: JsonValue | null;
+      canonicalPayloadText: string;
+      signature: string;
+      signatureAlgorithm: string;
+      signerAddress: string;
+      publishedAt: string;
+    } | null;
   } | null;
   latestHealthySnapshotAt: string | null;
   recentSnapshots: Array<{
@@ -627,11 +761,26 @@ export type SolvencyWorkspace = {
     totalEncumberedReserveAmount: string;
     totalReserveDeltaAmount: string;
     assetCount: number;
-    issueCount: number;
-    policyActionsTriggered: boolean;
-    failureCode: string | null;
-    failureMessage: string | null;
-  }>;
+      issueCount: number;
+      policyActionsTriggered: boolean;
+      failureCode: string | null;
+      failureMessage: string | null;
+      report: {
+        id: string;
+        snapshotId: string;
+        environment: string;
+        chainId: number;
+        reportVersion: number;
+        reportHash: string;
+        reportChecksumSha256: string;
+        canonicalPayload: JsonValue | null;
+        canonicalPayloadText: string;
+        signature: string;
+        signatureAlgorithm: string;
+        signerAddress: string;
+        publishedAt: string;
+      } | null;
+    }>;
   limit: number;
 };
 
@@ -653,10 +802,26 @@ export type SolvencySnapshotDetail = {
     policyActionsTriggered: boolean;
     failureCode: string | null;
     failureMessage: string | null;
+    report: {
+      id: string;
+      snapshotId: string;
+      environment: string;
+      chainId: number;
+      reportVersion: number;
+      reportHash: string;
+      reportChecksumSha256: string;
+      canonicalPayload: JsonValue | null;
+      canonicalPayloadText: string;
+      signature: string;
+      signatureAlgorithm: string;
+      signerAddress: string;
+      publishedAt: string;
+    } | null;
     summarySnapshot: JsonValue | null;
     policyActionSnapshot: JsonValue | null;
   };
   policyState: SolvencyWorkspace["policyState"];
+  latestPendingResumeRequest: SolvencyWorkspace["latestPendingResumeRequest"];
   assetSnapshots: Array<{
     asset: {
       id: string;
@@ -683,6 +848,9 @@ export type SolvencySnapshotDetail = {
     openReconciliationMismatchCount: number;
     criticalReconciliationMismatchCount: number;
     issueCount: number;
+    liabilityMerkleRoot: string | null;
+    liabilityLeafCount: number;
+    liabilitySetChecksumSha256: string | null;
     summarySnapshot: JsonValue | null;
   }>;
   issues: Array<{

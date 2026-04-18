@@ -188,7 +188,11 @@ export async function startWorkerRuntime(): Promise<void> {
           reconciliationScanIntervalMs: runtime.reconciliationScanIntervalMs,
           solvencySnapshotIntervalMs: runtime.solvencySnapshotIntervalMs,
           platformAlertReEscalationIntervalMs:
-            runtime.platformAlertReEscalationIntervalMs
+            runtime.platformAlertReEscalationIntervalMs,
+          policyControlledWithdrawalReady: Boolean(
+            runtime.policyControlledWithdrawalExecutorPrivateKey &&
+              runtime.policyControlledWithdrawalPolicySignerPrivateKey
+          )
         }
       }
     });
@@ -340,7 +344,11 @@ export async function startWorkerRuntime(): Promise<void> {
             reconciliationScanIntervalMs: runtime.reconciliationScanIntervalMs,
             solvencySnapshotIntervalMs: runtime.solvencySnapshotIntervalMs,
             platformAlertReEscalationIntervalMs:
-              runtime.platformAlertReEscalationIntervalMs
+              runtime.platformAlertReEscalationIntervalMs,
+            policyControlledWithdrawalReady: Boolean(
+              runtime.policyControlledWithdrawalExecutorPrivateKey &&
+                runtime.policyControlledWithdrawalPolicySignerPrivateKey
+            )
           },
           latestIterationMetrics: iterationMetrics,
           lastIterationDurationMs:
@@ -410,7 +418,11 @@ export async function startWorkerRuntime(): Promise<void> {
             reconciliationScanIntervalMs: runtime.reconciliationScanIntervalMs,
             solvencySnapshotIntervalMs: runtime.solvencySnapshotIntervalMs,
             platformAlertReEscalationIntervalMs:
-              runtime.platformAlertReEscalationIntervalMs
+              runtime.platformAlertReEscalationIntervalMs,
+            policyControlledWithdrawalReady: Boolean(
+              runtime.policyControlledWithdrawalExecutorPrivateKey &&
+                runtime.policyControlledWithdrawalPolicySignerPrivateKey
+            )
           },
           latestIterationMetrics: iterationMetrics ?? undefined,
           lastIterationDurationMs: Date.now() - iterationStartedAt.getTime()

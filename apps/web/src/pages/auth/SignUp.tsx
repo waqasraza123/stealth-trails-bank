@@ -7,6 +7,7 @@ import {
 } from "@/components/auth/auth-content";
 import { LoadingButton } from "@/components/ui/loading-button";
 import { Input } from "@/components/ui/input";
+import { useLocale } from "@/i18n/use-locale";
 import { useT } from "@/i18n/use-t";
 import { toast } from "@/components/ui/use-toast";
 import useAuth from "@/hooks/auth/useAuth";
@@ -15,6 +16,7 @@ import { useUserStore } from "@/stores/userStore";
 const SignUp = () => {
   const { signup, loading, error } = useAuth();
   const t = useT();
+  const { locale } = useLocale();
   const signUpCopy = getSignUpCopy(t);
   const authCredibilityChips = getAuthCredibilityChips(t);
   const [formData, setFormData] = useState({
@@ -63,15 +65,27 @@ const SignUp = () => {
       brandDescription={signUpCopy.brandDescription}
       chips={authCredibilityChips}
       footer={
-        <p className="text-center">
-          {t("auth.signUp.footerPrefix")}{" "}
-          <Link
-            to="/auth/sign-in"
-            className="font-semibold text-auth-form-accent transition-colors hover:text-[hsl(var(--auth-form-foreground))]"
-          >
-            {t("auth.signUp.footerLink")}
-          </Link>
-        </p>
+        <div className="space-y-2 text-center">
+          <p>
+            {t("auth.signUp.footerPrefix")}{" "}
+            <Link
+              to="/auth/sign-in"
+              className="font-semibold text-auth-form-accent transition-colors hover:text-[hsl(var(--auth-form-foreground))]"
+            >
+              {t("auth.signUp.footerLink")}
+            </Link>
+          </p>
+          <p>
+            <Link
+              to="/trust/solvency"
+              className="font-semibold text-auth-form-accent transition-colors hover:text-[hsl(var(--auth-form-foreground))]"
+            >
+              {locale === "ar"
+                ? "عرض مركز الثقة العام"
+                : "View the public trust center"}
+            </Link>
+          </p>
+        </div>
       }
     >
       <form className="space-y-5" onSubmit={handleSubmit}>

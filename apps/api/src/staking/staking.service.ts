@@ -29,6 +29,7 @@ import {
   type CustomerAccountProjection,
   type CustomerWalletProjection
 } from "../auth/auth.service";
+import { GovernedExecutionService } from "../governed-execution/governed-execution.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { PrismaJsonValue } from "../prisma/prisma-json";
 import { SolvencyService } from "../solvency/solvency.service";
@@ -130,7 +131,12 @@ export class StakingService {
     private readonly prismaService: PrismaService,
     private readonly authService: AuthService,
     @Optional()
-    private readonly solvencyService?: Pick<SolvencyService, "assertStakingWritesAllowed">
+    private readonly solvencyService?: Pick<SolvencyService, "assertStakingWritesAllowed">,
+    @Optional()
+    private readonly governedExecutionService?: Pick<
+      GovernedExecutionService,
+      "assertStakingWriteExecutionAllowed"
+    >
   ) {
     const runtimeConfig = loadOptionalBlockchainContractWriteRuntimeConfig();
 
@@ -691,6 +697,7 @@ export class StakingService {
     supabaseUserId: string
   ): Promise<CustomJsonResponse> {
     await this.solvencyService?.assertStakingWritesAllowed?.();
+    await this.governedExecutionService?.assertStakingWriteExecutionAllowed?.();
     const context = await this.getCustomerStakingContext(supabaseUserId);
     const actor: StakingAuditActor = {
       actorType: "customer",
@@ -818,6 +825,7 @@ export class StakingService {
     supabaseUserId: string
   ): Promise<CustomJsonResponse> {
     await this.solvencyService?.assertStakingWritesAllowed?.();
+    await this.governedExecutionService?.assertStakingWriteExecutionAllowed?.();
     const context = await this.getCustomerStakingContext(supabaseUserId);
     const actor: StakingAuditActor = {
       actorType: "customer",
@@ -955,6 +963,7 @@ export class StakingService {
     supabaseUserId: string
   ): Promise<CustomJsonResponse> {
     await this.solvencyService?.assertStakingWritesAllowed?.();
+    await this.governedExecutionService?.assertStakingWriteExecutionAllowed?.();
     const context = await this.getCustomerStakingContext(supabaseUserId);
     const actor: StakingAuditActor = {
       actorType: "customer",
@@ -1039,6 +1048,7 @@ export class StakingService {
     supabaseUserId: string
   ): Promise<CustomJsonResponse> {
     await this.solvencyService?.assertStakingWritesAllowed?.();
+    await this.governedExecutionService?.assertStakingWriteExecutionAllowed?.();
     const context = await this.getCustomerStakingContext(supabaseUserId);
     const actor: StakingAuditActor = {
       actorType: "customer",

@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import { render } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, type MemoryRouterProps } from "react-router-dom";
 import { WebI18nProvider } from "@/i18n/provider";
 import { routerFuture } from "@/lib/router-future";
@@ -15,13 +16,23 @@ export function renderWithRouter(
   element: ReactElement,
   options?: RenderWithRouterOptions,
 ) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false
+      }
+    }
+  });
+
   return render(element, {
     wrapper: ({ children }) => (
-      <WebI18nProvider>
-        <MemoryRouter future={testRouterFuture} {...options}>
-          {children}
-        </MemoryRouter>
-      </WebI18nProvider>
+      <QueryClientProvider client={queryClient}>
+        <WebI18nProvider>
+          <MemoryRouter future={testRouterFuture} {...options}>
+            {children}
+          </MemoryRouter>
+        </WebI18nProvider>
+      </QueryClientProvider>
     )
   });
 }

@@ -30,7 +30,11 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
     environment: "production",
     evidenceStaleAfterSeconds: 300,
     warningReserveRatioBps: 10500,
-    criticalReserveRatioBps: 10000
+    criticalReserveRatioBps: 10000,
+    reportSignerPrivateKey:
+      "0x59c6995e998f97a5a0044966f0945384d8f6d6e74a09a3db9e8f4c7a89f5f001",
+    resumeRequestAllowedOperatorRoles: ["operations_admin"],
+    resumeApproverAllowedOperatorRoles: ["operations_admin", "compliance_admin"]
   }),
   loadOptionalBlockchainContractReadRuntimeConfig: () => ({
     rpcUrl: "https://rpc.example.com"
@@ -80,6 +84,21 @@ type ScenarioInput = {
     completedAt: Date | null;
     failureCode: string | null;
     failureMessage: string | null;
+    reports?: Array<{
+      id: string;
+      snapshotId: string;
+      environment: WorkerRuntimeEnvironment;
+      chainId: number;
+      reportVersion: number;
+      reportHash: string;
+      reportChecksumSha256: string;
+      canonicalPayload: Prisma.JsonValue | null;
+      canonicalPayloadText: string;
+      signature: string;
+      signatureAlgorithm: string;
+      signerAddress: string;
+      publishedAt: Date;
+    }>;
   }>;
 };
 
@@ -149,6 +168,8 @@ function createScenario(input: ScenarioInput) {
           {
             id: "ledger_available",
             assetId: asset.id,
+            chainId: 8453,
+            customerAccountId: "customer_account_1",
             accountType: LedgerAccountType.customer_asset_liability,
             ledgerPostings: [
               {
@@ -161,6 +182,8 @@ function createScenario(input: ScenarioInput) {
             ? {
                 id: "ledger_reserved",
                 assetId: asset.id,
+                chainId: 8453,
+                customerAccountId: "customer_account_1",
                 accountType:
                   LedgerAccountType.customer_asset_pending_withdrawal_liability,
                 ledgerPostings: [
@@ -177,6 +200,8 @@ function createScenario(input: ScenarioInput) {
     customerAssetBalance: {
       findMany: jest.fn().mockResolvedValue([
         {
+          customerAccountId: "customer_account_1",
+          assetId: asset.id,
           asset: {
             id: asset.id
           },
@@ -239,6 +264,21 @@ function createScenario(input: ScenarioInput) {
       findUnique: jest.fn(),
       update: jest.fn()
     },
+    customerAccount: {
+      findFirst: jest.fn().mockResolvedValue({
+        id: "customer_account_1"
+      })
+    },
+    solvencyLiabilityLeaf: {
+      findMany: jest.fn()
+    },
+    solvencyReport: {
+      findFirst: jest.fn()
+    },
+    solvencyPolicyResumeRequest: {
+      findFirst: jest.fn(),
+      findUnique: jest.fn()
+    },
     solvencyPolicyState: {
       findUnique: jest.fn()
     },
@@ -263,6 +303,11 @@ function createScenario(input: ScenarioInput) {
       clearedAt: null,
       reasonCode: null,
       reasonSummary: null,
+      manualResumeRequired: false,
+      manualResumeRequestedAt: null,
+      manualResumeApprovedAt: null,
+      manualResumeApprovedByOperatorId: null,
+      manualResumeApprovedByOperatorRole: null,
       metadata: null,
       updatedAt: new Date("2026-04-18T11:59:00.000Z")
     }
@@ -270,6 +315,9 @@ function createScenario(input: ScenarioInput) {
   const persistedSnapshot: { current: Record<string, unknown> | null } = {
     current: null
   };
+  const persistedLiabilityLeaves: Array<Record<string, unknown>> = [];
+  const persistedReports: Array<Record<string, unknown>> = [];
+  const persistedResumeRequests: Array<Record<string, unknown>> = [];
   const transactionClient = {
     solvencySnapshot: {
       update: jest.fn().mockImplementation(async ({ where, data }) => {
@@ -296,17 +344,53 @@ function createScenario(input: ScenarioInput) {
           summarySnapshot: data.summarySnapshot ?? null,
           policyActionSnapshot: data.policyActionSnapshot ?? null,
           failureCode: data.failureCode ?? null,
-          failureMessage: data.failureMessage ?? null
+          failureMessage: data.failureMessage ?? null,
+          reports: [...persistedReports],
+          assetSnapshots: [],
+          issues: [],
+          reserveEvidence: []
         };
 
         return persistedSnapshot.current;
       }),
       findUniqueOrThrow: jest
         .fn()
-        .mockImplementation(async () => persistedSnapshot.current)
+        .mockImplementation(async () =>
+          persistedSnapshot.current
+            ? {
+                ...persistedSnapshot.current,
+                reports: [...persistedReports]
+              }
+            : null
+        ),
+      findUnique: jest.fn().mockImplementation(async ({ where }) =>
+        persistedSnapshot.current && persistedSnapshot.current.id === where.id
+          ? {
+              ...persistedSnapshot.current,
+              reports: [...persistedReports]
+            }
+          : null
+      )
     },
     solvencyAssetSnapshot: {
       createMany: jest.fn().mockResolvedValue({ count: 1 })
+    },
+    solvencyLiabilityLeaf: {
+      createMany: jest.fn().mockImplementation(async ({ data }) => {
+        persistedLiabilityLeaves.push(...data);
+        return { count: data.length };
+      })
+    },
+    solvencyReport: {
+      create: jest.fn().mockImplementation(async ({ data }) => {
+        const record = {
+          id: "report_1",
+          createdAt: new Date("2026-04-18T12:00:01.000Z"),
+          ...data
+        };
+        persistedReports.splice(0, persistedReports.length, record);
+        return record;
+      })
     },
     solvencyReserveEvidence: {
       createMany: jest.fn().mockResolvedValue({ count: reserveWallets.length })
@@ -336,6 +420,74 @@ function createScenario(input: ScenarioInput) {
         return persistedState.current;
       })
     },
+    solvencyPolicyResumeRequest: {
+      findUnique: jest.fn().mockImplementation(async ({ where }) =>
+        persistedResumeRequests.find((item) => item.id === where.id) ?? null
+      ),
+      create: jest.fn().mockImplementation(async ({ data }) => {
+        const record = {
+          id: `resume_request_${persistedResumeRequests.length + 1}`,
+          requestedAt: new Date("2026-04-18T12:00:02.000Z"),
+          approvedByOperatorId: null,
+          approvedByOperatorRole: null,
+          approvalNote: null,
+          approvedAt: null,
+          rejectedByOperatorId: null,
+          rejectedByOperatorRole: null,
+          rejectionNote: null,
+          rejectedAt: null,
+          createdAt: new Date("2026-04-18T12:00:02.000Z"),
+          updatedAt: new Date("2026-04-18T12:00:02.000Z"),
+          ...data
+        };
+        persistedResumeRequests.push(record);
+        return record;
+      }),
+      update: jest.fn().mockImplementation(async ({ where, data }) => {
+        const index = persistedResumeRequests.findIndex((item) => item.id === where.id);
+        if (index === -1) {
+          return null;
+        }
+
+        persistedResumeRequests[index] = {
+          ...persistedResumeRequests[index],
+          ...data,
+          updatedAt: new Date("2026-04-18T12:00:03.000Z")
+        };
+        return persistedResumeRequests[index];
+      }),
+      updateMany: jest.fn().mockImplementation(async ({ where, data }) => {
+        let count = 0;
+        persistedResumeRequests.forEach((item, index) => {
+          if (
+            item.environment === where.environment &&
+            item.status === where.status
+          ) {
+            persistedResumeRequests[index] = {
+              ...item,
+              ...data,
+              updatedAt: new Date("2026-04-18T12:00:03.000Z")
+            };
+            count += 1;
+          }
+        });
+        return { count };
+      }),
+      findFirst: jest.fn().mockImplementation(async ({ where }) => {
+        const records = persistedResumeRequests
+          .filter(
+            (item) =>
+              item.environment === where.environment &&
+              item.status === where.status
+          )
+          .sort(
+            (left, right) =>
+              new Date(String(right.requestedAt)).getTime() -
+              new Date(String(left.requestedAt)).getTime()
+          );
+        return records[0] ?? null;
+      })
+    },
     auditEvent: {
       create: jest.fn().mockResolvedValue({})
     }
@@ -350,6 +502,25 @@ function createScenario(input: ScenarioInput) {
   );
   (prismaService.solvencySnapshot.findFirst as jest.Mock).mockImplementation(
     async ({ where }) => {
+      if (persistedSnapshot.current) {
+        if (where?.id && persistedSnapshot.current.id !== where.id) {
+          return null;
+        }
+
+        if (where?.status && persistedSnapshot.current.status !== where.status) {
+          return null;
+        }
+
+        if (where?.reports?.some && persistedReports.length === 0) {
+          return null;
+        }
+
+        return {
+          ...persistedSnapshot.current,
+          reports: [...persistedReports]
+        };
+      }
+
       if (!input.workspaceSnapshots) {
         return null;
       }
@@ -366,6 +537,61 @@ function createScenario(input: ScenarioInput) {
   );
   (prismaService.solvencySnapshot.findMany as jest.Mock).mockImplementation(
     async () => input.workspaceSnapshots ?? []
+  );
+  (prismaService.solvencySnapshot.findUnique as jest.Mock).mockImplementation(
+    async ({ where }) => {
+      if (persistedSnapshot.current && persistedSnapshot.current.id === where.id) {
+        return {
+          ...persistedSnapshot.current,
+          reports: [...persistedReports],
+          assetSnapshots: [],
+          issues: [],
+          reserveEvidence: []
+        };
+      }
+
+      return (
+        input.workspaceSnapshots?.find((snapshot) => snapshot.id === where.id) ?? null
+      );
+    }
+  );
+  (prismaService.solvencyLiabilityLeaf.findMany as jest.Mock).mockImplementation(
+    async ({ where }) => {
+      const rows = persistedLiabilityLeaves.filter((item) => {
+        if (item.snapshotId !== where.snapshotId) {
+          return false;
+        }
+
+        if (where.customerAccountId && item.customerAccountId !== where.customerAccountId) {
+          return false;
+        }
+
+        return true;
+      });
+
+      return rows.map((item) => ({
+        ...item,
+        asset: {
+          id: asset.id,
+          symbol: asset.symbol,
+          displayName: asset.displayName,
+          decimals: asset.decimals,
+          chainId: asset.chainId,
+          assetType: asset.assetType
+        }
+      }));
+    }
+  );
+  (prismaService.solvencyPolicyResumeRequest.findFirst as jest.Mock).mockImplementation(
+    async ({ where }) =>
+      persistedResumeRequests.find(
+        (item) =>
+          item.environment === where.environment && item.status === where.status
+      ) ?? null
+  );
+  (prismaService.solvencyPolicyResumeRequest.findUnique as jest.Mock).mockImplementation(
+    async ({ where }) =>
+      persistedResumeRequests.find((item) => item.id === where.id) ?? null
   );
 
   mockProvider.getBalance.mockImplementation(async (walletAddress: string) => {
@@ -396,8 +622,11 @@ function createScenario(input: ScenarioInput) {
 
   return {
     service: new SolvencyService(prismaService, reviewCasesService),
+    prismaService,
     transactionClient,
-    reviewCasesService
+    reviewCasesService,
+    persistedReports,
+    persistedResumeRequests
   };
 }
 
@@ -422,9 +651,19 @@ describe("SolvencyService", () => {
     const createdAssetRow =
       (transactionClient.solvencyAssetSnapshot.createMany as jest.Mock).mock
         .calls[0][0].data[0];
+    const createdLiabilityLeaf =
+      (transactionClient.solvencyLiabilityLeaf.createMany as jest.Mock).mock
+        .calls[0][0].data[0];
+    const createdReport = (transactionClient.solvencyReport.create as jest.Mock).mock
+      .calls[0][0].data;
 
     expect(createdAssetRow.totalLiabilityAmount.toString()).toBe("10");
     expect(createdAssetRow.usableReserveAmount.toString()).toBe("12");
+    expect(createdAssetRow.liabilityLeafCount).toBe(1);
+    expect(createdAssetRow.liabilityMerkleRoot).toBeTruthy();
+    expect(createdLiabilityLeaf.leafIndex).toBe(0);
+    expect(createdReport.reportHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(createdReport.signature).toMatch(/^0x[0-9a-f]+$/);
     expect(result.snapshot.status).toBe(SolvencySnapshotStatus.healthy);
     expect(result.policyState.status).toBe(SolvencyPolicyStateStatus.normal);
     expect(result.issueCount).toBe(0);
@@ -493,6 +732,7 @@ describe("SolvencyService", () => {
     expect(policyUpdate.pauseStakingWrites).toBe(true);
     expect(result.snapshot.status).toBe(SolvencySnapshotStatus.critical);
     expect(result.policyState.status).toBe(SolvencyPolicyStateStatus.paused);
+    expect(result.policyState.manualResumeRequired).toBe(true);
     expect(reviewCasesService.openOrReuseReviewCase).toHaveBeenCalledTimes(1);
   });
 
@@ -630,5 +870,100 @@ describe("SolvencyService", () => {
     expect(workspace.latestHealthySnapshotAt).toBe("2026-04-18T11:00:00.000Z");
     expect(workspace.recentSnapshots).toHaveLength(2);
     expect(workspace.limit).toBe(5);
+  });
+
+  it("returns customer liability inclusion proofs from persisted liability leaves", async () => {
+    const { service } = createScenario({
+      ledgerAvailableAmount: "10",
+      reserveBalancesByWalletId: {
+        wallet_treasury_1: "12"
+      }
+    });
+
+    const generated = await service.generateSnapshot({
+      actorType: "worker",
+      actorId: "worker_1"
+    });
+    const proof = await service.getCustomerLiabilityInclusionProof(
+      "supabase_user_1",
+      generated.snapshot.id
+    );
+
+    expect(proof.snapshot.id).toBe(generated.snapshot.id);
+    expect(proof.report.reportHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(proof.proofs).toHaveLength(1);
+    expect(proof.proofs[0]?.payload.totalLiabilityAmount).toBe("10");
+    expect(proof.proofs[0]?.rootHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(Array.isArray(proof.proofs[0]?.proof)).toBe(true);
+  });
+
+  it("holds paused policy controls until a governed manual resume is approved", async () => {
+    const { service } = createScenario({
+      ledgerAvailableAmount: "10",
+      reserveBalancesByWalletId: {
+        wallet_treasury_1: "8"
+      }
+    });
+
+    await service.generateSnapshot({
+      actorType: "worker",
+      actorId: "worker_1"
+    });
+
+    mockProvider.getBalance.mockResolvedValueOnce(
+      ethers.utils.parseUnits("12", 18)
+    );
+    const secondResult = await service.generateSnapshot({
+      actorType: "worker",
+      actorId: "worker_1"
+    });
+
+    expect(secondResult.snapshot.status).toBe(SolvencySnapshotStatus.healthy);
+    expect(secondResult.policyState.status).toBe(SolvencyPolicyStateStatus.paused);
+    expect(secondResult.policyState.manualResumeRequired).toBe(true);
+  });
+
+  it("creates and approves governed manual resume requests with dual control", async () => {
+    const { service, persistedResumeRequests } = createScenario({
+      ledgerAvailableAmount: "10",
+      reserveBalancesByWalletId: {
+        wallet_treasury_1: "8"
+      }
+    });
+
+    await service.generateSnapshot({
+      actorType: "worker",
+      actorId: "worker_1"
+    });
+
+    mockProvider.getBalance.mockResolvedValueOnce(
+      ethers.utils.parseUnits("12", 18)
+    );
+    const healthy = await service.generateSnapshot({
+      actorType: "worker",
+      actorId: "worker_1"
+    });
+
+    const requested = await service.requestPolicyResume(
+      healthy.snapshot.id,
+      healthy.policyState.updatedAt,
+      "Reviewed signed snapshot",
+      "operator_requester",
+      "operations_admin"
+    );
+
+    expect(requested.request.status).toBe("pending_approval");
+    expect(persistedResumeRequests).toHaveLength(1);
+
+    const approved = await service.approvePolicyResume(
+      requested.request.id,
+      "Second operator approved",
+      "operator_approver",
+      "compliance_admin"
+    );
+
+    expect(approved.request.status).toBe("approved");
+    expect(approved.policyState.status).toBe(SolvencyPolicyStateStatus.normal);
+    expect(approved.policyState.manualResumeRequired).toBe(false);
   });
 });

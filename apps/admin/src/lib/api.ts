@@ -10,6 +10,8 @@ import type {
   ApplyManualResolutionResult,
   CriticalPlatformAlertRoutingResult,
   CustomerAccountOperationsTimeline,
+  GovernedExecutionOverrideRequest,
+  GovernedExecutionWorkspace,
   GovernedIncidentPackageExport,
   IncidentPackageReleaseList,
   IncidentPackageReleaseMutationResult,
@@ -123,6 +125,70 @@ export async function getTreasuryOverview(
   });
 }
 
+export async function getGovernedExecutionWorkspace(
+  session: OperatorSession
+): Promise<GovernedExecutionWorkspace> {
+  return requestData(session, {
+    method: "GET",
+    url: "/governed-execution/internal/workspace"
+  });
+}
+
+export async function requestGovernedExecutionOverride(
+  session: OperatorSession,
+  payload: {
+    allowUnsafeWithdrawalExecution?: boolean;
+    allowDirectLoanFunding?: boolean;
+    allowDirectStakingWrites?: boolean;
+    reasonCode: string;
+    requestNote?: string;
+    expiresInHours: number;
+  }
+): Promise<{
+  request: GovernedExecutionOverrideRequest;
+  workspace: GovernedExecutionWorkspace;
+}> {
+  return requestData(session, {
+    method: "POST",
+    url: "/governed-execution/internal/override-requests",
+    data: payload
+  });
+}
+
+export async function approveGovernedExecutionOverride(
+  session: OperatorSession,
+  requestId: string,
+  payload: {
+    approvalNote?: string;
+  }
+): Promise<{
+  request: GovernedExecutionOverrideRequest;
+  workspace: GovernedExecutionWorkspace;
+}> {
+  return requestData(session, {
+    method: "POST",
+    url: `/governed-execution/internal/override-requests/${requestId}/approve`,
+    data: payload
+  });
+}
+
+export async function rejectGovernedExecutionOverride(
+  session: OperatorSession,
+  requestId: string,
+  payload: {
+    rejectionNote?: string;
+  }
+): Promise<{
+  request: GovernedExecutionOverrideRequest;
+  workspace: GovernedExecutionWorkspace;
+}> {
+  return requestData(session, {
+    method: "POST",
+    url: `/governed-execution/internal/override-requests/${requestId}/reject`,
+    data: payload
+  });
+}
+
 export async function getSolvencyWorkspace(
   session: OperatorSession,
   params: Record<string, string | number | undefined>
@@ -155,6 +221,58 @@ export async function runSolvencySnapshot(
   return requestData(session, {
     method: "POST",
     url: "/solvency/internal/snapshots/run"
+  });
+}
+
+export async function requestSolvencyPolicyResume(
+  session: OperatorSession,
+  payload: {
+    snapshotId: string;
+    expectedPolicyUpdatedAt: string;
+    requestNote?: string;
+  }
+): Promise<{
+  policyState: SolvencyWorkspace["policyState"];
+  request: NonNullable<SolvencyWorkspace["latestPendingResumeRequest"]>;
+}> {
+  return requestData(session, {
+    method: "POST",
+    url: "/solvency/internal/policy-resume-requests",
+    data: payload
+  });
+}
+
+export async function approveSolvencyPolicyResume(
+  session: OperatorSession,
+  requestId: string,
+  payload: {
+    approvalNote?: string;
+  }
+): Promise<{
+  policyState: SolvencyWorkspace["policyState"];
+  request: NonNullable<SolvencyWorkspace["latestPendingResumeRequest"]>;
+}> {
+  return requestData(session, {
+    method: "POST",
+    url: `/solvency/internal/policy-resume-requests/${requestId}/approve`,
+    data: payload
+  });
+}
+
+export async function rejectSolvencyPolicyResume(
+  session: OperatorSession,
+  requestId: string,
+  payload: {
+    rejectionNote?: string;
+  }
+): Promise<{
+  policyState: SolvencyWorkspace["policyState"];
+  request: NonNullable<SolvencyWorkspace["latestPendingResumeRequest"]>;
+}> {
+  return requestData(session, {
+    method: "POST",
+    url: `/solvency/internal/policy-resume-requests/${requestId}/reject`,
+    data: payload
   });
 }
 

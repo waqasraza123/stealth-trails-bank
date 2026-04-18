@@ -72,6 +72,7 @@ model CustomerAccount {
   loanApplications                LoanApplication[]
   loanAgreements                  LoanAgreement[]
   loanStatements                  LoanStatement[]
+  solvencyLiabilityLeaves         SolvencyLiabilityLeaf[]
 }
 
 model Wallet {
@@ -124,6 +125,7 @@ model Asset {
   collateralizedLoanAgreements LoanAgreement[] @relation("LoanCollateralAsset")
   loanCollateralPositions LoanCollateralPosition[]
   loanRepaymentEvents LoanRepaymentEvent[] @relation("LoanRepaymentAsset")
+  solvencyLiabilityLeaves SolvencyLiabilityLeaf[]
 }
 
 model TransactionIntent {
@@ -524,6 +526,19 @@ enum SolvencyPolicyStateStatus {
   paused
 }
 
+enum SolvencyPolicyResumeRequestStatus {
+  pending_approval
+  approved
+  rejected
+}
+
+enum GovernedExecutionOverrideRequestStatus {
+  pending_approval
+  approved
+  rejected
+  expired
+}
+
 model SolvencySnapshot {
   id                         String                    @id @default(cuid())
   environment                WorkerRuntimeEnvironment
@@ -552,6 +567,9 @@ model SolvencySnapshot {
   issues                     SolvencyIssue[]
   reserveEvidence            SolvencyReserveEvidence[]
   policyStates               SolvencyPolicyState[]
+  liabilityLeaves            SolvencyLiabilityLeaf[]
+  reports                    SolvencyReport[]
+  resumeRequests             SolvencyPolicyResumeRequest[]
 
   @@index([environment, generatedAt])
   @@index([status, generatedAt])
@@ -582,12 +600,58 @@ model SolvencyAssetSnapshot {
   openReconciliationMismatchCount Int                  @default(0)
   criticalReconciliationMismatchCount Int              @default(0)
   issueCount                 Int                       @default(0)
+  liabilityMerkleRoot        String?
+  liabilityLeafCount         Int                       @default(0)
+  liabilitySetChecksumSha256 String?
   summarySnapshot            Json?
   createdAt                  DateTime                  @default(now())
 
   @@unique([snapshotId, assetId])
   @@index([assetId, createdAt])
   @@index([status, createdAt])
+}
+
+model SolvencyLiabilityLeaf {
+  id                       String           @id @default(cuid())
+  snapshotId               String
+  snapshot                 SolvencySnapshot @relation(fields: [snapshotId], references: [id])
+  assetId                  String
+  asset                    Asset            @relation(fields: [assetId], references: [id])
+  customerAccountId        String
+  customerAccount          CustomerAccount  @relation(fields: [customerAccountId], references: [id])
+  leafIndex                Int
+  availableLiabilityAmount Decimal          @default(0) @db.Decimal(36, 18)
+  reservedLiabilityAmount  Decimal          @default(0) @db.Decimal(36, 18)
+  pendingCreditAmount      Decimal          @default(0) @db.Decimal(36, 18)
+  totalLiabilityAmount     Decimal          @default(0) @db.Decimal(36, 18)
+  leafHash                 String
+  canonicalPayload         Json
+  createdAt                DateTime         @default(now())
+
+  @@unique([snapshotId, assetId, customerAccountId])
+  @@index([snapshotId, assetId, leafIndex])
+  @@index([customerAccountId, snapshotId])
+}
+
+model SolvencyReport {
+  id                     String                    @id @default(cuid())
+  snapshotId             String
+  snapshot               SolvencySnapshot          @relation(fields: [snapshotId], references: [id])
+  environment            WorkerRuntimeEnvironment
+  chainId                Int
+  reportVersion          Int                       @default(1)
+  reportHash             String                    @unique
+  reportChecksumSha256   String
+  canonicalPayload       Json
+  canonicalPayloadText   String
+  signature              String
+  signatureAlgorithm     String
+  signerAddress          String
+  publishedAt            DateTime                  @default(now())
+  createdAt              DateTime                  @default(now())
+
+  @@unique([snapshotId])
+  @@index([environment, publishedAt])
 }
 
 model SolvencyReserveEvidence {
@@ -654,12 +718,75 @@ model SolvencyPolicyState {
   clearedAt                  DateTime?
   reasonCode                 String?
   reasonSummary              String?
+  manualResumeRequired       Boolean                   @default(false)
+  manualResumeRequestedAt    DateTime?
+  manualResumeApprovedAt     DateTime?
+  manualResumeApprovedByOperatorId String?
+  manualResumeApprovedByOperatorRole String?
   metadata                   Json?
   createdAt                  DateTime                  @default(now())
   updatedAt                  DateTime                  @updatedAt
+  resumeRequests             SolvencyPolicyResumeRequest[]
 
   @@index([status, updatedAt])
   @@index([latestSnapshotId])
+}
+
+model SolvencyPolicyResumeRequest {
+  id                       String                           @id @default(cuid())
+  environment              WorkerRuntimeEnvironment
+  policyStateId            String
+  policyState              SolvencyPolicyState              @relation(fields: [policyStateId], references: [id])
+  snapshotId               String
+  snapshot                 SolvencySnapshot                 @relation(fields: [snapshotId], references: [id])
+  status                   SolvencyPolicyResumeRequestStatus
+  requestedByOperatorId    String
+  requestedByOperatorRole  String
+  requestNote              String?
+  expectedPolicyUpdatedAt  DateTime
+  requestedAt              DateTime                         @default(now())
+  approvedByOperatorId     String?
+  approvedByOperatorRole   String?
+  approvalNote             String?
+  approvedAt               DateTime?
+  rejectedByOperatorId     String?
+  rejectedByOperatorRole   String?
+  rejectionNote            String?
+  rejectedAt               DateTime?
+  createdAt                DateTime                         @default(now())
+  updatedAt                DateTime                         @updatedAt
+
+  @@index([environment, status, requestedAt])
+  @@index([policyStateId, status, requestedAt])
+  @@index([snapshotId, status, requestedAt])
+}
+
+model GovernedExecutionOverrideRequest {
+  id                             String                                @id @default(cuid())
+  environment                    WorkerRuntimeEnvironment
+  status                         GovernedExecutionOverrideRequestStatus
+  allowUnsafeWithdrawalExecution Boolean                               @default(false)
+  allowDirectLoanFunding         Boolean                               @default(false)
+  allowDirectStakingWrites       Boolean                               @default(false)
+  reasonCode                     String
+  requestNote                    String?
+  requestedByOperatorId          String
+  requestedByOperatorRole        String
+  requestedAt                    DateTime                              @default(now())
+  expiresAt                      DateTime
+  approvedByOperatorId           String?
+  approvedByOperatorRole         String?
+  approvalNote                   String?
+  approvedAt                     DateTime?
+  rejectedByOperatorId           String?
+  rejectedByOperatorRole         String?
+  rejectionNote                  String?
+  rejectedAt                     DateTime?
+  createdAt                      DateTime                              @default(now())
+  updatedAt                      DateTime                              @updatedAt
+
+  @@index([environment, status, requestedAt])
+  @@index([environment, status, expiresAt])
 }
 
 model LedgerReconciliationMismatch {

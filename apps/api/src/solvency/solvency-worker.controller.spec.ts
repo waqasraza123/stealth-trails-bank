@@ -57,6 +57,11 @@ describe("SolvencyWorkerController", () => {
         clearedAt: null,
         reasonCode: "reserve_evidence_stale",
         reasonSummary: "ETH reserve evidence is stale.",
+        manualResumeRequired: false,
+        manualResumeRequestedAt: null,
+        manualResumeApprovedAt: null,
+        manualResumeApprovedByOperatorId: null,
+        manualResumeApprovedByOperatorRole: null,
         metadata: null,
         updatedAt: "2026-04-18T00:00:01.000Z"
       },

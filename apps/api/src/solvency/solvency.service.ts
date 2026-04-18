@@ -1,5 +1,7 @@
 import {
+  BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -21,6 +23,7 @@ import {
   SolvencyEvidenceFreshness,
   SolvencyIssueClassification,
   SolvencyIssueSeverity,
+  SolvencyPolicyResumeRequestStatus,
   SolvencyPolicyStateStatus,
   SolvencyReserveSourceType,
   SolvencySnapshotStatus,
@@ -31,9 +34,22 @@ import {
   WorkerRuntimeEnvironment
 } from "@prisma/client";
 import { ethers } from "ethers";
+import {
+  assertOperatorRoleAuthorized,
+  normalizeOperatorRole
+} from "../auth/internal-operator-role-policy";
 import { PrismaService } from "../prisma/prisma.service";
 import type { PrismaJsonValue } from "../prisma/prisma-json";
 import { ReviewCasesService } from "../review-cases/review-cases.service";
+import {
+  buildMerkleProof,
+  buildMerkleRoot,
+  buildSha256Checksum,
+  buildSignedSolvencyReport,
+  hashLiabilityLeaf,
+  type LiabilityLeafPayload,
+  type SolvencyReportPayload
+} from "./solvency-proof";
 
 const ERC20_BALANCE_OF_ABI = [
   "function balanceOf(address account) view returns (uint256)"
@@ -50,10 +66,16 @@ const EXECUTION_ENCUMBERED_STATUSES = [
   TransactionIntentStatus.broadcast,
   TransactionIntentStatus.confirmed
 ] as const;
+const DEFAULT_PUBLIC_REPORT_LIMIT = 10;
 
 type SnapshotActor = {
   actorType: "operator" | "worker" | "system";
   actorId: string | null;
+};
+
+type SolvencyOperatorContext = {
+  operatorId: string | null;
+  operatorRole: string | null;
 };
 
 type SolvencyPolicyProjection = {
@@ -69,8 +91,61 @@ type SolvencyPolicyProjection = {
   clearedAt: string | null;
   reasonCode: string | null;
   reasonSummary: string | null;
+  manualResumeRequired: boolean;
+  manualResumeRequestedAt: string | null;
+  manualResumeApprovedAt: string | null;
+  manualResumeApprovedByOperatorId: string | null;
+  manualResumeApprovedByOperatorRole: string | null;
   metadata: Prisma.JsonValue | null;
   updatedAt: string;
+};
+
+type SolvencyResumeGovernanceProjection = {
+  requestAllowedOperatorRoles: string[];
+  approverAllowedOperatorRoles: string[];
+  currentOperator: {
+    operatorId: string | null;
+    operatorRole: string | null;
+    canRequestResume: boolean;
+    canApproveResume: boolean;
+  };
+};
+
+type SolvencyPolicyResumeRequestProjection = {
+  id: string;
+  environment: WorkerRuntimeEnvironment;
+  snapshotId: string;
+  status: SolvencyPolicyResumeRequestStatus;
+  requestedByOperatorId: string;
+  requestedByOperatorRole: string;
+  requestNote: string | null;
+  expectedPolicyUpdatedAt: string;
+  requestedAt: string;
+  approvedByOperatorId: string | null;
+  approvedByOperatorRole: string | null;
+  approvalNote: string | null;
+  approvedAt: string | null;
+  rejectedByOperatorId: string | null;
+  rejectedByOperatorRole: string | null;
+  rejectionNote: string | null;
+  rejectedAt: string | null;
+  updatedAt: string;
+};
+
+type SolvencyReportProjection = {
+  id: string;
+  snapshotId: string;
+  environment: WorkerRuntimeEnvironment;
+  chainId: number;
+  reportVersion: number;
+  reportHash: string;
+  reportChecksumSha256: string;
+  canonicalPayload: Prisma.JsonValue | null;
+  canonicalPayloadText: string;
+  signature: string;
+  signatureAlgorithm: string;
+  signerAddress: string;
+  publishedAt: string;
 };
 
 type SolvencyWorkspaceSummarySnapshot = {
@@ -90,11 +165,14 @@ type SolvencyWorkspaceSummarySnapshot = {
   policyActionsTriggered: boolean;
   failureCode: string | null;
   failureMessage: string | null;
+  report: SolvencyReportProjection | null;
 };
 
 export type SolvencyWorkspaceResult = {
   generatedAt: string;
   policyState: SolvencyPolicyProjection;
+  resumeGovernance: SolvencyResumeGovernanceProjection;
+  latestPendingResumeRequest: SolvencyPolicyResumeRequestProjection | null;
   latestSnapshot: SolvencyWorkspaceSummarySnapshot | null;
   latestHealthySnapshotAt: string | null;
   recentSnapshots: SolvencyWorkspaceSummarySnapshot[];
@@ -127,6 +205,9 @@ type SolvencyAssetDetailProjection = {
   openReconciliationMismatchCount: number;
   criticalReconciliationMismatchCount: number;
   issueCount: number;
+  liabilityMerkleRoot: string | null;
+  liabilityLeafCount: number;
+  liabilitySetChecksumSha256: string | null;
   summarySnapshot: Prisma.JsonValue | null;
 };
 
@@ -170,9 +251,45 @@ export type SolvencySnapshotDetailResult = {
     policyActionSnapshot: Prisma.JsonValue | null;
   };
   policyState: SolvencyPolicyProjection;
+  latestPendingResumeRequest: SolvencyPolicyResumeRequestProjection | null;
   assetSnapshots: SolvencyAssetDetailProjection[];
   issues: SolvencyIssueProjection[];
   reserveEvidence: SolvencyReserveEvidenceProjection[];
+};
+
+export type CustomerLiabilityInclusionProofResult = {
+  report: SolvencyReportProjection;
+  snapshot: SolvencyWorkspaceSummarySnapshot;
+  customerAccountId: string;
+  proofs: Array<{
+    asset: {
+      id: string;
+      symbol: string;
+      displayName: string;
+      decimals: number;
+      chainId: number;
+      assetType: AssetType;
+    };
+    leafIndex: number;
+    leafHash: string;
+    rootHash: string;
+    proof: string[];
+    payload: LiabilityLeafPayload;
+  }>;
+};
+
+export type SolvencyPolicyResumeRequestMutationResult = {
+  policyState: SolvencyPolicyProjection;
+  request: SolvencyPolicyResumeRequestProjection;
+};
+
+export type PublicSolvencyReportListResult = {
+  generatedAt: string;
+  limit: number;
+  reports: Array<{
+    report: SolvencyReportProjection;
+    snapshot: SolvencyWorkspaceSummarySnapshot;
+  }>;
 };
 
 export type GeneratedSolvencySnapshotResult = {
@@ -211,6 +328,34 @@ type LiabilityAssetComputation = {
   projectionMatchesLedger: boolean;
   openReconciliationMismatchCount: number;
   criticalReconciliationMismatchCount: number;
+};
+
+type LiabilityLeafComputation = {
+  assetId: string;
+  customerAccountId: string;
+  availableLiabilityAmount: Prisma.Decimal;
+  reservedLiabilityAmount: Prisma.Decimal;
+  pendingCreditAmount: Prisma.Decimal;
+  totalLiabilityAmount: Prisma.Decimal;
+};
+
+type LiabilityProofLeafComputation = {
+  customerAccountId: string;
+  leafIndex: number;
+  leafHash: string;
+  payload: LiabilityLeafPayload;
+  availableLiabilityAmount: Prisma.Decimal;
+  reservedLiabilityAmount: Prisma.Decimal;
+  pendingCreditAmount: Prisma.Decimal;
+  totalLiabilityAmount: Prisma.Decimal;
+};
+
+type LiabilityProofAssetComputation = {
+  assetId: string;
+  liabilityMerkleRoot: string | null;
+  liabilityLeafCount: number;
+  liabilitySetChecksumSha256: string | null;
+  leaves: LiabilityProofLeafComputation[];
 };
 
 type ReserveEvidenceComputation = {
@@ -261,6 +406,9 @@ type AssetSnapshotComputation = {
   reserveRatioBps: number | null;
   openReconciliationMismatchCount: number;
   criticalReconciliationMismatchCount: number;
+  liabilityMerkleRoot: string | null;
+  liabilityLeafCount: number;
+  liabilitySetChecksumSha256: string | null;
   issues: PersistedIssueInput[];
   reserveEvidence: ReserveEvidenceComputation[];
   summarySnapshot: PrismaJsonValue;
@@ -273,6 +421,7 @@ type DerivedPolicyState = {
   pauseLoanFunding: boolean;
   pauseStakingWrites: boolean;
   requireManualOperatorReview: boolean;
+  manualResumeRequired: boolean;
   reasonCode: string | null;
   reasonSummary: string | null;
   metadata: PrismaJsonValue | null;
@@ -286,6 +435,9 @@ export class SolvencyService {
   private readonly evidenceStaleAfterSeconds: number;
   private readonly warningReserveRatioBps: number;
   private readonly criticalReserveRatioBps: number;
+  private readonly reportSignerPrivateKey: string;
+  private readonly resumeRequestAllowedOperatorRoles: string[];
+  private readonly resumeApproverAllowedOperatorRoles: string[];
   private readonly provider: ethers.providers.JsonRpcProvider;
 
   constructor(
@@ -300,16 +452,40 @@ export class SolvencyService {
     this.evidenceStaleAfterSeconds = runtimeConfig.evidenceStaleAfterSeconds;
     this.warningReserveRatioBps = runtimeConfig.warningReserveRatioBps;
     this.criticalReserveRatioBps = runtimeConfig.criticalReserveRatioBps;
+    this.reportSignerPrivateKey = runtimeConfig.reportSignerPrivateKey;
+    this.resumeRequestAllowedOperatorRoles = [
+      ...runtimeConfig.resumeRequestAllowedOperatorRoles
+    ];
+    this.resumeApproverAllowedOperatorRoles = [
+      ...runtimeConfig.resumeApproverAllowedOperatorRoles
+    ];
     this.provider = createJsonRpcProvider(chainRuntimeConfig.rpcUrl);
   }
 
-  async getWorkspace(limit = DEFAULT_WORKSPACE_LIMIT): Promise<SolvencyWorkspaceResult> {
-    const [policyState, latestSnapshot, recentSnapshots, latestHealthySnapshot] =
+  async getWorkspace(
+    limit = DEFAULT_WORKSPACE_LIMIT,
+    operator?: SolvencyOperatorContext
+  ): Promise<SolvencyWorkspaceResult> {
+    const [
+      policyState,
+      latestSnapshot,
+      recentSnapshots,
+      latestHealthySnapshot,
+      latestPendingResumeRequest
+    ] =
       await Promise.all([
         this.getOrCreatePolicyState(),
         this.prismaService.solvencySnapshot.findFirst({
           where: {
             environment: this.environment
+          },
+          include: {
+            reports: {
+              orderBy: {
+                publishedAt: "desc"
+              },
+              take: 1
+            }
           },
           orderBy: {
             generatedAt: "desc"
@@ -318,6 +494,14 @@ export class SolvencyService {
         this.prismaService.solvencySnapshot.findMany({
           where: {
             environment: this.environment
+          },
+          include: {
+            reports: {
+              orderBy: {
+                publishedAt: "desc"
+              },
+              take: 1
+            }
           },
           orderBy: {
             generatedAt: "desc"
@@ -329,8 +513,25 @@ export class SolvencyService {
             environment: this.environment,
             status: SolvencySnapshotStatus.healthy
           },
+          include: {
+            reports: {
+              orderBy: {
+                publishedAt: "desc"
+              },
+              take: 1
+            }
+          },
           orderBy: {
             generatedAt: "desc"
+          }
+        }),
+        this.prismaService.solvencyPolicyResumeRequest.findFirst({
+          where: {
+            environment: this.environment,
+            status: SolvencyPolicyResumeRequestStatus.pending_approval
+          },
+          orderBy: {
+            requestedAt: "desc"
           }
         })
       ]);
@@ -338,6 +539,10 @@ export class SolvencyService {
     return {
       generatedAt: new Date().toISOString(),
       policyState: this.mapPolicyStateProjection(policyState),
+      resumeGovernance: this.buildResumeGovernanceProjection(operator),
+      latestPendingResumeRequest: latestPendingResumeRequest
+        ? this.mapPolicyResumeRequestProjection(latestPendingResumeRequest)
+        : null,
       latestSnapshot: latestSnapshot ? this.mapWorkspaceSnapshot(latestSnapshot) : null,
       latestHealthySnapshotAt: latestHealthySnapshot?.generatedAt.toISOString() ?? null,
       recentSnapshots: recentSnapshots.map((snapshot) =>
@@ -353,6 +558,12 @@ export class SolvencyService {
         id: snapshotId
       },
       include: {
+        reports: {
+          orderBy: {
+            publishedAt: "desc"
+          },
+          take: 1
+        },
         assetSnapshots: {
           include: {
             asset: true
@@ -388,7 +599,18 @@ export class SolvencyService {
       throw new NotFoundException("Solvency snapshot not found.");
     }
 
-    const policyState = await this.getOrCreatePolicyState();
+    const [policyState, latestPendingResumeRequest] = await Promise.all([
+      this.getOrCreatePolicyState(),
+      this.prismaService.solvencyPolicyResumeRequest.findFirst({
+        where: {
+          environment: snapshot.environment,
+          status: SolvencyPolicyResumeRequestStatus.pending_approval
+        },
+        orderBy: {
+          requestedAt: "desc"
+        }
+      })
+    ]);
 
     return {
       snapshot: {
@@ -397,6 +619,9 @@ export class SolvencyService {
         policyActionSnapshot: snapshot.policyActionSnapshot ?? null
       },
       policyState: this.mapPolicyStateProjection(policyState),
+      latestPendingResumeRequest: latestPendingResumeRequest
+        ? this.mapPolicyResumeRequestProjection(latestPendingResumeRequest)
+        : null,
       assetSnapshots: snapshot.assetSnapshots.map((item) => ({
         asset: {
           id: item.asset.id,
@@ -424,6 +649,9 @@ export class SolvencyService {
         criticalReconciliationMismatchCount:
           item.criticalReconciliationMismatchCount,
         issueCount: item.issueCount,
+        liabilityMerkleRoot: item.liabilityMerkleRoot ?? null,
+        liabilityLeafCount: item.liabilityLeafCount,
+        liabilitySetChecksumSha256: item.liabilitySetChecksumSha256 ?? null,
         summarySnapshot: item.summarySnapshot ?? null
       })),
       issues: snapshot.issues.map((issue) => ({
@@ -489,9 +717,11 @@ export class SolvencyService {
           this.listOpenReconciliationMismatchCounts()
         ]);
 
-      const [liabilitiesByAsset, reserveEvidenceByAsset] = await Promise.all([
+      const [liabilitiesByAsset, reserveEvidenceByAsset, liabilityProofByAsset] =
+        await Promise.all([
         this.computeLiabilitiesByAsset(assets, mismatchCounts),
-        this.computeReserveEvidenceByAsset(assets, reserveWallets)
+        this.computeReserveEvidenceByAsset(assets, reserveWallets),
+        this.computeLiabilityLeavesByAsset(pendingSnapshot.id, assets)
       ]);
 
       const assetComputations = assets.map((asset) =>
@@ -499,13 +729,28 @@ export class SolvencyService {
           asset,
           liabilities:
             liabilitiesByAsset.get(asset.id) ?? this.createZeroLiabilityComputation(asset),
-          reserveEvidence: reserveEvidenceByAsset.get(asset.id) ?? []
+          reserveEvidence: reserveEvidenceByAsset.get(asset.id) ?? [],
+          liabilityProof: liabilityProofByAsset.get(asset.id) ?? {
+            assetId: asset.id,
+            liabilityMerkleRoot: null,
+            liabilityLeafCount: 0,
+            liabilitySetChecksumSha256: null,
+            leaves: []
+          }
         })
       );
 
       const allIssues = assetComputations.flatMap((item) => item.issues);
       const policyState = this.derivePolicyState(assetComputations, allIssues);
       const summary = this.buildSnapshotSummary(assetComputations, allIssues);
+      const signedReport = this.buildSignedReport({
+        snapshotId: pendingSnapshot.id,
+        generatedAt: pendingSnapshot.generatedAt.toISOString(),
+        completedAt: new Date().toISOString(),
+        summary,
+        assetComputations,
+        policyState
+      });
 
       const persistedSnapshot = await this.prismaService.$transaction(
         async (transaction) => {
@@ -557,8 +802,32 @@ export class SolvencyService {
                 criticalReconciliationMismatchCount:
                   item.criticalReconciliationMismatchCount,
                 issueCount: item.issues.length,
+                liabilityMerkleRoot: item.liabilityMerkleRoot,
+                liabilityLeafCount: item.liabilityLeafCount,
+                liabilitySetChecksumSha256: item.liabilitySetChecksumSha256,
                 summarySnapshot: item.summarySnapshot
               }))
+            });
+          }
+
+          const liabilityLeafRows = assetComputations.flatMap((item) =>
+            (liabilityProofByAsset.get(item.asset.id)?.leaves ?? []).map((leaf) => ({
+              snapshotId: pendingSnapshot.id,
+              assetId: item.asset.id,
+              customerAccountId: leaf.customerAccountId,
+              leafIndex: leaf.leafIndex,
+              availableLiabilityAmount: leaf.availableLiabilityAmount,
+              reservedLiabilityAmount: leaf.reservedLiabilityAmount,
+              pendingCreditAmount: leaf.pendingCreditAmount,
+              totalLiabilityAmount: leaf.totalLiabilityAmount,
+              leafHash: leaf.leafHash,
+              canonicalPayload: leaf.payload as unknown as PrismaJsonValue
+            }))
+          );
+
+          if (liabilityLeafRows.length > 0) {
+            await transaction.solvencyLiabilityLeaf.createMany({
+              data: liabilityLeafRows
             });
           }
 
@@ -614,6 +883,24 @@ export class SolvencyService {
             actor
           );
 
+          await transaction.solvencyReport.create({
+            data: {
+              snapshotId: pendingSnapshot.id,
+              environment: this.environment,
+              chainId: this.productChainId,
+              reportVersion: 1,
+              reportHash: signedReport.reportHash,
+              reportChecksumSha256: signedReport.reportChecksumSha256,
+              canonicalPayload:
+                signedReport.payload as unknown as PrismaJsonValue,
+              canonicalPayloadText: signedReport.canonicalPayloadText,
+              signature: signedReport.signature,
+              signatureAlgorithm: signedReport.signatureAlgorithm,
+              signerAddress: signedReport.signerAddress,
+              publishedAt: new Date()
+            }
+          });
+
           await transaction.auditEvent.create({
             data: {
               customerId: null,
@@ -635,7 +922,9 @@ export class SolvencyService {
                 criticalIssueCount: allIssues.filter(
                   (issue) => issue.severity === SolvencyIssueSeverity.critical
                 ).length,
-                policyStatus: policyState.status
+                policyStatus: policyState.status,
+                reportHash: signedReport.reportHash,
+                signerAddress: signedReport.signerAddress
               } as PrismaJsonValue
             }
           });
@@ -664,6 +953,14 @@ export class SolvencyService {
           return transaction.solvencySnapshot.findUniqueOrThrow({
             where: {
               id: pendingSnapshot.id
+            },
+            include: {
+              reports: {
+                orderBy: {
+                  publishedAt: "desc"
+                },
+                take: 1
+              }
             }
           });
         }
@@ -715,6 +1012,619 @@ export class SolvencyService {
         `Solvency snapshot generation failed: ${normalizedError.message}`
       );
     }
+  }
+
+  async getLatestPublicReport(): Promise<{
+    report: SolvencyReportProjection;
+    snapshot: SolvencyWorkspaceSummarySnapshot;
+  }> {
+    const snapshot = await this.prismaService.solvencySnapshot.findFirst({
+      where: {
+        environment: this.environment,
+        reports: {
+          some: {}
+        }
+      },
+      include: {
+        reports: {
+          orderBy: {
+            publishedAt: "desc"
+          },
+          take: 1
+        }
+      },
+      orderBy: {
+        generatedAt: "desc"
+      }
+    });
+
+    if (!snapshot || !snapshot.reports[0]) {
+      throw new NotFoundException("No signed solvency report is available.");
+    }
+
+    return {
+      report: this.mapReportProjection(snapshot.reports[0]),
+      snapshot: this.mapWorkspaceSnapshot(snapshot)
+    };
+  }
+
+  async listPublicReports(limit = DEFAULT_PUBLIC_REPORT_LIMIT): Promise<PublicSolvencyReportListResult> {
+    const normalizedLimit = Math.min(Math.max(limit, 1), 50);
+    const snapshots = await this.prismaService.solvencySnapshot.findMany({
+      where: {
+        environment: this.environment,
+        reports: {
+          some: {}
+        }
+      },
+      include: {
+        reports: {
+          orderBy: {
+            publishedAt: "desc"
+          },
+          take: 1
+        }
+      },
+      orderBy: {
+        generatedAt: "desc"
+      },
+      take: normalizedLimit
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      limit: normalizedLimit,
+      reports: snapshots
+        .filter((snapshot) => Boolean(snapshot.reports[0]))
+        .map((snapshot) => ({
+          report: this.mapReportProjection(snapshot.reports[0]!),
+          snapshot: this.mapWorkspaceSnapshot(snapshot)
+        }))
+    };
+  }
+
+  async getPublicReportBySnapshotId(snapshotId: string): Promise<{
+    report: SolvencyReportProjection;
+    snapshot: SolvencyWorkspaceSummarySnapshot;
+  }> {
+    const snapshot = await this.prismaService.solvencySnapshot.findUnique({
+      where: {
+        id: snapshotId
+      },
+      include: {
+        reports: {
+          orderBy: {
+            publishedAt: "desc"
+          },
+          take: 1
+        }
+      }
+    });
+
+    if (!snapshot || !snapshot.reports[0]) {
+      throw new NotFoundException("Signed solvency report was not found.");
+    }
+
+    return {
+      report: this.mapReportProjection(snapshot.reports[0]),
+      snapshot: this.mapWorkspaceSnapshot(snapshot)
+    };
+  }
+
+  async getCustomerLiabilityInclusionProof(
+    supabaseUserId: string,
+    snapshotId?: string
+  ): Promise<CustomerLiabilityInclusionProofResult> {
+    const customerAccount = await this.prismaService.customerAccount.findFirst({
+      where: {
+        customer: {
+          supabaseUserId
+        }
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (!customerAccount) {
+      throw new NotFoundException("Customer account projection not found.");
+    }
+
+    const snapshot = snapshotId
+      ? await this.prismaService.solvencySnapshot.findUnique({
+          where: {
+            id: snapshotId
+          },
+          include: {
+            reports: {
+              orderBy: {
+                publishedAt: "desc"
+              },
+              take: 1
+            }
+          }
+        })
+      : await this.prismaService.solvencySnapshot.findFirst({
+          where: {
+            environment: this.environment,
+            reports: {
+              some: {}
+            }
+          },
+          include: {
+            reports: {
+              orderBy: {
+                publishedAt: "desc"
+              },
+              take: 1
+            }
+          },
+          orderBy: {
+            generatedAt: "desc"
+          }
+        });
+
+    if (!snapshot || !snapshot.reports[0]) {
+      throw new NotFoundException("Signed solvency report was not found.");
+    }
+
+    const [customerLeaves, allSnapshotLeaves] = await Promise.all([
+      this.prismaService.solvencyLiabilityLeaf.findMany({
+        where: {
+          snapshotId: snapshot.id,
+          customerAccountId: customerAccount.id
+        },
+        orderBy: [
+          {
+            assetId: "asc"
+          },
+          {
+            leafIndex: "asc"
+          }
+        ]
+      }),
+      this.prismaService.solvencyLiabilityLeaf.findMany({
+        where: {
+          snapshotId: snapshot.id
+        },
+        include: {
+          asset: true
+        },
+        orderBy: [
+          {
+            assetId: "asc"
+          },
+          {
+            leafIndex: "asc"
+          }
+        ]
+      })
+    ]);
+    const assetRecords = await this.prismaService.asset.findMany({
+      where: {
+        id: {
+          in: customerLeaves.map((leaf) => leaf.assetId)
+        }
+      }
+    });
+
+    const allLeafHashesByAsset = new Map<string, string[]>();
+    for (const leaf of allSnapshotLeaves) {
+      const current = allLeafHashesByAsset.get(leaf.assetId) ?? [];
+      current.push(leaf.leafHash);
+      allLeafHashesByAsset.set(leaf.assetId, current);
+    }
+
+    const assetById = new Map(assetRecords.map((asset) => [asset.id, asset] as const));
+    const proofs = customerLeaves.map((leaf) => {
+      const asset = assetById.get(leaf.assetId);
+      if (!asset) {
+        throw new NotFoundException(
+          `Asset metadata missing for liability proof asset ${leaf.assetId}.`
+        );
+      }
+
+      const proof = buildMerkleProof(
+        allLeafHashesByAsset.get(leaf.assetId) ?? [],
+        leaf.leafIndex
+      );
+      const rootHash = buildMerkleRoot(allLeafHashesByAsset.get(leaf.assetId) ?? []);
+
+      if (!rootHash) {
+        throw new NotFoundException("Liability proof root is missing.");
+      }
+
+      return {
+        asset: {
+          id: asset.id,
+          symbol: asset.symbol,
+          displayName: asset.displayName,
+          decimals: asset.decimals,
+          chainId: asset.chainId,
+          assetType: asset.assetType
+        },
+        leafIndex: leaf.leafIndex,
+        leafHash: leaf.leafHash,
+        rootHash,
+        proof,
+        payload: leaf.canonicalPayload as unknown as LiabilityLeafPayload
+      };
+    });
+
+    return {
+      report: this.mapReportProjection(snapshot.reports[0]),
+      snapshot: this.mapWorkspaceSnapshot(snapshot),
+      customerAccountId: customerAccount.id,
+      proofs
+    };
+  }
+
+  async requestPolicyResume(
+    snapshotId: string,
+    expectedPolicyUpdatedAt: string,
+    requestNote: string | undefined,
+    operatorId: string,
+    operatorRole: string | undefined
+  ): Promise<SolvencyPolicyResumeRequestMutationResult> {
+    const normalizedOperatorRole = this.assertCanRequestResume(operatorRole);
+    const policyState = await this.getOrCreatePolicyState();
+
+    if (policyState.status !== SolvencyPolicyStateStatus.paused) {
+      throw new ConflictException(
+        "Manual resume requests are only available while solvency policy is paused."
+      );
+    }
+
+    if (!policyState.manualResumeRequired) {
+      throw new ConflictException(
+        "Current solvency policy does not require governed manual resume."
+      );
+    }
+
+    if (policyState.updatedAt.toISOString() !== expectedPolicyUpdatedAt) {
+      throw new ConflictException(
+        "Solvency policy changed after it was loaded. Refresh the workspace and retry."
+      );
+    }
+
+    const [snapshot, existingPendingRequest] = await Promise.all([
+      this.prismaService.solvencySnapshot.findUnique({
+        where: {
+          id: snapshotId
+        },
+        include: {
+          reports: {
+            take: 1
+          }
+        }
+      }),
+      this.prismaService.solvencyPolicyResumeRequest.findFirst({
+        where: {
+          environment: this.environment,
+          status: SolvencyPolicyResumeRequestStatus.pending_approval
+        },
+        orderBy: {
+          requestedAt: "desc"
+        }
+      })
+    ]);
+
+    if (existingPendingRequest) {
+      throw new ConflictException(
+        "A pending solvency resume request already exists for this environment."
+      );
+    }
+
+    if (!snapshot || snapshot.environment !== this.environment) {
+      throw new NotFoundException("Requested solvency snapshot was not found.");
+    }
+
+    if (snapshot.status !== SolvencySnapshotStatus.healthy) {
+      throw new ConflictException(
+        "Manual resume requires a healthy solvency snapshot."
+      );
+    }
+
+    if (!snapshot.reports[0]) {
+      throw new ConflictException(
+        "Manual resume requires a signed solvency report for the selected snapshot."
+      );
+    }
+
+    const normalizedRequestNote = this.normalizeOptionalString(requestNote);
+    const createdRequest = await this.prismaService.$transaction(
+      async (transaction) => {
+        const currentPolicyState = await transaction.solvencyPolicyState.findUnique({
+          where: {
+            environment: this.environment
+          }
+        });
+
+        if (!currentPolicyState) {
+          throw new NotFoundException("Solvency policy state not found.");
+        }
+
+        if (currentPolicyState.updatedAt.toISOString() !== expectedPolicyUpdatedAt) {
+          throw new ConflictException(
+            "Solvency policy changed after it was loaded. Refresh the workspace and retry."
+          );
+        }
+
+        const nextRequest = await transaction.solvencyPolicyResumeRequest.create({
+          data: {
+            environment: this.environment,
+            policyStateId: currentPolicyState.id,
+            snapshotId: snapshot.id,
+            status: SolvencyPolicyResumeRequestStatus.pending_approval,
+            requestedByOperatorId: operatorId,
+            requestedByOperatorRole: normalizedOperatorRole,
+            requestNote: normalizedRequestNote ?? undefined,
+            expectedPolicyUpdatedAt: currentPolicyState.updatedAt
+          }
+        });
+
+        await transaction.solvencyPolicyState.update({
+          where: {
+            environment: this.environment
+          },
+          data: {
+            manualResumeRequestedAt: nextRequest.requestedAt
+          }
+        });
+
+        await transaction.auditEvent.create({
+          data: {
+            customerId: null,
+            actorType: "operator",
+            actorId: operatorId,
+            action: "solvency.policy_resume.requested",
+            targetType: "SolvencyPolicyResumeRequest",
+            targetId: nextRequest.id,
+            metadata: {
+              snapshotId: snapshot.id,
+              operatorRole: normalizedOperatorRole,
+              requestNote: normalizedRequestNote ?? null
+            } as PrismaJsonValue
+          }
+        });
+
+        return nextRequest;
+      }
+    );
+
+    return {
+      policyState: this.mapPolicyStateProjection(await this.getOrCreatePolicyState()),
+      request: this.mapPolicyResumeRequestProjection(createdRequest)
+    };
+  }
+
+  async approvePolicyResume(
+    requestId: string,
+    approvalNote: string | undefined,
+    operatorId: string,
+    operatorRole: string | undefined
+  ): Promise<SolvencyPolicyResumeRequestMutationResult> {
+    const approvedOperatorRole = this.assertCanApproveResume(operatorRole);
+    const request = await this.prismaService.solvencyPolicyResumeRequest.findUnique({
+      where: {
+        id: requestId
+      }
+    });
+
+    if (!request) {
+      throw new NotFoundException("Solvency resume request was not found.");
+    }
+
+    if (request.status !== SolvencyPolicyResumeRequestStatus.pending_approval) {
+      throw new ConflictException(
+        "Only pending solvency resume requests can be approved."
+      );
+    }
+
+    if (request.requestedByOperatorId === operatorId) {
+      throw new ForbiddenException(
+        "Solvency resume approval requires a different approver than the requester."
+      );
+    }
+
+    const normalizedApprovalNote = this.normalizeOptionalString(approvalNote);
+    const updatedRequest = await this.prismaService.$transaction(
+      async (transaction) => {
+        const [currentRequest, policyState, snapshot] = await Promise.all([
+          transaction.solvencyPolicyResumeRequest.findUnique({
+            where: {
+              id: requestId
+            }
+          }),
+          transaction.solvencyPolicyState.findUnique({
+            where: {
+              environment: this.environment
+            }
+          }),
+          transaction.solvencySnapshot.findUnique({
+            where: {
+              id: request.snapshotId
+            },
+            include: {
+              reports: {
+                take: 1
+              }
+            }
+          })
+        ]);
+
+        if (!currentRequest) {
+          throw new NotFoundException("Solvency resume request was not found.");
+        }
+
+        if (
+          currentRequest.status !== SolvencyPolicyResumeRequestStatus.pending_approval
+        ) {
+          throw new ConflictException(
+            "Only pending solvency resume requests can be approved."
+          );
+        }
+
+        if (!policyState) {
+          throw new NotFoundException("Solvency policy state not found.");
+        }
+
+        if (policyState.updatedAt.toISOString() !== currentRequest.expectedPolicyUpdatedAt.toISOString()) {
+          throw new ConflictException(
+            "Solvency policy changed after the resume request was created. Request a new governed resume."
+          );
+        }
+
+        if (policyState.status !== SolvencyPolicyStateStatus.paused) {
+          throw new ConflictException(
+            "Solvency policy is no longer paused."
+          );
+        }
+
+        if (!snapshot || snapshot.status !== SolvencySnapshotStatus.healthy) {
+          throw new ConflictException(
+            "Resume approval requires the bound snapshot to remain healthy."
+          );
+        }
+
+        if (!snapshot.reports[0]) {
+          throw new ConflictException(
+            "Resume approval requires a signed solvency report."
+          );
+        }
+
+        const approvedAt = new Date();
+        const nextRequest = await transaction.solvencyPolicyResumeRequest.update({
+          where: {
+            id: currentRequest.id
+          },
+          data: {
+            status: SolvencyPolicyResumeRequestStatus.approved,
+            approvedByOperatorId: operatorId,
+            approvedByOperatorRole: approvedOperatorRole,
+            approvalNote: normalizedApprovalNote ?? undefined,
+            approvedAt
+          }
+        });
+
+        await transaction.solvencyPolicyState.update({
+          where: {
+            environment: this.environment
+          },
+          data: {
+            status: SolvencyPolicyStateStatus.normal,
+            pauseWithdrawalApprovals: false,
+            pauseManagedWithdrawalExecution: false,
+            pauseLoanFunding: false,
+            pauseStakingWrites: false,
+            requireManualOperatorReview: false,
+            reasonCode: "manual_resume_approved",
+            reasonSummary:
+              "Paused solvency controls were manually resumed after governed approval against a healthy signed snapshot.",
+            manualResumeRequired: false,
+            manualResumeRequestedAt: null,
+            manualResumeApprovedAt: approvedAt,
+            manualResumeApprovedByOperatorId: operatorId,
+            manualResumeApprovedByOperatorRole: approvedOperatorRole,
+            latestSnapshotId: snapshot.id,
+            clearedAt: approvedAt,
+            metadata: this.toNullableJsonInput({
+              approvedResumeRequestId: currentRequest.id,
+              approvedSnapshotId: snapshot.id,
+              signerAddress: snapshot.reports[0].signerAddress,
+              reportHash: snapshot.reports[0].reportHash
+            })
+          }
+        });
+
+        await transaction.auditEvent.create({
+          data: {
+            customerId: null,
+            actorType: "operator",
+            actorId: operatorId,
+            action: "solvency.policy_resume.approved",
+            targetType: "SolvencyPolicyResumeRequest",
+            targetId: currentRequest.id,
+            metadata: {
+              snapshotId: snapshot.id,
+              operatorRole: approvedOperatorRole,
+              approvalNote: normalizedApprovalNote ?? null
+            } as PrismaJsonValue
+          }
+        });
+
+        return nextRequest;
+      }
+    );
+
+    return {
+      policyState: this.mapPolicyStateProjection(await this.getOrCreatePolicyState()),
+      request: this.mapPolicyResumeRequestProjection(updatedRequest)
+    };
+  }
+
+  async rejectPolicyResume(
+    requestId: string,
+    rejectionNote: string | undefined,
+    operatorId: string,
+    operatorRole: string | undefined
+  ): Promise<SolvencyPolicyResumeRequestMutationResult> {
+    const rejectedOperatorRole = this.assertCanApproveResume(operatorRole);
+    const request = await this.prismaService.solvencyPolicyResumeRequest.findUnique({
+      where: {
+        id: requestId
+      }
+    });
+
+    if (!request) {
+      throw new NotFoundException("Solvency resume request was not found.");
+    }
+
+    if (request.status !== SolvencyPolicyResumeRequestStatus.pending_approval) {
+      throw new ConflictException(
+        "Only pending solvency resume requests can be rejected."
+      );
+    }
+
+    const normalizedRejectionNote = this.normalizeOptionalString(rejectionNote);
+    const updatedRequest = await this.prismaService.$transaction(
+      async (transaction) => {
+        const nextRequest = await transaction.solvencyPolicyResumeRequest.update({
+          where: {
+            id: requestId
+          },
+          data: {
+            status: SolvencyPolicyResumeRequestStatus.rejected,
+            rejectedByOperatorId: operatorId,
+            rejectedByOperatorRole: rejectedOperatorRole,
+            rejectionNote: normalizedRejectionNote ?? undefined,
+            rejectedAt: new Date()
+          }
+        });
+
+        await transaction.auditEvent.create({
+          data: {
+            customerId: null,
+            actorType: "operator",
+            actorId: operatorId,
+            action: "solvency.policy_resume.rejected",
+            targetType: "SolvencyPolicyResumeRequest",
+            targetId: nextRequest.id,
+            metadata: {
+              operatorRole: rejectedOperatorRole,
+              rejectionNote: normalizedRejectionNote ?? null
+            } as PrismaJsonValue
+          }
+        });
+
+        return nextRequest;
+      }
+    );
+
+    return {
+      policyState: this.mapPolicyStateProjection(await this.getOrCreatePolicyState()),
+      request: this.mapPolicyResumeRequestProjection(updatedRequest)
+    };
   }
 
   async assertWithdrawalApprovalAllowed(): Promise<void> {
@@ -781,6 +1691,11 @@ export class SolvencyService {
         pauseLoanFunding: false,
         pauseStakingWrites: false,
         requireManualOperatorReview: false,
+        manualResumeRequired: false,
+        manualResumeRequestedAt: null,
+        manualResumeApprovedAt: null,
+        manualResumeApprovedByOperatorId: null,
+        manualResumeApprovedByOperatorRole: null,
         reasonCode: null,
         reasonSummary: null,
         metadata: Prisma.DbNull
@@ -804,8 +1719,103 @@ export class SolvencyService {
       clearedAt: record.clearedAt?.toISOString() ?? null,
       reasonCode: record.reasonCode ?? null,
       reasonSummary: record.reasonSummary ?? null,
+      manualResumeRequired: record.manualResumeRequired,
+      manualResumeRequestedAt: record.manualResumeRequestedAt?.toISOString() ?? null,
+      manualResumeApprovedAt: record.manualResumeApprovedAt?.toISOString() ?? null,
+      manualResumeApprovedByOperatorId:
+        record.manualResumeApprovedByOperatorId ?? null,
+      manualResumeApprovedByOperatorRole:
+        record.manualResumeApprovedByOperatorRole ?? null,
       metadata: record.metadata ?? null,
       updatedAt: record.updatedAt.toISOString()
+    };
+  }
+
+  private buildResumeGovernanceProjection(
+    operator?: SolvencyOperatorContext
+  ): SolvencyResumeGovernanceProjection {
+    const operatorRole = normalizeOperatorRole(operator?.operatorRole);
+
+    return {
+      requestAllowedOperatorRoles: [...this.resumeRequestAllowedOperatorRoles],
+      approverAllowedOperatorRoles: [...this.resumeApproverAllowedOperatorRoles],
+      currentOperator: {
+        operatorId: operator?.operatorId ?? null,
+        operatorRole,
+        canRequestResume: Boolean(
+          operatorRole &&
+            this.resumeRequestAllowedOperatorRoles.includes(operatorRole)
+        ),
+        canApproveResume: Boolean(
+          operatorRole &&
+            this.resumeApproverAllowedOperatorRoles.includes(operatorRole)
+        )
+      }
+    };
+  }
+
+  private mapPolicyResumeRequestProjection(
+    record: Awaited<
+      ReturnType<typeof this.prismaService.solvencyPolicyResumeRequest.findFirst>
+    > extends infer T
+      ? T extends null
+        ? never
+        : T
+      : never
+  ): SolvencyPolicyResumeRequestProjection {
+    return {
+      id: record.id,
+      environment: record.environment,
+      snapshotId: record.snapshotId,
+      status: record.status,
+      requestedByOperatorId: record.requestedByOperatorId,
+      requestedByOperatorRole: record.requestedByOperatorRole,
+      requestNote: record.requestNote ?? null,
+      expectedPolicyUpdatedAt: record.expectedPolicyUpdatedAt.toISOString(),
+      requestedAt: record.requestedAt.toISOString(),
+      approvedByOperatorId: record.approvedByOperatorId ?? null,
+      approvedByOperatorRole: record.approvedByOperatorRole ?? null,
+      approvalNote: record.approvalNote ?? null,
+      approvedAt: record.approvedAt?.toISOString() ?? null,
+      rejectedByOperatorId: record.rejectedByOperatorId ?? null,
+      rejectedByOperatorRole: record.rejectedByOperatorRole ?? null,
+      rejectionNote: record.rejectionNote ?? null,
+      rejectedAt: record.rejectedAt?.toISOString() ?? null,
+      updatedAt: record.updatedAt.toISOString()
+    };
+  }
+
+  private mapReportProjection(
+    record: {
+      id: string;
+      snapshotId: string;
+      environment: WorkerRuntimeEnvironment;
+      chainId: number;
+      reportVersion: number;
+      reportHash: string;
+      reportChecksumSha256: string;
+      canonicalPayload: Prisma.JsonValue | null;
+      canonicalPayloadText: string;
+      signature: string;
+      signatureAlgorithm: string;
+      signerAddress: string;
+      publishedAt: Date;
+    }
+  ): SolvencyReportProjection {
+    return {
+      id: record.id,
+      snapshotId: record.snapshotId,
+      environment: record.environment,
+      chainId: record.chainId,
+      reportVersion: record.reportVersion,
+      reportHash: record.reportHash,
+      reportChecksumSha256: record.reportChecksumSha256,
+      canonicalPayload: record.canonicalPayload ?? null,
+      canonicalPayloadText: record.canonicalPayloadText,
+      signature: record.signature,
+      signatureAlgorithm: record.signatureAlgorithm,
+      signerAddress: record.signerAddress,
+      publishedAt: record.publishedAt.toISOString()
     };
   }
 
@@ -835,7 +1845,11 @@ export class SolvencyService {
       issueCount: snapshot.issueCount,
       policyActionsTriggered: snapshot.policyActionsTriggered,
       failureCode: snapshot.failureCode ?? null,
-      failureMessage: snapshot.failureMessage ?? null
+      failureMessage: snapshot.failureMessage ?? null,
+      report:
+        "reports" in snapshot && Array.isArray(snapshot.reports) && snapshot.reports[0]
+          ? this.mapReportProjection(snapshot.reports[0])
+          : null
     };
   }
 
@@ -1038,6 +2052,170 @@ export class SolvencyService {
     return byAsset;
   }
 
+  private async computeLiabilityLeavesByAsset(
+    snapshotId: string,
+    assets: AssetRecord[]
+  ): Promise<Map<string, LiabilityProofAssetComputation>> {
+    const [ledgerAccounts, customerBalances] = await Promise.all([
+      this.prismaService.ledgerAccount.findMany({
+        where: {
+          chainId: this.productChainId,
+          customerAccountId: {
+            not: null
+          },
+          accountType: {
+            in: [
+              LedgerAccountType.customer_asset_liability,
+              LedgerAccountType.customer_asset_pending_withdrawal_liability
+            ]
+          }
+        },
+        include: {
+          ledgerPostings: {
+            select: {
+              direction: true,
+              amount: true
+            }
+          }
+        }
+      }),
+      this.prismaService.customerAssetBalance.findMany({
+        where: {
+          assetId: {
+            in: assets.map((asset) => asset.id)
+          }
+        },
+        select: {
+          customerAccountId: true,
+          assetId: true,
+          availableBalance: true,
+          pendingBalance: true
+        }
+      })
+    ]);
+
+    const rawLeavesByAsset = new Map<string, LiabilityLeafComputation[]>();
+    const byCompositeKey = new Map<string, LiabilityLeafComputation>();
+
+    for (const account of ledgerAccounts) {
+      if (!account.customerAccountId) {
+        continue;
+      }
+
+      const compositeKey = `${account.assetId}:${account.customerAccountId}`;
+      const existing = byCompositeKey.get(compositeKey) ?? {
+        assetId: account.assetId,
+        customerAccountId: account.customerAccountId,
+        availableLiabilityAmount: this.decimal(0),
+        reservedLiabilityAmount: this.decimal(0),
+        pendingCreditAmount: this.decimal(0),
+        totalLiabilityAmount: this.decimal(0)
+      };
+      const netAmount = account.ledgerPostings.reduce((current, posting) => {
+        const amount = new Prisma.Decimal(posting.amount);
+        return posting.direction === LedgerPostingDirection.credit
+          ? current.plus(amount)
+          : current.minus(amount);
+      }, this.decimal(0));
+
+      if (
+        account.accountType ===
+        LedgerAccountType.customer_asset_pending_withdrawal_liability
+      ) {
+        existing.reservedLiabilityAmount =
+          existing.reservedLiabilityAmount.plus(netAmount);
+      } else {
+        existing.availableLiabilityAmount =
+          existing.availableLiabilityAmount.plus(netAmount);
+      }
+
+      existing.totalLiabilityAmount = existing.availableLiabilityAmount.plus(
+        existing.reservedLiabilityAmount
+      );
+      byCompositeKey.set(compositeKey, existing);
+    }
+
+    for (const [compositeKey, entry] of byCompositeKey.entries()) {
+      if (entry.totalLiabilityAmount.lte(0)) {
+        continue;
+      }
+
+      const current = rawLeavesByAsset.get(entry.assetId) ?? [];
+      current.push(entry);
+      rawLeavesByAsset.set(entry.assetId, current);
+    }
+
+    for (const balance of customerBalances) {
+      const compositeKey = `${balance.assetId}:${balance.customerAccountId}`;
+      if (byCompositeKey.has(compositeKey)) {
+        continue;
+      }
+
+      const totalLiabilityAmount = balance.availableBalance.plus(balance.pendingBalance);
+      if (totalLiabilityAmount.lte(0)) {
+        continue;
+      }
+
+      const current = rawLeavesByAsset.get(balance.assetId) ?? [];
+      current.push({
+        assetId: balance.assetId,
+        customerAccountId: balance.customerAccountId,
+        availableLiabilityAmount: balance.availableBalance,
+        reservedLiabilityAmount: balance.pendingBalance,
+        pendingCreditAmount: this.decimal(0),
+        totalLiabilityAmount
+      });
+      rawLeavesByAsset.set(balance.assetId, current);
+    }
+
+    const proofByAsset = new Map<string, LiabilityProofAssetComputation>();
+
+    for (const asset of assets) {
+      const orderedLeaves = (rawLeavesByAsset.get(asset.id) ?? [])
+        .sort((left, right) =>
+          left.customerAccountId.localeCompare(right.customerAccountId)
+        )
+        .map((entry, leafIndex) => {
+          const payload: LiabilityLeafPayload = {
+            version: 1,
+            snapshotId,
+            assetId: asset.id,
+            assetSymbol: asset.symbol,
+            customerAccountId: entry.customerAccountId,
+            leafIndex,
+            availableLiabilityAmount: entry.availableLiabilityAmount.toString(),
+            reservedLiabilityAmount: entry.reservedLiabilityAmount.toString(),
+            pendingCreditAmount: entry.pendingCreditAmount.toString(),
+            totalLiabilityAmount: entry.totalLiabilityAmount.toString()
+          };
+
+          return {
+            customerAccountId: entry.customerAccountId,
+            leafIndex,
+            leafHash: hashLiabilityLeaf(payload),
+            payload,
+            availableLiabilityAmount: entry.availableLiabilityAmount,
+            reservedLiabilityAmount: entry.reservedLiabilityAmount,
+            pendingCreditAmount: entry.pendingCreditAmount,
+            totalLiabilityAmount: entry.totalLiabilityAmount
+          };
+        });
+      const leafHashes = orderedLeaves.map((leaf) => leaf.leafHash);
+      const serializedLeaves = orderedLeaves.map((leaf) => leaf.leafHash).join("\n");
+
+      proofByAsset.set(asset.id, {
+        assetId: asset.id,
+        liabilityMerkleRoot: buildMerkleRoot(leafHashes),
+        liabilityLeafCount: orderedLeaves.length,
+        liabilitySetChecksumSha256:
+          orderedLeaves.length > 0 ? buildSha256Checksum(serializedLeaves) : null,
+        leaves: orderedLeaves
+      });
+    }
+
+    return proofByAsset;
+  }
+
   private async computeReserveEvidenceByAsset(
     assets: AssetRecord[],
     reserveWallets: ReserveWalletRecord[]
@@ -1183,6 +2361,7 @@ export class SolvencyService {
     asset: AssetRecord;
     liabilities: LiabilityAssetComputation;
     reserveEvidence: ReserveEvidenceComputation[];
+    liabilityProof: LiabilityProofAssetComputation;
   }): AssetSnapshotComputation {
     const observedReserveAmount = input.reserveEvidence.reduce(
       (current, item) =>
@@ -1394,6 +2573,9 @@ export class SolvencyService {
         input.liabilities.openReconciliationMismatchCount,
       criticalReconciliationMismatchCount:
         input.liabilities.criticalReconciliationMismatchCount,
+      liabilityMerkleRoot: input.liabilityProof.liabilityMerkleRoot,
+      liabilityLeafCount: input.liabilityProof.liabilityLeafCount,
+      liabilitySetChecksumSha256: input.liabilityProof.liabilitySetChecksumSha256,
       issues,
       reserveEvidence: input.reserveEvidence,
       summarySnapshot: {
@@ -1403,6 +2585,8 @@ export class SolvencyService {
         observedReserveAmount: observedReserveAmount.toString(),
         reserveDeltaAmount: reserveDeltaAmount.toString(),
         reserveRatioBps,
+        liabilityMerkleRoot: input.liabilityProof.liabilityMerkleRoot,
+        liabilityLeafCount: input.liabilityProof.liabilityLeafCount,
         evidenceFreshness,
         issueClassifications: issues.map((issue) => issue.classification)
       }
@@ -1425,6 +2609,7 @@ export class SolvencyService {
         pauseLoanFunding: true,
         pauseStakingWrites: true,
         requireManualOperatorReview: true,
+        manualResumeRequired: true,
         reasonCode: criticalIssue.reasonCode,
         reasonSummary: criticalIssue.summary,
         metadata: {
@@ -1450,6 +2635,7 @@ export class SolvencyService {
         pauseLoanFunding: false,
         pauseStakingWrites: false,
         requireManualOperatorReview: true,
+        manualResumeRequired: false,
         reasonCode: warningIssue.reasonCode,
         reasonSummary: warningIssue.summary,
         metadata: {
@@ -1465,6 +2651,7 @@ export class SolvencyService {
       pauseLoanFunding: false,
       pauseStakingWrites: false,
       requireManualOperatorReview: false,
+      manualResumeRequired: false,
       reasonCode: null,
       reasonSummary: null,
       metadata: null
@@ -1535,49 +2722,94 @@ export class SolvencyService {
     });
 
     const now = new Date();
+    const holdPausedForManualResume =
+      currentState?.status === SolvencyPolicyStateStatus.paused &&
+      currentState.manualResumeRequired &&
+      derivedState.status !== SolvencyPolicyStateStatus.paused;
+    const effectiveState = holdPausedForManualResume
+      ? {
+          status: SolvencyPolicyStateStatus.paused,
+          pauseWithdrawalApprovals: true,
+          pauseManagedWithdrawalExecution: true,
+          pauseLoanFunding: true,
+          pauseStakingWrites: true,
+          requireManualOperatorReview: true,
+          manualResumeRequired: true,
+          reasonCode: "manual_resume_required",
+          reasonSummary:
+            "Latest solvency evidence no longer shows a critical shortfall, but governed manual resume approval is required before sensitive flows resume.",
+          metadata: {
+            latestDerivedStatus: derivedState.status,
+            latestDerivedReasonCode: derivedState.reasonCode,
+            latestDerivedReasonSummary: derivedState.reasonSummary
+          } satisfies PrismaJsonValue
+        }
+      : derivedState;
+    const invalidatePendingResumeRequests =
+      effectiveState.status === SolvencyPolicyStateStatus.paused &&
+      !holdPausedForManualResume;
+    const resetResumeHistory =
+      effectiveState.status === SolvencyPolicyStateStatus.paused &&
+      (!currentState ||
+        currentState.status !== SolvencyPolicyStateStatus.paused ||
+        !currentState.manualResumeRequired);
     const nextState = currentState
       ? await transaction.solvencyPolicyState.update({
           where: {
             environment: this.environment
           },
           data: {
-            status: derivedState.status,
-            pauseWithdrawalApprovals: derivedState.pauseWithdrawalApprovals,
+            status: effectiveState.status,
+            pauseWithdrawalApprovals: effectiveState.pauseWithdrawalApprovals,
             pauseManagedWithdrawalExecution:
-              derivedState.pauseManagedWithdrawalExecution,
-            pauseLoanFunding: derivedState.pauseLoanFunding,
-            pauseStakingWrites: derivedState.pauseStakingWrites,
-            requireManualOperatorReview: derivedState.requireManualOperatorReview,
+              effectiveState.pauseManagedWithdrawalExecution,
+            pauseLoanFunding: effectiveState.pauseLoanFunding,
+            pauseStakingWrites: effectiveState.pauseStakingWrites,
+            requireManualOperatorReview: effectiveState.requireManualOperatorReview,
             latestSnapshotId: snapshotId,
             triggeredAt:
-              derivedState.status !== SolvencyPolicyStateStatus.normal
+              effectiveState.status !== SolvencyPolicyStateStatus.normal
                 ? currentState.triggeredAt ?? now
                 : null,
             clearedAt:
-              derivedState.status === SolvencyPolicyStateStatus.normal ? now : null,
-            reasonCode: derivedState.reasonCode,
-            reasonSummary: derivedState.reasonSummary,
-            metadata: this.toNullableJsonInput(derivedState.metadata)
+              effectiveState.status === SolvencyPolicyStateStatus.normal ? now : null,
+            reasonCode: effectiveState.reasonCode,
+            reasonSummary: effectiveState.reasonSummary,
+            manualResumeRequired: effectiveState.manualResumeRequired,
+            manualResumeRequestedAt: effectiveState.manualResumeRequired
+              ? resetResumeHistory || invalidatePendingResumeRequests
+                ? null
+                : currentState.manualResumeRequestedAt ?? null
+              : null,
+            manualResumeApprovedAt: effectiveState.manualResumeRequired ? null : null,
+            manualResumeApprovedByOperatorId: null,
+            manualResumeApprovedByOperatorRole: null,
+            metadata: this.toNullableJsonInput(effectiveState.metadata)
           }
         })
       : await transaction.solvencyPolicyState.create({
           data: {
             environment: this.environment,
-            status: derivedState.status,
-            pauseWithdrawalApprovals: derivedState.pauseWithdrawalApprovals,
+            status: effectiveState.status,
+            pauseWithdrawalApprovals: effectiveState.pauseWithdrawalApprovals,
             pauseManagedWithdrawalExecution:
-              derivedState.pauseManagedWithdrawalExecution,
-            pauseLoanFunding: derivedState.pauseLoanFunding,
-            pauseStakingWrites: derivedState.pauseStakingWrites,
-            requireManualOperatorReview: derivedState.requireManualOperatorReview,
+              effectiveState.pauseManagedWithdrawalExecution,
+            pauseLoanFunding: effectiveState.pauseLoanFunding,
+            pauseStakingWrites: effectiveState.pauseStakingWrites,
+            requireManualOperatorReview: effectiveState.requireManualOperatorReview,
             latestSnapshotId: snapshotId,
             triggeredAt:
-              derivedState.status !== SolvencyPolicyStateStatus.normal ? now : null,
+              effectiveState.status !== SolvencyPolicyStateStatus.normal ? now : null,
             clearedAt:
-              derivedState.status === SolvencyPolicyStateStatus.normal ? now : null,
-            reasonCode: derivedState.reasonCode,
-            reasonSummary: derivedState.reasonSummary,
-            metadata: this.toNullableJsonInput(derivedState.metadata)
+              effectiveState.status === SolvencyPolicyStateStatus.normal ? now : null,
+            reasonCode: effectiveState.reasonCode,
+            reasonSummary: effectiveState.reasonSummary,
+            manualResumeRequired: effectiveState.manualResumeRequired,
+            manualResumeRequestedAt: null,
+            manualResumeApprovedAt: null,
+            manualResumeApprovedByOperatorId: null,
+            manualResumeApprovedByOperatorRole: null,
+            metadata: this.toNullableJsonInput(effectiveState.metadata)
           }
         });
 
@@ -1592,11 +2824,27 @@ export class SolvencyService {
       currentState.pauseStakingWrites !== nextState.pauseStakingWrites ||
       currentState.requireManualOperatorReview !==
         nextState.requireManualOperatorReview ||
+      currentState.manualResumeRequired !== nextState.manualResumeRequired ||
       currentState.reasonCode !== nextState.reasonCode ||
       currentState.reasonSummary !== nextState.reasonSummary;
 
     if (!stateChanged) {
       return;
+    }
+
+    if (invalidatePendingResumeRequests) {
+      await transaction.solvencyPolicyResumeRequest.updateMany({
+        where: {
+          environment: this.environment,
+          status: SolvencyPolicyResumeRequestStatus.pending_approval
+        },
+        data: {
+          status: SolvencyPolicyResumeRequestStatus.rejected,
+          rejectionNote:
+            "Superseded by a newer paused solvency snapshot before approval.",
+          rejectedAt: now
+        }
+      });
     }
 
     await transaction.auditEvent.create({
@@ -1621,6 +2869,7 @@ export class SolvencyService {
           pauseLoanFunding: nextState.pauseLoanFunding,
           pauseStakingWrites: nextState.pauseStakingWrites,
           requireManualOperatorReview: nextState.requireManualOperatorReview,
+          manualResumeRequired: nextState.manualResumeRequired,
           reasonCode: nextState.reasonCode,
           reasonSummary: nextState.reasonSummary
         } as PrismaJsonValue
@@ -1770,6 +3019,104 @@ export class SolvencyService {
     }
 
     return SolvencySnapshotStatus.healthy;
+  }
+
+  private buildSignedReport(input: {
+    snapshotId: string;
+    generatedAt: string;
+    completedAt: string;
+    summary: ReturnType<SolvencyService["buildSnapshotSummary"]>;
+    assetComputations: AssetSnapshotComputation[];
+    policyState: DerivedPolicyState;
+  }): {
+    payload: SolvencyReportPayload;
+    canonicalPayloadText: string;
+    reportHash: string;
+    reportChecksumSha256: string;
+    signature: string;
+    signatureAlgorithm: string;
+    signerAddress: string;
+  } {
+    const payload: SolvencyReportPayload = {
+      version: 1,
+      snapshotId: input.snapshotId,
+      environment: this.environment,
+      chainId: this.productChainId,
+      snapshotStatus: input.summary.status,
+      evidenceFreshness: input.summary.evidenceFreshness,
+      generatedAt: input.generatedAt,
+      completedAt: input.completedAt,
+      totals: {
+        totalLiabilityAmount: input.summary.totalLiabilityAmount.toString(),
+        totalObservedReserveAmount:
+          input.summary.totalObservedReserveAmount.toString(),
+        totalUsableReserveAmount:
+          input.summary.totalUsableReserveAmount.toString(),
+        totalEncumberedReserveAmount:
+          input.summary.totalEncumberedReserveAmount.toString(),
+        totalReserveDeltaAmount: input.summary.totalReserveDeltaAmount.toString()
+      },
+      policyState: {
+        status: input.policyState.status,
+        pauseWithdrawalApprovals: input.policyState.pauseWithdrawalApprovals,
+        pauseManagedWithdrawalExecution:
+          input.policyState.pauseManagedWithdrawalExecution,
+        pauseLoanFunding: input.policyState.pauseLoanFunding,
+        pauseStakingWrites: input.policyState.pauseStakingWrites,
+        requireManualOperatorReview:
+          input.policyState.requireManualOperatorReview,
+        manualResumeRequired: input.policyState.manualResumeRequired,
+        reasonCode: input.policyState.reasonCode,
+        reasonSummary: input.policyState.reasonSummary
+      },
+      assets: input.assetComputations.map((item) => ({
+        assetId: item.asset.id,
+        symbol: item.asset.symbol,
+        displayName: item.asset.displayName,
+        decimals: item.asset.decimals,
+        chainId: item.asset.chainId,
+        assetType: item.asset.assetType,
+        snapshotStatus: item.status,
+        evidenceFreshness: item.evidenceFreshness,
+        totalLiabilityAmount: item.totalLiabilityAmount.toString(),
+        usableReserveAmount: item.usableReserveAmount.toString(),
+        observedReserveAmount: item.observedReserveAmount.toString(),
+        encumberedReserveAmount: item.encumberedReserveAmount.toString(),
+        excludedReserveAmount: item.excludedReserveAmount.toString(),
+        reserveDeltaAmount: item.reserveDeltaAmount.toString(),
+        reserveRatioBps: item.reserveRatioBps,
+        issueCount: item.issues.length,
+        liabilityMerkleRoot: item.liabilityMerkleRoot,
+        liabilityLeafCount: item.liabilityLeafCount,
+        liabilitySetChecksumSha256: item.liabilitySetChecksumSha256
+      }))
+    };
+
+    return {
+      payload,
+      ...buildSignedSolvencyReport(payload, this.reportSignerPrivateKey)
+    };
+  }
+
+  private normalizeOptionalString(value?: string | null): string | null {
+    const normalizedValue = value?.trim() ?? null;
+    return normalizedValue && normalizedValue.length > 0 ? normalizedValue : null;
+  }
+
+  private assertCanRequestResume(operatorRole?: string | null): string {
+    return assertOperatorRoleAuthorized(
+      operatorRole,
+      this.resumeRequestAllowedOperatorRoles,
+      "Operator role is not authorized to request solvency policy resume."
+    );
+  }
+
+  private assertCanApproveResume(operatorRole?: string | null): string {
+    return assertOperatorRoleAuthorized(
+      operatorRole,
+      this.resumeApproverAllowedOperatorRoles,
+      "Operator role is not authorized to approve or reject solvency policy resume."
+    );
   }
 
   private decimal(value: string | number | Prisma.Decimal): Prisma.Decimal {

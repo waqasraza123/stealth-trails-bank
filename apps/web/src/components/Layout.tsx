@@ -159,6 +159,15 @@ export const Layout = ({ children }: LayoutProps) => {
               variant="outline"
               className="border-slate-200 bg-white/80 px-5"
             >
+              <Link to="/proofs/me">
+                {locale === "ar" ? "إثباتي" : "My proof"}
+              </Link>
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="border-slate-200 bg-white/80 px-5"
+            >
               <Link to="/loans">
                 {locale === "ar" ? "القروض المُدارة" : "Managed loans"}
               </Link>

@@ -11,7 +11,10 @@ function createController() {
   const solvencyService = {
     getWorkspace: jest.fn(),
     getSnapshotDetail: jest.fn(),
-    generateSnapshot: jest.fn()
+    generateSnapshot: jest.fn(),
+    requestPolicyResume: jest.fn(),
+    approvePolicyResume: jest.fn(),
+    rejectPolicyResume: jest.fn()
   } as unknown as jest.Mocked<SolvencyService>;
 
   return {
@@ -42,9 +45,25 @@ describe("SolvencyController", () => {
         clearedAt: null,
         reasonCode: null,
         reasonSummary: null,
+        manualResumeRequired: false,
+        manualResumeRequestedAt: null,
+        manualResumeApprovedAt: null,
+        manualResumeApprovedByOperatorId: null,
+        manualResumeApprovedByOperatorRole: null,
         metadata: null,
         updatedAt: "2026-04-18T00:00:00.000Z"
       },
+      resumeGovernance: {
+        requestAllowedOperatorRoles: ["operations_admin"],
+        approverAllowedOperatorRoles: ["risk_manager"],
+        currentOperator: {
+          operatorId: "operator_1",
+          operatorRole: "operations_admin",
+          canRequestResume: true,
+          canApproveResume: false
+        }
+      },
+      latestPendingResumeRequest: null,
       latestSnapshot: null,
       latestHealthySnapshotAt: null,
       recentSnapshots: [],
@@ -53,9 +72,17 @@ describe("SolvencyController", () => {
 
     const response = await controller.getWorkspace({
       limit: 20
+    }, {
+      internalOperator: {
+        operatorId: "operator_1",
+        operatorRole: "operations_admin"
+      }
     });
 
-    expect(solvencyService.getWorkspace).toHaveBeenCalledWith(20);
+    expect(solvencyService.getWorkspace).toHaveBeenCalledWith(20, {
+      operatorId: "operator_1",
+      operatorRole: "operations_admin"
+    });
     expect(response.status).toBe("success");
     expect(response.message).toContain("workspace");
   });
@@ -94,6 +121,11 @@ describe("SolvencyController", () => {
         clearedAt: null,
         reasonCode: null,
         reasonSummary: null,
+        manualResumeRequired: false,
+        manualResumeRequestedAt: null,
+        manualResumeApprovedAt: null,
+        manualResumeApprovedByOperatorId: null,
+        manualResumeApprovedByOperatorRole: null,
         metadata: null,
         updatedAt: "2026-04-18T00:00:01.000Z"
       },
@@ -113,5 +145,74 @@ describe("SolvencyController", () => {
     });
     expect(response.status).toBe("success");
     expect(response.message).toContain("generated");
+  });
+
+  it("requests governed manual resume through the operator identity", async () => {
+    const { controller, solvencyService } = createController();
+    (solvencyService.requestPolicyResume as jest.Mock).mockResolvedValue({
+      policyState: {
+        environment: WorkerRuntimeEnvironment.production,
+        status: SolvencyPolicyStateStatus.paused,
+        pauseWithdrawalApprovals: true,
+        pauseManagedWithdrawalExecution: true,
+        pauseLoanFunding: true,
+        pauseStakingWrites: true,
+        requireManualOperatorReview: true,
+        latestSnapshotId: "snapshot_healthy",
+        triggeredAt: "2026-04-18T00:00:00.000Z",
+        clearedAt: null,
+        reasonCode: "manual_resume_required",
+        reasonSummary: "Manual resume approval required.",
+        manualResumeRequired: true,
+        manualResumeRequestedAt: "2026-04-18T00:01:00.000Z",
+        manualResumeApprovedAt: null,
+        manualResumeApprovedByOperatorId: null,
+        manualResumeApprovedByOperatorRole: null,
+        metadata: null,
+        updatedAt: "2026-04-18T00:01:00.000Z"
+      },
+      request: {
+        id: "resume_1",
+        environment: WorkerRuntimeEnvironment.production,
+        snapshotId: "snapshot_healthy",
+        status: "pending_approval",
+        requestedByOperatorId: "operator_1",
+        requestedByOperatorRole: "operations_admin",
+        requestNote: null,
+        expectedPolicyUpdatedAt: "2026-04-18T00:00:00.000Z",
+        requestedAt: "2026-04-18T00:01:00.000Z",
+        approvedByOperatorId: null,
+        approvedByOperatorRole: null,
+        approvalNote: null,
+        approvedAt: null,
+        rejectedByOperatorId: null,
+        rejectedByOperatorRole: null,
+        rejectionNote: null,
+        rejectedAt: null,
+        updatedAt: "2026-04-18T00:01:00.000Z"
+      }
+    });
+
+    const response = await controller.requestPolicyResume(
+      {
+        snapshotId: "snapshot_healthy",
+        expectedPolicyUpdatedAt: "2026-04-18T00:00:00.000Z"
+      },
+      {
+        internalOperator: {
+          operatorId: "operator_1",
+          operatorRole: "operations_admin"
+        }
+      }
+    );
+
+    expect(solvencyService.requestPolicyResume).toHaveBeenCalledWith(
+      "snapshot_healthy",
+      "2026-04-18T00:00:00.000Z",
+      undefined,
+      "operator_1",
+      "operations_admin"
+    );
+    expect(response.status).toBe("success");
   });
 });

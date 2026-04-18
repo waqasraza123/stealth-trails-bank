@@ -94,6 +94,25 @@ const DEFAULT_WORKER_SOLVENCY_SNAPSHOT_INTERVAL_MS = 300_000;
 const DEFAULT_WORKER_INTERNAL_API_STARTUP_GRACE_PERIOD_MS = 45_000;
 const DEFAULT_WORKER_MANAGED_WITHDRAWAL_CLAIM_TIMEOUT_MS = 60_000;
 const DEFAULT_WORKER_POLICY_CONTROLLED_WITHDRAWAL_AUTHORIZATION_TTL_SECONDS = 300;
+const DEFAULT_SOLVENCY_RESUME_REQUEST_ALLOWED_OPERATOR_ROLES = [
+  "operations_admin",
+  "risk_manager"
+] as const;
+const DEFAULT_SOLVENCY_RESUME_APPROVER_ALLOWED_OPERATOR_ROLES = [
+  "compliance_lead",
+  "risk_manager"
+] as const;
+const DEFAULT_GOVERNED_EXECUTION_REQUEST_ALLOWED_OPERATOR_ROLES = [
+  "operations_admin",
+  "risk_manager"
+] as const;
+const DEFAULT_GOVERNED_EXECUTION_APPROVER_ALLOWED_OPERATOR_ROLES = [
+  "compliance_lead",
+  "risk_manager"
+] as const;
+const DEFAULT_GOVERNED_EXECUTION_OVERRIDE_MAX_HOURS = 12;
+const DEFAULT_LOCAL_SOLVENCY_REPORT_SIGNER_PRIVATE_KEY =
+  "0x59c6995e998f97a5a0044966f094538c5f6d4e07f16b8ad8cc7658f0f1b0f9d8";
 const DEFAULT_LOCAL_WORKER_ID = "worker-local-1";
 const DEFAULT_LOCAL_INTERNAL_API_BASE_URL = "http://localhost:9001";
 const DEFAULT_LOCAL_INTERNAL_WORKER_API_KEY = "local-dev-worker-key";
@@ -152,6 +171,23 @@ function parseIntegerInRange(
   }
 
   return Number(value);
+}
+
+function parseGovernedTreasuryExecutionMode(
+  value: string | undefined,
+  name: string
+): GovernedTreasuryExecutionMode {
+  if (!value) {
+    return "direct_private_key";
+  }
+
+  if (value === "direct_private_key" || value === "governed_external") {
+    return value;
+  }
+
+  throw new Error(
+    `${name} must be one of: direct_private_key, governed_external.`
+  );
 }
 
 function parseApiRuntimeEnvironment(
@@ -881,6 +917,22 @@ export type SolvencyRuntimeConfig = {
   readonly evidenceStaleAfterSeconds: number;
   readonly warningReserveRatioBps: number;
   readonly criticalReserveRatioBps: number;
+  readonly reportSignerPrivateKey: string;
+  readonly resumeRequestAllowedOperatorRoles: readonly string[];
+  readonly resumeApproverAllowedOperatorRoles: readonly string[];
+};
+
+export type GovernedTreasuryExecutionMode = "direct_private_key" | "governed_external";
+
+export type GovernedExecutionRuntimeConfig = {
+  readonly environment: ApiRuntimeEnvironment;
+  readonly governedExecutionRequiredInProduction: boolean;
+  readonly governedReserveCustodyTypes: readonly string[];
+  readonly loanFundingExecutionMode: GovernedTreasuryExecutionMode;
+  readonly stakingWriteExecutionMode: GovernedTreasuryExecutionMode;
+  readonly requestAllowedOperatorRoles: readonly string[];
+  readonly approverAllowedOperatorRoles: readonly string[];
+  readonly overrideMaxHours: number;
 };
 
 function parsePlatformAlertDeliveryHealthSloConfig(
@@ -1809,11 +1861,107 @@ export function loadSolvencyRuntimeConfig(
     criticalReserveRatioBps,
     100000
   );
+  const configuredReportSignerPrivateKey = readOptionalRuntimeEnv(
+    env,
+    "SOLVENCY_REPORT_SIGNER_PRIVATE_KEY"
+  );
+  const configuredResumeRequestRoles = readOptionalRuntimeEnv(
+    env,
+    "SOLVENCY_RESUME_REQUEST_ALLOWED_OPERATOR_ROLES"
+  );
+  const configuredResumeApproverRoles = readOptionalRuntimeEnv(
+    env,
+    "SOLVENCY_RESUME_APPROVER_ALLOWED_OPERATOR_ROLES"
+  );
+  const reportSignerPrivateKey =
+    configuredReportSignerPrivateKey?.trim() ||
+    (environment === "production"
+      ? ""
+      : DEFAULT_LOCAL_SOLVENCY_REPORT_SIGNER_PRIVATE_KEY);
+
+  if (!reportSignerPrivateKey) {
+    throw new Error(
+      "SOLVENCY_REPORT_SIGNER_PRIVATE_KEY must be configured in production."
+    );
+  }
 
   return {
     environment,
     evidenceStaleAfterSeconds,
     warningReserveRatioBps,
-    criticalReserveRatioBps
+    criticalReserveRatioBps,
+    reportSignerPrivateKey,
+    resumeRequestAllowedOperatorRoles: configuredResumeRequestRoles
+      ? parseCommaSeparatedValues(
+          configuredResumeRequestRoles,
+          "SOLVENCY_RESUME_REQUEST_ALLOWED_OPERATOR_ROLES"
+        )
+      : [...DEFAULT_SOLVENCY_RESUME_REQUEST_ALLOWED_OPERATOR_ROLES],
+    resumeApproverAllowedOperatorRoles: configuredResumeApproverRoles
+      ? parseCommaSeparatedValues(
+          configuredResumeApproverRoles,
+          "SOLVENCY_RESUME_APPROVER_ALLOWED_OPERATOR_ROLES"
+        )
+      : [...DEFAULT_SOLVENCY_RESUME_APPROVER_ALLOWED_OPERATOR_ROLES]
+  };
+}
+
+export function loadGovernedExecutionRuntimeConfig(
+  env: RuntimeEnvShape = getNodeRuntimeEnv()
+): GovernedExecutionRuntimeConfig {
+  const environment = parseApiRuntimeEnvironment(
+    readOptionalRuntimeEnv(env, "NODE_ENV")
+  );
+  const configuredRequestRoles = readOptionalRuntimeEnv(
+    env,
+    "GOVERNED_EXECUTION_REQUEST_ALLOWED_OPERATOR_ROLES"
+  );
+  const configuredApproverRoles = readOptionalRuntimeEnv(
+    env,
+    "GOVERNED_EXECUTION_APPROVER_ALLOWED_OPERATOR_ROLES"
+  );
+  const configuredReserveCustodyTypes = readOptionalRuntimeEnv(
+    env,
+    "GOVERNED_EXECUTION_ALLOWED_RESERVE_CUSTODY_TYPES"
+  );
+
+  return {
+    environment,
+    governedExecutionRequiredInProduction: parseBoolean(
+      readOptionalRuntimeEnv(env, "GOVERNED_EXECUTION_REQUIRED_IN_PRODUCTION") ??
+        "true",
+      "GOVERNED_EXECUTION_REQUIRED_IN_PRODUCTION"
+    ),
+    governedReserveCustodyTypes: configuredReserveCustodyTypes
+      ? parseCommaSeparatedValues(
+          configuredReserveCustodyTypes,
+          "GOVERNED_EXECUTION_ALLOWED_RESERVE_CUSTODY_TYPES"
+        )
+      : ["multisig_controlled", "contract_controlled"],
+    loanFundingExecutionMode: parseGovernedTreasuryExecutionMode(
+      readOptionalRuntimeEnv(env, "GOVERNED_LOAN_FUNDING_EXECUTION_MODE"),
+      "GOVERNED_LOAN_FUNDING_EXECUTION_MODE"
+    ),
+    stakingWriteExecutionMode: parseGovernedTreasuryExecutionMode(
+      readOptionalRuntimeEnv(env, "GOVERNED_STAKING_WRITE_EXECUTION_MODE"),
+      "GOVERNED_STAKING_WRITE_EXECUTION_MODE"
+    ),
+    requestAllowedOperatorRoles: configuredRequestRoles
+      ? parseCommaSeparatedValues(
+          configuredRequestRoles,
+          "GOVERNED_EXECUTION_REQUEST_ALLOWED_OPERATOR_ROLES"
+        )
+      : [...DEFAULT_GOVERNED_EXECUTION_REQUEST_ALLOWED_OPERATOR_ROLES],
+    approverAllowedOperatorRoles: configuredApproverRoles
+      ? parseCommaSeparatedValues(
+          configuredApproverRoles,
+          "GOVERNED_EXECUTION_APPROVER_ALLOWED_OPERATOR_ROLES"
+        )
+      : [...DEFAULT_GOVERNED_EXECUTION_APPROVER_ALLOWED_OPERATOR_ROLES],
+    overrideMaxHours: parsePositiveInteger(
+      readOptionalRuntimeEnv(env, "GOVERNED_EXECUTION_OVERRIDE_MAX_HOURS") ??
+        String(DEFAULT_GOVERNED_EXECUTION_OVERRIDE_MAX_HOURS),
+      "GOVERNED_EXECUTION_OVERRIDE_MAX_HOURS"
+    )
   };
 }

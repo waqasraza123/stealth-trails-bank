@@ -22,9 +22,11 @@ import {
   TransactionIntentType,
   WithdrawalExecutionFailureCategory,
   WalletCustodyType,
+  WalletKind,
   WalletStatus
 } from "@prisma/client";
 import { assertOperatorRoleAuthorized } from "../auth/internal-operator-role-policy";
+import { GovernedExecutionService } from "../governed-execution/governed-execution.service";
 import { LedgerService } from "../ledger/ledger.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReviewCasesService } from "../review-cases/review-cases.service";
@@ -103,6 +105,7 @@ const withdrawalIntentReviewInclude = {
     select: {
       id: true,
       address: true,
+      kind: true,
       custodyType: true
     }
   },
@@ -174,6 +177,7 @@ type InternalIntentRecord = {
   sourceWallet: {
     id: string;
     address: string;
+    kind?: WalletKind;
     custodyType: WalletCustodyType;
   } | null;
   customerAccount: {
@@ -367,6 +371,11 @@ export class WithdrawalIntentsService {
       SolvencyService,
       | "assertWithdrawalApprovalAllowed"
       | "assertManagedWithdrawalExecutionAllowed"
+    >,
+    @Optional()
+    private readonly governedExecutionService?: Pick<
+      GovernedExecutionService,
+      "assertManagedWithdrawalExecutionAllowed"
     >
   ) {
     this.productChainId = loadProductChainRuntimeConfig().productChainId;
@@ -1674,12 +1683,18 @@ export class WithdrawalIntentsService {
     workerId: string,
     dto: StartManagedWithdrawalExecutionDto
   ): Promise<StartManagedWithdrawalExecutionResult> {
-    await this.solvencyService?.assertManagedWithdrawalExecutionAllowed?.();
     const existingIntent = await this.findWithdrawalIntentForReview(intentId);
 
     if (!existingIntent) {
       throw new NotFoundException("Withdrawal transaction intent not found.");
     }
+
+    await this.solvencyService?.assertManagedWithdrawalExecutionAllowed?.();
+    await this.governedExecutionService?.assertManagedWithdrawalExecutionAllowed?.({
+      sourceWalletAddress: existingIntent.sourceWallet?.address ?? null,
+      sourceWalletKind: existingIntent.sourceWallet?.kind ?? null,
+      sourceWalletCustodyType: existingIntent.sourceWallet?.custodyType ?? null
+    });
 
     if (
       existingIntent.status !== TransactionIntentStatus.queued ||

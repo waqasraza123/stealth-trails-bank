@@ -9,6 +9,7 @@ import {
 import { LoadingButton } from "@/components/ui/loading-button";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useLocale } from "@/i18n/use-locale";
 import { useT } from "@/i18n/use-t";
 import useAuth from "@/hooks/auth/useAuth";
 import { toast } from "@/components/ui/use-toast";
@@ -22,6 +23,7 @@ const sharedLoginCredentials = {
 const SignIn = () => {
   const { login, loading, error } = useAuth();
   const t = useT();
+  const { locale } = useLocale();
   const signInCopy = getSignInCopy(t);
   const authCredibilityChips = getAuthCredibilityChips(t);
   const [formData, setFormData] = useState({
@@ -73,15 +75,27 @@ const SignIn = () => {
       brandDescription={signInCopy.brandDescription}
       chips={authCredibilityChips}
       footer={
-        <p className="text-center">
-          {t("auth.signIn.footerPrefix")}{" "}
-          <Link
-            to="/auth/sign-up"
-            className="font-semibold text-auth-form-accent transition-colors hover:text-[hsl(var(--auth-form-foreground))]"
-          >
-            {t("auth.signIn.footerLink")}
-          </Link>
-        </p>
+        <div className="space-y-2 text-center">
+          <p>
+            {t("auth.signIn.footerPrefix")}{" "}
+            <Link
+              to="/auth/sign-up"
+              className="font-semibold text-auth-form-accent transition-colors hover:text-[hsl(var(--auth-form-foreground))]"
+            >
+              {t("auth.signIn.footerLink")}
+            </Link>
+          </p>
+          <p>
+            <Link
+              to="/trust/solvency"
+              className="font-semibold text-auth-form-accent transition-colors hover:text-[hsl(var(--auth-form-foreground))]"
+            >
+              {locale === "ar"
+                ? "عرض مركز الثقة العام"
+                : "View the public trust center"}
+            </Link>
+          </p>
+        </div>
       }
     >
       <form className="space-y-5" onSubmit={handleSubmit}>
