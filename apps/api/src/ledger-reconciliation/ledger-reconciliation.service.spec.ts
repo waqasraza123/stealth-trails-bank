@@ -117,8 +117,14 @@ function createService() {
     $transaction: jest.fn()
   } as unknown as PrismaService;
 
-  const transactionIntentsService = {} as TransactionIntentsService;
-  const withdrawalIntentsService = {} as WithdrawalIntentsService;
+  const transactionIntentsService = {
+    replayConfirmDepositIntent: jest.fn(),
+    replaySettleConfirmedDepositIntent: jest.fn()
+  } as unknown as TransactionIntentsService;
+  const withdrawalIntentsService = {
+    replayConfirmWithdrawalIntent: jest.fn(),
+    replaySettleConfirmedWithdrawalIntent: jest.fn()
+  } as unknown as WithdrawalIntentsService;
   const reviewCasesService = {
     openOrReuseReviewCase: jest.fn()
   } as unknown as ReviewCasesService;
@@ -671,5 +677,164 @@ describe("LedgerReconciliationService", () => {
     await expect(
       service.dismissMismatch("mismatch_1", "ops_1", null)
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("requires governed approval context before replaying a mismatch", async () => {
+    const { service } = createService();
+
+    jest.spyOn(service as any, "findMismatchById").mockResolvedValue(
+      buildMismatchRecord({
+        scope: LedgerReconciliationMismatchScope.transaction_intent,
+        recommendedAction:
+          LedgerReconciliationMismatchRecommendedAction.replay_confirm,
+        transactionIntentId: "intent_1",
+        transactionIntent: {
+          id: "intent_1",
+          intentType: TransactionIntentType.deposit,
+          status: TransactionIntentStatus.broadcast,
+          policyDecision: PolicyDecision.approved,
+          requestedAmount: new Prisma.Decimal("10"),
+          settledAmount: null,
+          createdAt: new Date("2026-04-06T00:00:00.000Z"),
+          updatedAt: new Date("2026-04-06T00:00:00.000Z")
+        }
+      })
+    );
+
+    await expect(
+      service.replayConfirmMismatch(
+        "mismatch_1",
+        "ops_1",
+        "operations_admin",
+        null,
+        null
+      )
+    ).rejects.toThrow(
+      "Governed replay approval is required before replaying ledger reconciliation mismatches."
+    );
+  });
+
+  it("forwards governed approval context to deposit mismatch replay", async () => {
+    const { service, transactionIntentsService } = createService();
+
+    jest.spyOn(service as any, "findMismatchById").mockResolvedValue(
+      buildMismatchRecord({
+        scope: LedgerReconciliationMismatchScope.transaction_intent,
+        recommendedAction:
+          LedgerReconciliationMismatchRecommendedAction.replay_confirm,
+        transactionIntentId: "intent_1",
+        mismatchKey: "transaction_intent:intent_1",
+        transactionIntent: {
+          id: "intent_1",
+          intentType: TransactionIntentType.deposit,
+          status: TransactionIntentStatus.broadcast,
+          policyDecision: PolicyDecision.approved,
+          requestedAmount: new Prisma.Decimal("10"),
+          settledAmount: null,
+          createdAt: new Date("2026-04-06T00:00:00.000Z"),
+          updatedAt: new Date("2026-04-06T00:00:00.000Z")
+        }
+      })
+    );
+    jest
+      .spyOn(service as any, "refreshMismatchAfterTargetedScan")
+      .mockResolvedValue(
+        buildMismatchRecord({
+          scope: LedgerReconciliationMismatchScope.transaction_intent,
+          recommendedAction: LedgerReconciliationMismatchRecommendedAction.none,
+          transactionIntentId: "intent_1",
+          mismatchKey: "transaction_intent:intent_1"
+        })
+      );
+
+    (transactionIntentsService.replayConfirmDepositIntent as jest.Mock).mockResolvedValue(
+      {
+        confirmReused: false
+      }
+    );
+
+    await service.replayConfirmMismatch(
+      "mismatch_1",
+      "ops_approver",
+      "operations_admin",
+      "approval_1",
+      "Replay from mismatch."
+    );
+
+    expect(
+      transactionIntentsService.replayConfirmDepositIntent
+    ).toHaveBeenCalledWith(
+      "intent_1",
+      "ops_approver",
+      "Replay from mismatch.",
+      "operations_admin",
+      {
+        approvalRequestId: "approval_1",
+        requestedByOperatorId: null,
+        requestedByOperatorRole: null
+      }
+    );
+  });
+
+  it("forwards governed approval context to withdrawal mismatch settlement replay", async () => {
+    const { service, withdrawalIntentsService } = createService();
+
+    jest.spyOn(service as any, "findMismatchById").mockResolvedValue(
+      buildMismatchRecord({
+        scope: LedgerReconciliationMismatchScope.transaction_intent,
+        recommendedAction:
+          LedgerReconciliationMismatchRecommendedAction.replay_settle,
+        transactionIntentId: "intent_2",
+        mismatchKey: "transaction_intent:intent_2",
+        transactionIntent: {
+          id: "intent_2",
+          intentType: TransactionIntentType.withdrawal,
+          status: TransactionIntentStatus.confirmed,
+          policyDecision: PolicyDecision.approved,
+          requestedAmount: new Prisma.Decimal("10"),
+          settledAmount: null,
+          createdAt: new Date("2026-04-06T00:00:00.000Z"),
+          updatedAt: new Date("2026-04-06T00:00:00.000Z")
+        }
+      })
+    );
+    jest
+      .spyOn(service as any, "refreshMismatchAfterTargetedScan")
+      .mockResolvedValue(
+        buildMismatchRecord({
+          scope: LedgerReconciliationMismatchScope.transaction_intent,
+          recommendedAction: LedgerReconciliationMismatchRecommendedAction.none,
+          transactionIntentId: "intent_2",
+          mismatchKey: "transaction_intent:intent_2"
+        })
+      );
+
+    (
+      withdrawalIntentsService.replaySettleConfirmedWithdrawalIntent as jest.Mock
+    ).mockResolvedValue({
+      settlementReused: false
+    });
+
+    await service.replaySettleMismatch(
+      "mismatch_1",
+      "ops_approver",
+      "operations_admin",
+      "approval_2",
+      "Replay settle from mismatch."
+    );
+
+    expect(
+      withdrawalIntentsService.replaySettleConfirmedWithdrawalIntent
+    ).toHaveBeenCalledWith(
+      "intent_2",
+      "ops_approver",
+      "Replay settle from mismatch.",
+      "operations_admin",
+      {
+        approvalRequestId: "approval_2",
+        requestedByOperatorId: null,
+        requestedByOperatorRole: null
+      }
+    );
   });
 });

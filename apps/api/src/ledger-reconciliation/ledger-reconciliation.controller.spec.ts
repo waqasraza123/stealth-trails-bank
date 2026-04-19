@@ -7,7 +7,7 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
   })
 }));
 
-import { INestApplication } from "@nestjs/common";
+import { ExecutionContext, INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
@@ -18,20 +18,39 @@ describe("LedgerReconciliationController", () => {
   let app: INestApplication;
   const ledgerReconciliationService = {
     listScanRuns: jest.fn(),
-    listMismatches: jest.fn()
+    listMismatches: jest.fn(),
+    replayConfirmMismatch: jest.fn(),
+    replaySettleMismatch: jest.fn()
   };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [LedgerReconciliationController],
       providers: [
-        InternalOperatorApiKeyGuard,
         {
           provide: LedgerReconciliationService,
           useValue: ledgerReconciliationService
         }
       ]
-    }).compile();
+    })
+      .overrideGuard(InternalOperatorApiKeyGuard)
+      .useValue({
+        canActivate: (context: ExecutionContext) => {
+          const request = context.switchToHttp().getRequest();
+          request.internalOperator = {
+            operatorId:
+              typeof request.headers["x-operator-id"] === "string"
+                ? request.headers["x-operator-id"]
+                : "ops_1",
+            operatorRole:
+              typeof request.headers["x-operator-role"] === "string"
+                ? request.headers["x-operator-role"]
+                : null
+          };
+          return true;
+        }
+      })
+      .compile();
 
     app = moduleRef.createNestApplication();
     await app.init();
@@ -152,5 +171,55 @@ describe("LedgerReconciliationController", () => {
         limit: 20
       }
     });
+  });
+
+  it("passes governed replay-confirm payload through with approval context", async () => {
+    ledgerReconciliationService.replayConfirmMismatch.mockResolvedValue({
+      mismatch: {
+        id: "mismatch_1"
+      }
+    });
+
+    const response = await request(app.getHttpServer())
+      .post("/ledger/internal/reconciliation/mismatches/mismatch_1/replay-confirm")
+      .set("x-operator-api-key", "test-operator-key")
+      .set("x-operator-id", "ops_1")
+      .set("x-operator-role", "operations_admin")
+      .send({
+        approvalRequestId: "approval_1",
+        note: "Replay from controller."
+      })
+      .expect(201);
+
+    expect(ledgerReconciliationService.replayConfirmMismatch).toHaveBeenCalledWith(
+      "mismatch_1",
+      "ops_1",
+      "operations_admin",
+      "approval_1",
+      "Replay from controller."
+    );
+    expect(response.body).toEqual({
+      status: "success",
+      message: "Ledger reconciliation confirm replay completed successfully.",
+      data: {
+        mismatch: {
+          id: "mismatch_1"
+        }
+      }
+    });
+  });
+
+  it("rejects malformed replay-confirm payloads", async () => {
+    await request(app.getHttpServer())
+      .post("/ledger/internal/reconciliation/mismatches/mismatch_1/replay-confirm")
+      .set("x-operator-api-key", "test-operator-key")
+      .set("x-operator-id", "ops_1")
+      .set("x-operator-role", "operations_admin")
+      .send({
+        approvalRequestId: "a".repeat(192)
+      })
+      .expect(400);
+
+    expect(ledgerReconciliationService.replayConfirmMismatch).not.toHaveBeenCalled();
   });
 });

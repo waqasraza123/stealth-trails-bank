@@ -1902,6 +1902,8 @@ export class LedgerReconciliationService {
   async replayConfirmMismatch(
     mismatchId: string,
     operatorId: string,
+    operatorRole: string | null,
+    approvalRequestId: string | null,
     note: string | null
   ): Promise<ActionResult> {
     const mismatch = await this.findMismatchById(mismatchId);
@@ -1923,17 +1925,35 @@ export class LedgerReconciliationService {
       throw new ConflictException("Linked transaction intent could not be resolved.");
     }
 
+    if (!approvalRequestId?.trim()) {
+      throw new ConflictException(
+        "Governed replay approval is required before replaying ledger reconciliation mismatches."
+      );
+    }
+
     if (mismatch.transactionIntent.intentType === TransactionIntentType.deposit) {
       await this.transactionIntentsService.replayConfirmDepositIntent(
         mismatch.transactionIntentId,
         operatorId,
-        note
+        note,
+        operatorRole ?? undefined,
+        {
+          approvalRequestId: approvalRequestId.trim(),
+          requestedByOperatorId: null,
+          requestedByOperatorRole: null
+        }
       );
     } else {
       await this.withdrawalIntentsService.replayConfirmWithdrawalIntent(
         mismatch.transactionIntentId,
         operatorId,
-        note
+        note,
+        operatorRole ?? undefined,
+        {
+          approvalRequestId: approvalRequestId.trim(),
+          requestedByOperatorId: null,
+          requestedByOperatorRole: null
+        }
       );
     }
 
@@ -1954,6 +1974,8 @@ export class LedgerReconciliationService {
   async replaySettleMismatch(
     mismatchId: string,
     operatorId: string,
+    operatorRole: string | null,
+    approvalRequestId: string | null,
     note: string | null
   ): Promise<ActionResult> {
     const mismatch = await this.findMismatchById(mismatchId);
@@ -1971,17 +1993,35 @@ export class LedgerReconciliationService {
       throw new ConflictException("Mismatch does not reference a transaction intent.");
     }
 
+    if (!approvalRequestId?.trim()) {
+      throw new ConflictException(
+        "Governed replay approval is required before replaying ledger reconciliation mismatches."
+      );
+    }
+
     if (mismatch.transactionIntent.intentType === TransactionIntentType.deposit) {
       await this.transactionIntentsService.replaySettleConfirmedDepositIntent(
         mismatch.transactionIntentId,
         operatorId,
-        note
+        note,
+        operatorRole ?? undefined,
+        {
+          approvalRequestId: approvalRequestId.trim(),
+          requestedByOperatorId: null,
+          requestedByOperatorRole: null
+        }
       );
     } else {
       await this.withdrawalIntentsService.replaySettleConfirmedWithdrawalIntent(
         mismatch.transactionIntentId,
         operatorId,
-        note
+        note,
+        operatorRole ?? undefined,
+        {
+          approvalRequestId: approvalRequestId.trim(),
+          requestedByOperatorId: null,
+          requestedByOperatorRole: null
+        }
       );
     }
 

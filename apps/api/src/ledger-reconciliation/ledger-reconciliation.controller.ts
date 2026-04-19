@@ -135,6 +135,8 @@ export class LedgerReconciliationController {
     const result = await this.ledgerReconciliationService.replayConfirmMismatch(
       mismatchId,
       request.internalOperator.operatorId,
+      request.internalOperator.operatorRole ?? null,
+      dto.approvalRequestId?.trim() ?? null,
       dto.note?.trim() ?? null
     );
 
@@ -160,6 +162,8 @@ export class LedgerReconciliationController {
     const result = await this.ledgerReconciliationService.replaySettleMismatch(
       mismatchId,
       request.internalOperator.operatorId,
+      request.internalOperator.operatorRole ?? null,
+      dto.approvalRequestId?.trim() ?? null,
       dto.note?.trim() ?? null
     );
 

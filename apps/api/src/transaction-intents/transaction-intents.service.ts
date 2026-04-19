@@ -1070,7 +1070,7 @@ export class TransactionIntentsService {
     operatorRole?: string,
     approvalContext?: {
       approvalRequestId: string;
-      requestedByOperatorId: string;
+      requestedByOperatorId: string | null;
       requestedByOperatorRole: string | null;
     }
   ): Promise<ConfirmDepositIntentResult> {
@@ -1102,7 +1102,7 @@ export class TransactionIntentsService {
     operatorRole?: string,
     approvalContext?: {
       approvalRequestId: string;
-      requestedByOperatorId: string;
+      requestedByOperatorId: string | null;
       requestedByOperatorRole: string | null;
     }
   ): Promise<SettleConfirmedDepositIntentResult> {

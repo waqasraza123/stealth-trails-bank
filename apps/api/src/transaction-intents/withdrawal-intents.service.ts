@@ -3067,7 +3067,7 @@ export class WithdrawalIntentsService {
     operatorRole?: string,
     approvalContext?: {
       approvalRequestId: string;
-      requestedByOperatorId: string;
+      requestedByOperatorId: string | null;
       requestedByOperatorRole: string | null;
     }
   ): Promise<ConfirmWithdrawalIntentResult> {
@@ -3094,7 +3094,7 @@ export class WithdrawalIntentsService {
     operatorRole?: string,
     approvalContext?: {
       approvalRequestId: string;
-      requestedByOperatorId: string;
+      requestedByOperatorId: string | null;
       requestedByOperatorRole: string | null;
     }
   ): Promise<SettleConfirmedWithdrawalIntentResult> {
