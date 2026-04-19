@@ -127,6 +127,10 @@ function createService() {
     reviewCaseEvent: {
       create: jest.fn()
     },
+    depositSettlementProof: {
+      findUnique: jest.fn(),
+      create: jest.fn()
+    },
     blockchainTransaction: {
       update: jest.fn()
     },
@@ -141,6 +145,9 @@ function createService() {
   const prismaService = {
     transactionIntent: {
       findFirst: jest.fn()
+    },
+    depositSettlementProof: {
+      findUnique: jest.fn()
     },
     ledgerJournal: {
       findUnique: jest.fn()
@@ -241,6 +248,7 @@ describe("TransactionIntentsService replay methods", () => {
 
     prismaService.ledgerJournal.findUnique.mockResolvedValue(null);
     transactionClient.ledgerJournal.findUnique.mockResolvedValue(null);
+    transactionClient.depositSettlementProof.findUnique.mockResolvedValue(null);
 
     transactionClient.transactionIntent.findFirst
       .mockResolvedValueOnce(
@@ -264,6 +272,9 @@ describe("TransactionIntentsService replay methods", () => {
       availableBalance: "5.00"
     });
 
+    transactionClient.depositSettlementProof.create.mockResolvedValue({
+      id: "deposit_settlement_proof_1"
+    });
     transactionClient.transactionIntent.update.mockResolvedValue(undefined);
     transactionClient.auditEvent.create.mockResolvedValue(undefined);
 

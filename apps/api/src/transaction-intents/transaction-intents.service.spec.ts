@@ -176,6 +176,10 @@ function createService() {
     reviewCaseEvent: {
       create: jest.fn()
     },
+    depositSettlementProof: {
+      findUnique: jest.fn(),
+      create: jest.fn()
+    },
     ledgerJournal: {
       findUnique: jest.fn()
     },
@@ -196,6 +200,9 @@ function createService() {
       findFirst: prismaTransactionIntentReadMock,
       findMany: jest.fn(),
       findUnique: prismaTransactionIntentReadMock
+    },
+    depositSettlementProof: {
+      findUnique: jest.fn()
     },
     ledgerJournal: {
       findUnique: jest.fn()
@@ -1117,6 +1124,83 @@ describe("TransactionIntentsService", () => {
     });
 
     expect(result.intents).toHaveLength(0);
+  });
+
+  it("creates an immutable settlement proof when settling a confirmed deposit", async () => {
+    const { service, prismaService, transactionClient } = createService();
+
+    prismaService.transactionIntent.findFirst.mockResolvedValue(
+      createInternalIntentRecord({
+        status: TransactionIntentStatus.confirmed,
+        policyDecision: PolicyDecision.approved,
+        blockchainStatus: BlockchainTransactionStatus.confirmed,
+        txHash:
+          "0x1111111111111111111111111111111111111111111111111111111111111111"
+      })
+    );
+    prismaService.ledgerJournal.findUnique.mockResolvedValue(null);
+    transactionClient.ledgerJournal.findUnique.mockResolvedValue(null);
+    transactionClient.depositSettlementProof.findUnique.mockResolvedValue(null);
+    transactionClient.transactionIntent.findFirst
+      .mockResolvedValueOnce(
+        createInternalIntentRecord({
+          status: TransactionIntentStatus.confirmed,
+          policyDecision: PolicyDecision.approved,
+          blockchainStatus: BlockchainTransactionStatus.confirmed,
+          txHash:
+            "0x1111111111111111111111111111111111111111111111111111111111111111"
+        })
+      )
+      .mockResolvedValueOnce(
+        createInternalIntentRecord({
+          status: TransactionIntentStatus.settled,
+          policyDecision: PolicyDecision.approved,
+          blockchainStatus: BlockchainTransactionStatus.confirmed,
+          txHash:
+            "0x1111111111111111111111111111111111111111111111111111111111111111"
+        })
+      );
+    transactionClient.depositSettlementProof.create.mockResolvedValue({
+      id: "deposit_settlement_proof_1"
+    });
+    transactionClient.auditEvent.create.mockResolvedValue({
+      id: "audit_settle_1"
+    });
+
+    const ledgerService = {
+      settleConfirmedDeposit: jest.fn().mockResolvedValue({
+        ledgerJournalId: "journal_1",
+        debitLedgerAccountId: "ledger_account_1",
+        creditLedgerAccountId: "ledger_account_2",
+        availableBalance: "1.25"
+      })
+    };
+
+    const proofAwareService = new TransactionIntentsService(
+      prismaService as never,
+      ledgerService as never,
+      { openOrReuseReviewCase: jest.fn() } as never
+    );
+
+    const result = await proofAwareService.settleConfirmedDepositIntent(
+      "intent_1",
+      "worker_1",
+      {
+        note: "Settled after final confirmation."
+      }
+    );
+
+    expect(result.intent.status).toBe(TransactionIntentStatus.settled);
+    expect(transactionClient.depositSettlementProof.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          transactionIntentId: "intent_1",
+          ledgerJournalId: "journal_1",
+          txHash:
+            "0x1111111111111111111111111111111111111111111111111111111111111111"
+        })
+      })
+    );
   });
 
   it("moves a confirmed deposit under review instead of settling when proof is mismatched", async () => {

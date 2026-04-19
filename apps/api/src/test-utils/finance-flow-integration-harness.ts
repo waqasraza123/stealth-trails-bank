@@ -99,6 +99,21 @@ type AuditEventRecord = {
   createdAt: Date;
 };
 
+type DepositSettlementProofRecord = {
+  id: string;
+  transactionIntentId: string;
+  blockchainTransactionId: string;
+  ledgerJournalId: string;
+  assetId: string;
+  chainId: number;
+  txHash: string;
+  fromAddress: string;
+  toAddress: string;
+  settledAmount: Prisma.Decimal;
+  confirmedAt: Date;
+  createdAt: Date;
+};
+
 type ReviewCaseRecord = {
   id: string;
   customerId: string;
@@ -171,6 +186,7 @@ export class FinanceFlowIntegrationHarness {
   private readonly blockchainTransactions: BlockchainTransactionRecord[] = [];
   private readonly ledgerJournals: LedgerJournalRecord[] = [];
   private readonly auditEvents: AuditEventRecord[] = [];
+  private readonly depositSettlementProofs: DepositSettlementProofRecord[] = [];
   private readonly reviewCases: ReviewCaseRecord[] = [];
   private readonly balances = new Map<string, BalanceRecord>();
   private eventSequence = 0;
@@ -209,6 +225,11 @@ export class FinanceFlowIntegrationHarness {
       ),
       findMany: jest.fn(async (args?: TransactionIntentFindArgs) =>
         this.findManyTransactionIntents(args)
+      )
+    },
+    depositSettlementProof: {
+      findUnique: jest.fn(async (args?: { where?: Record<string, unknown> }) =>
+        this.findDepositSettlementProof(args)
       )
     },
     ledgerJournal: {
@@ -305,6 +326,12 @@ export class FinanceFlowIntegrationHarness {
       create: async () => ({
         id: this.nextId("review_case_event", this.eventSequence + 1)
       })
+    },
+    depositSettlementProof: {
+      findUnique: async (args?: { where?: Record<string, unknown> }) =>
+        this.findDepositSettlementProof(args),
+      create: async (args: { data: Record<string, unknown> }) =>
+        this.createDepositSettlementProof(args.data)
     },
     ledgerJournal: {
       findUnique: async (args?: { where?: Record<string, unknown> }) =>
@@ -877,6 +904,37 @@ export class FinanceFlowIntegrationHarness {
     return auditEvent;
   }
 
+  private findDepositSettlementProof(args?: {
+    where?: Record<string, unknown>;
+  }): DepositSettlementProofRecord | null {
+    const transactionIntentId = args?.where?.transactionIntentId as
+      | string
+      | undefined;
+    const chainIdTxHash = args?.where?.chainId_txHash as
+      | { chainId?: number; txHash?: string }
+      | undefined;
+
+    if (transactionIntentId) {
+      return (
+        this.depositSettlementProofs.find(
+          (proof) => proof.transactionIntentId === transactionIntentId
+        ) ?? null
+      );
+    }
+
+    if (chainIdTxHash?.chainId && chainIdTxHash.txHash) {
+      return (
+        this.depositSettlementProofs.find(
+          (proof) =>
+            proof.chainId === chainIdTxHash.chainId &&
+            proof.txHash === chainIdTxHash.txHash
+        ) ?? null
+      );
+    }
+
+    return null;
+  }
+
   private findLedgerJournal(args?: {
     where?: Record<string, unknown>;
   }): LedgerJournalRecord | null {
@@ -943,6 +1001,35 @@ export class FinanceFlowIntegrationHarness {
 
     return {
       ...reviewCase
+    };
+  }
+
+  private createDepositSettlementProof(
+    data: Record<string, unknown>
+  ): DepositSettlementProofRecord {
+    const proof: DepositSettlementProofRecord = {
+      id: this.nextId(
+        "deposit_settlement_proof",
+        this.depositSettlementProofs.length + 1
+      ),
+      transactionIntentId: data.transactionIntentId as string,
+      blockchainTransactionId: data.blockchainTransactionId as string,
+      ledgerJournalId: data.ledgerJournalId as string,
+      assetId: data.assetId as string,
+      chainId: data.chainId as number,
+      txHash: data.txHash as string,
+      fromAddress: data.fromAddress as string,
+      toAddress: data.toAddress as string,
+      settledAmount: new Prisma.Decimal(
+        (data.settledAmount as Prisma.Decimal).toString()
+      ),
+      confirmedAt: data.confirmedAt as Date,
+      createdAt: this.nextTimestamp()
+    };
+
+    this.depositSettlementProofs.push(proof);
+    return {
+      ...proof
     };
   }
 

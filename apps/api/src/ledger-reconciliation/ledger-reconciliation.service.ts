@@ -149,6 +149,11 @@ const transactionIntentMismatchInclude = {
       }
     }
   },
+  depositSettlementProof: {
+    select: {
+      id: true
+    }
+  },
   reviewCases: {
     where: {
       type: ReviewCaseType.reconciliation_review,
@@ -847,7 +852,8 @@ export class LedgerReconciliationService {
               requestedAmount: intent.requestedAmount.toString(),
               settledAmount: intent.settledAmount?.toString() ?? null,
               latestBlockchainStatus: latestBlockchainTransaction?.status ?? null,
-              hasLedgerJournal: Boolean(settlementLedgerJournal)
+              hasLedgerJournal: Boolean(settlementLedgerJournal),
+              hasSettlementProof: Boolean(intent.depositSettlementProof)
             })
           : classifyWithdrawalSettlementReconciliation({
               status: intent.status,

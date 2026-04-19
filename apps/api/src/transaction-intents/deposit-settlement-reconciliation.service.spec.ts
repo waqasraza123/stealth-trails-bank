@@ -19,6 +19,7 @@ function createRecord(
     policyDecision: PolicyDecision;
     blockchainStatus: BlockchainTransactionStatus | null;
     hasLedgerJournal: boolean;
+    hasSettlementProof: boolean;
     settledAmount: string | null;
   }> = {}
 ) {
@@ -76,11 +77,27 @@ function createRecord(
           }
         ]
       : [],
-    ledgerJournal: overrides.hasLedgerJournal
+    ledgerJournals: overrides.hasLedgerJournal
+      ? [
+          {
+            id: "journal_1",
+            journalType: "deposit_settlement",
+            postedAt: new Date("2026-04-01T10:07:00.000Z"),
+            createdAt: new Date("2026-04-01T10:07:00.000Z")
+          }
+        ]
+      : [],
+    depositSettlementProof: overrides.hasSettlementProof
       ? {
-          id: "journal_1",
-          journalType: "deposit_settlement",
-          postedAt: new Date("2026-04-01T10:07:00.000Z"),
+          id: "proof_1",
+          ledgerJournalId: "journal_1",
+          blockchainTransactionId: "chain_tx_1",
+          txHash:
+            "0x1111111111111111111111111111111111111111111111111111111111111111",
+          fromAddress: "0x0000000000000000000000000000000000000def",
+          toAddress: "0x0000000000000000000000000000000000000abc",
+          settledAmount: { toString: () => overrides.settledAmount ?? "5.00" },
+          confirmedAt: new Date("2026-04-01T10:06:00.000Z"),
           createdAt: new Date("2026-04-01T10:07:00.000Z")
         }
       : null
@@ -129,6 +146,7 @@ describe("DepositSettlementReconciliationService", () => {
         status: TransactionIntentStatus.broadcast,
         blockchainStatus: BlockchainTransactionStatus.confirmed,
         hasLedgerJournal: false,
+        hasSettlementProof: false,
         settledAmount: null
       }),
       createRecord({
@@ -136,6 +154,7 @@ describe("DepositSettlementReconciliationService", () => {
         status: TransactionIntentStatus.confirmed,
         blockchainStatus: BlockchainTransactionStatus.confirmed,
         hasLedgerJournal: false,
+        hasSettlementProof: false,
         settledAmount: null
       }),
       createRecord({
@@ -143,6 +162,7 @@ describe("DepositSettlementReconciliationService", () => {
         status: TransactionIntentStatus.settled,
         blockchainStatus: BlockchainTransactionStatus.confirmed,
         hasLedgerJournal: true,
+        hasSettlementProof: true,
         settledAmount: "5.00"
       })
     ]);
@@ -165,6 +185,7 @@ describe("DepositSettlementReconciliationService", () => {
         status: TransactionIntentStatus.broadcast,
         blockchainStatus: BlockchainTransactionStatus.confirmed,
         hasLedgerJournal: false,
+        hasSettlementProof: false,
         settledAmount: null
       })
     );
@@ -190,6 +211,7 @@ describe("DepositSettlementReconciliationService", () => {
         status: TransactionIntentStatus.settled,
         blockchainStatus: BlockchainTransactionStatus.confirmed,
         hasLedgerJournal: true,
+        hasSettlementProof: true,
         settledAmount: "5.00"
       })
     );
@@ -197,5 +219,29 @@ describe("DepositSettlementReconciliationService", () => {
     await expect(
       service.replaySettle("intent_1", "ops_1", {})
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("flags settled deposits with missing proof anchors as manual-review-required", async () => {
+    const { service, prismaService } = createService();
+
+    prismaService.transactionIntent.findMany.mockResolvedValue([
+      createRecord({
+        id: "intent_missing_proof",
+        status: TransactionIntentStatus.settled,
+        blockchainStatus: BlockchainTransactionStatus.confirmed,
+        hasLedgerJournal: true,
+        hasSettlementProof: false,
+        settledAmount: "5.00"
+      })
+    ]);
+
+    const result = await service.listDepositSettlementReconciliation({
+      limit: 10
+    });
+
+    expect(result.summary.manual_review_required).toBe(1);
+    expect(result.items[0]?.reconciliation.reasonCode).toBe(
+      "missing_settlement_proof"
+    );
   });
 });

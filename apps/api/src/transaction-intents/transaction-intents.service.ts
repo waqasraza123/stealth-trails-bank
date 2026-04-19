@@ -495,6 +495,55 @@ export class TransactionIntentsService {
     };
   }
 
+  private async assertNoConflictingDepositSettlementProof(
+    transaction: Prisma.TransactionClient,
+    intent: InternalIntentRecord,
+    latestBlockchainTransaction: NonNullable<
+      InternalIntentRecord["blockchainTransactions"][number]
+    >
+  ): Promise<void> {
+    const existingProofForIntent = await transaction.depositSettlementProof.findUnique({
+      where: {
+        transactionIntentId: intent.id
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (existingProofForIntent) {
+      throw new ConflictException(
+        "Deposit settlement proof already exists for this transaction intent."
+      );
+    }
+
+    if (!latestBlockchainTransaction.txHash) {
+      throw new ConflictException(
+        "Confirmed deposit settlement requires a transaction hash."
+      );
+    }
+
+    const existingProofForChainTransfer =
+      await transaction.depositSettlementProof.findUnique({
+        where: {
+          chainId_txHash: {
+            chainId: intent.chainId,
+            txHash: latestBlockchainTransaction.txHash
+          }
+        },
+        select: {
+          id: true,
+          transactionIntentId: true
+        }
+      });
+
+    if (existingProofForChainTransfer) {
+      throw new ConflictException(
+        "A deposit settlement proof already exists for this chain transaction."
+      );
+    }
+  }
+
   private async resolveLinkedDepositReviewCase(
     transaction: Prisma.TransactionClient,
     reviewCaseId: string | null | undefined,
@@ -2949,10 +2998,23 @@ export class TransactionIntentsService {
       }
     });
 
-    if (
-      existingIntent.status === TransactionIntentStatus.settled &&
-      existingLedgerJournal
-    ) {
+    if (existingIntent.status === TransactionIntentStatus.settled && existingLedgerJournal) {
+      const existingSettlementProof =
+        await this.prismaService.depositSettlementProof.findUnique({
+          where: {
+            transactionIntentId: existingIntent.id
+          },
+          select: {
+            id: true
+          }
+        });
+
+      if (!existingSettlementProof) {
+        throw new ConflictException(
+          "Deposit settlement journal exists without a proof anchor. Reconciliation review is required."
+        );
+      }
+
       return {
         intent: this.mapIntentReviewProjection(existingIntent),
         settlementReused: true
@@ -3049,6 +3111,22 @@ export class TransactionIntentsService {
           currentIntent.status === TransactionIntentStatus.settled &&
           currentLedgerJournal
         ) {
+          const currentSettlementProof =
+            await transaction.depositSettlementProof.findUnique({
+              where: {
+                transactionIntentId: currentIntent.id
+              },
+              select: {
+                id: true
+              }
+            });
+
+          if (!currentSettlementProof) {
+            throw new ConflictException(
+              "Deposit settlement journal exists without a proof anchor. Reconciliation review is required."
+            );
+          }
+
           return currentIntent;
         }
 
@@ -3137,6 +3215,12 @@ export class TransactionIntentsService {
           return reviewedIntent;
         }
 
+        await this.assertNoConflictingDepositSettlementProof(
+          transaction,
+          currentIntent,
+          currentLatestBlockchainTransaction
+        );
+
         const ledgerResult = await this.ledgerService.settleConfirmedDeposit(
           transaction,
           {
@@ -3147,6 +3231,26 @@ export class TransactionIntentsService {
             amount: currentIntent.requestedAmount
           }
         );
+
+        const depositSettlementProof =
+          await transaction.depositSettlementProof.create({
+            data: {
+              transactionIntentId: currentIntent.id,
+              blockchainTransactionId: currentLatestBlockchainTransaction.id,
+              ledgerJournalId: ledgerResult.ledgerJournalId,
+              assetId: currentIntent.asset.id,
+              chainId: currentIntent.chainId,
+              txHash: currentLatestBlockchainTransaction.txHash!,
+              fromAddress: currentLatestBlockchainTransaction.fromAddress!,
+              toAddress: currentLatestBlockchainTransaction.toAddress!,
+              settledAmount: currentIntent.requestedAmount,
+              confirmedAt:
+                currentLatestBlockchainTransaction.confirmedAt ?? new Date()
+            },
+            select: {
+              id: true
+            }
+          });
 
         await transaction.transactionIntent.update({
           where: {
@@ -3181,6 +3285,7 @@ export class TransactionIntentsService {
               previousStatus: currentIntent.status,
               newStatus: TransactionIntentStatus.settled,
               ledgerJournalId: ledgerResult.ledgerJournalId,
+              depositSettlementProofId: depositSettlementProof.id,
               debitLedgerAccountId: ledgerResult.debitLedgerAccountId,
               creditLedgerAccountId: ledgerResult.creditLedgerAccountId,
               availableBalance: ledgerResult.availableBalance,

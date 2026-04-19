@@ -84,6 +84,19 @@ type DepositSettlementReconciliationRecord = Prisma.TransactionIntentGetPayload<
         createdAt: true;
       };
     };
+    depositSettlementProof: {
+      select: {
+        id: true;
+        ledgerJournalId: true;
+        blockchainTransactionId: true;
+        txHash: true;
+        fromAddress: true;
+        toAddress: true;
+        settledAmount: true;
+        confirmedAt: true;
+        createdAt: true;
+      };
+    };
   };
 }>;
 
@@ -129,6 +142,17 @@ type DepositSettlementReconciliationItem = {
     id: string;
     journalType: string;
     postedAt: string;
+    createdAt: string;
+  } | null;
+  settlementProof: {
+    id: string;
+    ledgerJournalId: string;
+    blockchainTransactionId: string;
+    txHash: string;
+    fromAddress: string;
+    toAddress: string;
+    settledAmount: string;
+    confirmedAt: string;
     createdAt: string;
   } | null;
   reconciliation: DepositSettlementReconciliationDecision;
@@ -177,6 +201,7 @@ export class DepositSettlementReconciliationService {
 
     const latestBlockchainTransaction = record.blockchainTransactions[0] ?? null;
     const settlementLedgerJournal = record.ledgerJournals?.[0] ?? null;
+    const settlementProof = record.depositSettlementProof ?? null;
 
     const reconciliation = classifyDepositSettlementReconciliation({
       status: record.status,
@@ -184,7 +209,8 @@ export class DepositSettlementReconciliationService {
       requestedAmount: record.requestedAmount.toString(),
       settledAmount: record.settledAmount?.toString() ?? null,
       latestBlockchainStatus: latestBlockchainTransaction?.status ?? null,
-      hasLedgerJournal: Boolean(settlementLedgerJournal)
+      hasLedgerJournal: Boolean(settlementLedgerJournal),
+      hasSettlementProof: Boolean(settlementProof)
     });
 
     return {
@@ -234,6 +260,19 @@ export class DepositSettlementReconciliationService {
             journalType: settlementLedgerJournal.journalType,
             postedAt: settlementLedgerJournal.postedAt.toISOString(),
             createdAt: settlementLedgerJournal.createdAt.toISOString()
+          }
+        : null,
+      settlementProof: settlementProof
+        ? {
+            id: settlementProof.id,
+            ledgerJournalId: settlementProof.ledgerJournalId,
+            blockchainTransactionId: settlementProof.blockchainTransactionId,
+            txHash: settlementProof.txHash,
+            fromAddress: settlementProof.fromAddress,
+            toAddress: settlementProof.toAddress,
+            settledAmount: settlementProof.settledAmount.toString(),
+            confirmedAt: settlementProof.confirmedAt.toISOString(),
+            createdAt: settlementProof.createdAt.toISOString()
           }
         : null,
       reconciliation
@@ -305,6 +344,19 @@ export class DepositSettlementReconciliationService {
             id: true,
             journalType: true,
             postedAt: true,
+            createdAt: true
+          }
+        },
+        depositSettlementProof: {
+          select: {
+            id: true,
+            ledgerJournalId: true,
+            blockchainTransactionId: true,
+            txHash: true,
+            fromAddress: true,
+            toAddress: true,
+            settledAmount: true,
+            confirmedAt: true,
             createdAt: true
           }
         }
@@ -389,6 +441,19 @@ export class DepositSettlementReconciliationService {
             id: true,
             journalType: true,
             postedAt: true,
+            createdAt: true
+          }
+        },
+        depositSettlementProof: {
+          select: {
+            id: true,
+            ledgerJournalId: true,
+            blockchainTransactionId: true,
+            txHash: true,
+            fromAddress: true,
+            toAddress: true,
+            settledAmount: true,
+            confirmedAt: true,
             createdAt: true
           }
         }

@@ -28,6 +28,7 @@ type DepositSettlementReconciliationInput = {
   settledAmount: string | null;
   latestBlockchainStatus: BlockchainTransactionStatus | null;
   hasLedgerJournal: boolean;
+  hasSettlementProof: boolean;
 };
 
 export function classifyDepositSettlementReconciliation(
@@ -118,6 +119,17 @@ export function classifyDepositSettlementReconciliation(
       };
     }
 
+    if (input.hasSettlementProof) {
+      return {
+        state: "manual_review_required",
+        replayAction: "none",
+        reasonCode: "settlement_proof_exists_before_settled_state",
+        reason:
+          "Deposit settlement proof exists but the deposit intent did not reach settled state.",
+        actionable: false
+      };
+    }
+
     if (input.settledAmount !== null) {
       return {
         state: "manual_review_required",
@@ -157,6 +169,17 @@ export function classifyDepositSettlementReconciliation(
         replayAction: "none",
         reasonCode: "missing_ledger_journal",
         reason: "Deposit intent is settled but the ledger journal is missing.",
+        actionable: false
+      };
+    }
+
+    if (!input.hasSettlementProof) {
+      return {
+        state: "manual_review_required",
+        replayAction: "none",
+        reasonCode: "missing_settlement_proof",
+        reason:
+          "Deposit intent is settled but the immutable settlement proof is missing.",
         actionable: false
       };
     }

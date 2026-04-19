@@ -114,6 +114,7 @@ model Asset {
   @@index([assetType, status])
   ledgerAccounts     LedgerAccount[]
   ledgerJournals     LedgerJournal[]
+  depositSettlementProofs DepositSettlementProof[]
   customerBalances   CustomerAssetBalance[]
   ledgerReconciliationMismatches LedgerReconciliationMismatch[]
   solvencyAssetSnapshots SolvencyAssetSnapshot[]
@@ -165,6 +166,7 @@ model TransactionIntent {
   createdAt                    DateTime                @default(now())
   updatedAt                    DateTime                @updatedAt
   blockchainTransactions       BlockchainTransaction[]
+  depositSettlementProof       DepositSettlementProof?
   reviewCases                  ReviewCase[]
 
   @@index([customerAccountId])
@@ -200,9 +202,32 @@ model BlockchainTransaction {
   createdAt           DateTime                    @default(now())
   updatedAt           DateTime                    @updatedAt
   confirmedAt         DateTime?
+  depositSettlementProof DepositSettlementProof?
 
   @@index([transactionIntentId])
   @@index([chainId, status])
+}
+
+model DepositSettlementProof {
+  id                    String                @id @default(cuid())
+  transactionIntentId   String                @unique
+  transactionIntent     TransactionIntent     @relation(fields: [transactionIntentId], references: [id])
+  blockchainTransactionId String              @unique
+  blockchainTransaction BlockchainTransaction @relation(fields: [blockchainTransactionId], references: [id])
+  ledgerJournalId       String                @unique
+  ledgerJournal         LedgerJournal         @relation(fields: [ledgerJournalId], references: [id])
+  assetId               String
+  asset                 Asset                 @relation(fields: [assetId], references: [id])
+  chainId               Int
+  txHash                String
+  fromAddress           String
+  toAddress             String
+  settledAmount         Decimal               @db.Decimal(36, 18)
+  confirmedAt           DateTime
+  createdAt             DateTime              @default(now())
+
+  @@unique([chainId, txHash])
+  @@index([assetId])
 }
 
 model ReviewCase {
@@ -443,6 +468,7 @@ model LedgerJournal {
   asset                Asset               @relation(fields: [assetId], references: [id])
   postedAt             DateTime            @default(now())
   createdAt            DateTime            @default(now())
+  depositSettlementProof DepositSettlementProof?
   ledgerPostings       LedgerPosting[]
 
   @@index([journalType, chainId])

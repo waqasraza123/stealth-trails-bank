@@ -55,12 +55,15 @@ function buildRecord() {
         confirmedAt: new Date("2026-04-01T00:05:00.000Z")
       }
     ],
-    ledgerJournal: {
-      id: "journal_1",
-      journalType: "deposit_settlement",
-      postedAt: new Date("2026-04-01T00:10:00.000Z"),
-      createdAt: new Date("2026-04-01T00:10:00.000Z")
-    }
+    ledgerJournals: [
+      {
+        id: "journal_1",
+        journalType: "deposit_settlement",
+        postedAt: new Date("2026-04-01T00:10:00.000Z"),
+        createdAt: new Date("2026-04-01T00:10:00.000Z")
+      }
+    ],
+    depositSettlementProof: null
   };
 }
 
