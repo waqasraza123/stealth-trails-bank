@@ -98,6 +98,7 @@ test("internal API key config defaults in local development", () => {
       NODE_ENV: "development"
     }),
     {
+      environment: "development",
       internalOperatorApiKey: "local-dev-operator-key"
     }
   );

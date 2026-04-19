@@ -131,9 +131,7 @@ Alert delivery SLO:
 pnpm release:readiness:probe -- \
   --probe platform_alert_delivery_slo \
   --base-url https://staging-api.example.com \
-  --operator-id ops_stage_1 \
-  --api-key "$INTERNAL_OPERATOR_API_KEY" \
-  --operator-role operations_admin \
+  --access-token "$OPERATOR_ACCESS_TOKEN" \
   --expected-target-name ops-critical \
   --expected-target-health-status critical \
   --environment production_like \
@@ -147,9 +145,7 @@ Critical alert re-escalation:
 pnpm release:readiness:probe -- \
   --probe critical_alert_reescalation \
   --base-url https://staging-api.example.com \
-  --operator-id ops_stage_1 \
-  --api-key "$INTERNAL_OPERATOR_API_KEY" \
-  --operator-role operations_admin \
+  --access-token "$OPERATOR_ACCESS_TOKEN" \
   --expected-alert-id alert_123 \
   --expected-min-re-escalations 1 \
   --environment production_like \
@@ -163,9 +159,7 @@ Database restore:
 pnpm release:readiness:probe -- \
   --probe database_restore_drill \
   --base-url https://restore-api.example.com \
-  --operator-id ops_stage_1 \
-  --api-key "$INTERNAL_OPERATOR_API_KEY" \
-  --operator-role operations_admin \
+  --access-token "$OPERATOR_ACCESS_TOKEN" \
   --environment production_like \
   --release-id launch-2026.04.10.1 \
   --backup-ref snapshot-2026-04-10T08:00Z \
@@ -178,9 +172,7 @@ API rollback:
 pnpm release:readiness:probe -- \
   --probe api_rollback_drill \
   --base-url https://staging-api.example.com \
-  --operator-id ops_stage_1 \
-  --api-key "$INTERNAL_OPERATOR_API_KEY" \
-  --operator-role operations_admin \
+  --access-token "$OPERATOR_ACCESS_TOKEN" \
   --environment production_like \
   --release-id launch-2026.04.10.1 \
   --rollback-release-id api-2026.04.09.4 \
@@ -193,9 +185,7 @@ Worker rollback:
 pnpm release:readiness:probe -- \
   --probe worker_rollback_drill \
   --base-url https://staging-api.example.com \
-  --operator-id ops_stage_1 \
-  --api-key "$INTERNAL_OPERATOR_API_KEY" \
-  --operator-role operations_admin \
+  --access-token "$OPERATOR_ACCESS_TOKEN" \
   --expected-worker-id worker-staging-1 \
   --expected-min-healthy-workers 1 \
   --environment production_like \
@@ -217,9 +207,7 @@ pnpm release:readiness:verify -- \
   --evidence-links ticket/SEC-42 \
   --record-evidence \
   --base-url https://staging-api.example.com \
-  --operator-id ops_stage_1 \
-  --operator-role operations_admin \
-  --api-key "$INTERNAL_OPERATOR_API_KEY"
+  --access-token "$OPERATOR_ACCESS_TOKEN"
 ```
 
 Role review:
@@ -233,9 +221,7 @@ pnpm release:readiness:verify -- \
   --evidence-links ticket/GOV-12,ticket/GOV-12#launch-roster \
   --record-evidence \
   --base-url https://staging-api.example.com \
-  --operator-id ops_stage_1 \
-  --operator-role operations_admin \
-  --api-key "$INTERNAL_OPERATOR_API_KEY"
+  --access-token "$OPERATOR_ACCESS_TOKEN"
 ```
 
 ### 5. Review the release-readiness summary
@@ -244,9 +230,7 @@ Confirm that every required proof now shows a latest accepted `passed` record:
 
 ```bash
 curl -sS \
-  -H "x-operator-api-key: $INTERNAL_OPERATOR_API_KEY" \
-  -H "x-operator-id: ops_stage_1" \
-  -H "x-operator-role: operations_admin" \
+  -H "authorization: Bearer $OPERATOR_ACCESS_TOKEN" \
   https://staging-api.example.com/release-readiness/internal/summary
 ```
 
@@ -257,9 +241,7 @@ Populate the generated `approval-request.template.json` truthfully, then submit:
 ```bash
 curl -sS -X POST \
   'https://staging-api.example.com/release-readiness/internal/approvals' \
-  -H 'x-operator-api-key: '"$INTERNAL_OPERATOR_API_KEY" \
-  -H 'x-operator-id: ops_stage_1' \
-  -H 'x-operator-role: operations_admin' \
+  -H 'authorization: Bearer '"$OPERATOR_ACCESS_TOKEN" \
   -H 'content-type: application/json' \
   --data @approval-request.template.json
 ```

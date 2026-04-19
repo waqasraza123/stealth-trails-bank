@@ -13,9 +13,6 @@ type ApiEnvelope<T> = {
 type ReleaseReadinessDrillSession = {
   baseUrl: string;
   accessToken?: string;
-  operatorId?: string;
-  apiKey?: string;
-  operatorRole?: string;
 };
 
 type ReleaseReadinessDrillOptions = {
@@ -171,24 +168,19 @@ function normalizeBaseUrl(baseUrl: string): string {
 }
 
 function createClient(session: ReleaseReadinessDrillSession): AxiosInstance {
-  const headers =
-    session.accessToken?.trim()
-      ? {
-          Authorization: `Bearer ${session.accessToken.trim()}`
-        }
-      : {
-          "x-operator-api-key": session.apiKey?.trim() ?? "",
-          "x-operator-id": session.operatorId?.trim() ?? "",
-          ...(session.operatorRole?.trim()
-            ? {
-                "x-operator-role": session.operatorRole.trim().toLowerCase()
-              }
-            : {})
-        };
+  const accessToken = session.accessToken?.trim();
+
+  if (!accessToken) {
+    throw new Error(
+      "Release-readiness drill runner requires an operator bearer token."
+    );
+  }
 
   return axios.create({
     baseURL: normalizeBaseUrl(session.baseUrl),
-    headers,
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    },
     timeout: 15_000
   });
 }

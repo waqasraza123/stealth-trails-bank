@@ -5,6 +5,7 @@ import { AuthService } from "../auth/auth.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { LedgerService } from "../ledger/ledger.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { ReviewCasesService } from "../review-cases/review-cases.service";
 import { createIntegrationTestApp } from "../test-utils/create-integration-test-app";
 import { WithdrawalIntentsController } from "./withdrawal-intents.controller";
 import { WithdrawalIntentsService } from "./withdrawal-intents.service";
@@ -81,6 +82,10 @@ describe("WithdrawalIntentsController integration", () => {
     reserveWithdrawalBalance: jest.fn()
   };
 
+  const reviewCasesService = {
+    openWithdrawalReviewCase: jest.fn()
+  };
+
   beforeAll(async () => {
     const integrationApp = await createIntegrationTestApp({
       controllers: [WithdrawalIntentsController],
@@ -98,6 +103,10 @@ describe("WithdrawalIntentsController integration", () => {
         {
           provide: LedgerService,
           useValue: ledgerService
+        },
+        {
+          provide: ReviewCasesService,
+          useValue: reviewCasesService
         }
       ]
     });
@@ -211,10 +220,14 @@ describe("WithdrawalIntentsController integration", () => {
           destinationWalletId: null,
           destinationWalletAddress: null,
           externalAddress: "0x0000000000000000000000000000000000000222",
+          executionFailureCategory: null,
+          executionFailureObservedAt: null,
           chainId: 8453,
           intentType: "withdrawal",
           status: "requested",
           policyDecision: "pending",
+          manualInterventionRequiredAt: null,
+          manualInterventionReviewCaseId: null,
           requestedAmount: "25",
           settledAmount: null,
           idempotencyKey: "withdraw-intent-001",

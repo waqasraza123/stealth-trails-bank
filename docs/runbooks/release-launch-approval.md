@@ -14,11 +14,9 @@ Use it when a release candidate has collected its staging or production-like evi
 - `POST /release-readiness/internal/approvals/:approvalId/approve`
 - `POST /release-readiness/internal/approvals/:approvalId/reject`
 
-Required operator headers:
+Required operator authentication:
 
-- `x-operator-api-key`
-- `x-operator-id`
-- optional `x-operator-role`
+- `Authorization: Bearer <operator-session-token>`
 
 ## Requesting approval
 

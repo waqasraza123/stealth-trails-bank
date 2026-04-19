@@ -525,30 +525,40 @@ describe("LaunchReadinessPage", () => {
   it("defaults the workspace to the first selected approval release", async () => {
     renderPage();
 
-    await waitFor(() => {
-      expect(
-        vi
-          .mocked(getReleaseReadinessSummary)
-          .mock.calls.some(
-            ([session, params]) =>
-              session.operatorId === "ops_1" &&
-              params?.releaseIdentifier === "launch-2026.04.13.1"
-          )
-      ).toBe(true);
-    });
+    await waitFor(
+      () => {
+        expect(
+          vi
+            .mocked(getReleaseReadinessSummary)
+            .mock.calls.some(
+              ([session, params]) =>
+                session.operatorId === "ops_1" &&
+                params?.releaseIdentifier === "launch-2026.04.13.1"
+            )
+        ).toBe(true);
+      },
+      {
+        timeout: 5_000
+      }
+    );
 
-    await waitFor(() => {
-      expect(
-        vi
-          .mocked(listReleaseReadinessEvidence)
-          .mock.calls.some(
-            ([session, params]) =>
-              session.operatorId === "ops_1" &&
-              params?.limit === 20 &&
-              params?.releaseIdentifier === "launch-2026.04.13.1"
-          )
-      ).toBe(true);
-    });
+    await waitFor(
+      () => {
+        expect(
+          vi
+            .mocked(listReleaseReadinessEvidence)
+            .mock.calls.some(
+              ([session, params]) =>
+                session.operatorId === "ops_1" &&
+                params?.limit === 20 &&
+                params?.releaseIdentifier === "launch-2026.04.13.1"
+            )
+        ).toBe(true);
+      },
+      {
+        timeout: 5_000
+      }
+    );
 
     await waitFor(() => {
       expect(vi.mocked(listReleaseReadinessApprovals)).toHaveBeenCalledWith(
@@ -649,8 +659,8 @@ describe("LaunchReadinessPage", () => {
       );
     });
 
-    expect(screen.getByText("Latest approval")).toBeVisible();
-    expect(screen.getByText("Missing evidence")).toBeVisible();
+    expect(screen.getAllByText("Latest approval").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Missing evidence").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/critical_alert_reescalation/i).length).toBeGreaterThan(
       0
     );

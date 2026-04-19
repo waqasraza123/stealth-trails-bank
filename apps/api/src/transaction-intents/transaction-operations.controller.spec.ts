@@ -7,7 +7,7 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
   })
 }));
 
-import { INestApplication } from "@nestjs/common";
+import { INestApplication, UnauthorizedException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
@@ -31,7 +31,38 @@ describe("TransactionOperationsController", () => {
           useValue: transactionOperationsService
         }
       ]
-    }).compile();
+    })
+      .overrideGuard(InternalOperatorApiKeyGuard)
+      .useValue({
+        canActivate: (context: { switchToHttp(): { getRequest(): Record<string, unknown> } }) => {
+          const request = context.switchToHttp().getRequest() as {
+            headers: Record<string, string | string[] | undefined>;
+            internalOperator?: {
+              operatorId: string;
+              operatorRole: string | null;
+            };
+          };
+          const apiKey = request.headers["x-operator-api-key"];
+          const operatorId = request.headers["x-operator-id"];
+
+          if (apiKey !== "test-operator-key" || typeof operatorId !== "string") {
+            throw new UnauthorizedException(
+              "Operator authentication requires a bearer token or an allowed legacy operator API key."
+            );
+          }
+
+          request.internalOperator = {
+            operatorId,
+            operatorRole:
+              typeof request.headers["x-operator-role"] === "string"
+                ? request.headers["x-operator-role"].toLowerCase()
+                : null
+          };
+
+          return true;
+        }
+      })
+      .compile();
 
     app = moduleRef.createNestApplication();
     await app.init();

@@ -17,8 +17,7 @@ This slice does not mutate money state directly.
 
 These endpoints require:
 
-- `x-operator-api-key`
-- `x-operator-id`
+- `Authorization: Bearer <operator-session-token>`
 
 ## Open a deposit reconciliation review case
 

@@ -55,7 +55,10 @@ describe("api request context", () => {
     ).toEqual({
       actorType: "operator",
       actorId: "ops_1",
-      actorRole: "operations_admin"
+      actorRole: "operations_admin",
+      authSource: null,
+      environment: null,
+      sessionCorrelationId: null
     });
 
     expect(
@@ -67,7 +70,10 @@ describe("api request context", () => {
     ).toEqual({
       actorType: "worker",
       actorId: "worker_1",
-      actorRole: null
+      actorRole: null,
+      authSource: null,
+      environment: null,
+      sessionCorrelationId: null
     });
 
     expect(
@@ -80,13 +86,19 @@ describe("api request context", () => {
     ).toEqual({
       actorType: "customer",
       actorId: "customer_1",
-      actorRole: null
+      actorRole: null,
+      authSource: null,
+      environment: null,
+      sessionCorrelationId: null
     });
 
     expect(resolveRequestActor({} as ApiRequestContext)).toEqual({
       actorType: "anonymous",
       actorId: null,
-      actorRole: null
+      actorRole: null,
+      authSource: null,
+      environment: null,
+      sessionCorrelationId: null
     });
   });
 });

@@ -31,11 +31,9 @@ The goal is to replace ad hoc screenshots and scattered notes with a durable ope
 - `POST /release-readiness/internal/approvals/:approvalId/approve`
 - `POST /release-readiness/internal/approvals/:approvalId/reject`
 
-Required operator headers:
+Required operator authentication:
 
-- `x-operator-api-key`
-- `x-operator-id`
-- optional `x-operator-role`
+- `Authorization: Bearer <operator-session-token>`
 
 ## Evidence payload
 

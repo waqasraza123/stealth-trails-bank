@@ -68,10 +68,7 @@ Optional:
   --backup-ref                    Backup or snapshot reference recorded with evidence
   --record-evidence               Persist the result through the release-readiness API
   --base-url                      Operator API base URL when recording evidence
-  --access-token                  Supabase operator bearer token when recording evidence
-  --operator-id                   Legacy operator identifier when recording evidence
-  --api-key                       Legacy internal operator API key when recording evidence
-  --operator-role                 Operator role header when recording evidence
+  --access-token                  Operator bearer token when recording evidence
   --output                        Write the verifier JSON to a file
   --help                          Print this message
 
@@ -205,21 +202,9 @@ function parseEvidencePayload(
 }
 
 function buildSession(parsedArgs: ParsedArgs): ReleaseReadinessDrillSession {
-  const accessToken = readOptionalStringArg(parsedArgs, "access-token");
-
-  if (accessToken) {
-    return {
-      baseUrl: readRequiredStringArg(parsedArgs, "base-url"),
-      accessToken,
-      operatorRole: readOptionalStringArg(parsedArgs, "operator-role")
-    };
-  }
-
   return {
     baseUrl: readRequiredStringArg(parsedArgs, "base-url"),
-    operatorId: readRequiredStringArg(parsedArgs, "operator-id"),
-    apiKey: readRequiredStringArg(parsedArgs, "api-key"),
-    operatorRole: readOptionalStringArg(parsedArgs, "operator-role")
+    accessToken: readRequiredStringArg(parsedArgs, "access-token")
   };
 }
 
