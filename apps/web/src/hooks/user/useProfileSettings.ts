@@ -1,6 +1,9 @@
 import axios from "axios";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { CustomerNotificationPreferences } from "@stealth-trails-bank/types";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  CustomerNotificationPreferences,
+  CustomerSessionProjection,
+} from "@stealth-trails-bank/types";
 import { loadWebRuntimeConfig } from "@stealth-trails-bank/config/web";
 import { ApiResponse, readApiErrorMessage } from "@/lib/api";
 import { useUserStore } from "@/stores/userStore";
@@ -33,6 +36,23 @@ type RevokeCustomerSessionsResult = {
   };
 };
 
+type ListCustomerSessionsResult = {
+  sessions: CustomerSessionProjection[];
+  activeSessionCount: number;
+};
+
+type RevokeCustomerSessionResult = {
+  revokedSessionId: string;
+  activeSessionCount: number;
+};
+
+function buildWebAuthHeaders(token: string) {
+  return {
+    Authorization: `Bearer ${token}`,
+    "x-stb-client-platform": "web",
+  };
+}
+
 export function useRotatePassword() {
   const token = useUserStore((state) => state.token);
   const setToken = useUserStore((state) => state.setToken);
@@ -49,7 +69,7 @@ export function useRotatePassword() {
           input,
           {
             headers: {
-              Authorization: `Bearer ${token}`,
+              ...buildWebAuthHeaders(token),
             },
           },
         );
@@ -74,6 +94,7 @@ export function useRotatePassword() {
 export function useRevokeAllSessions() {
   const token = useUserStore((state) => state.token);
   const setToken = useUserStore((state) => state.setToken);
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async () => {
@@ -88,9 +109,7 @@ export function useRevokeAllSessions() {
           `${webRuntimeConfig.serverUrl}/auth/session/revoke-all`,
           {},
           {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
+            headers: buildWebAuthHeaders(token),
           },
         );
 
@@ -107,6 +126,76 @@ export function useRevokeAllSessions() {
           readApiErrorMessage(error, "Failed to revoke sessions."),
         );
       }
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["customer-sessions"] });
+    },
+  });
+}
+
+export function useListCustomerSessions() {
+  const token = useUserStore((state) => state.token);
+
+  return useQuery({
+    queryKey: ["customer-sessions"],
+    enabled: Boolean(token),
+    queryFn: async () => {
+      if (!token) {
+        throw new Error("Auth token is required.");
+      }
+
+      try {
+        const response = await axios.get<ApiResponse<ListCustomerSessionsResult>>(
+          `${webRuntimeConfig.serverUrl}/auth/sessions`,
+          {
+            headers: buildWebAuthHeaders(token),
+          },
+        );
+
+        if (response.data.status !== "success" || !response.data.data) {
+          throw new Error(response.data.message || "Failed to load sessions.");
+        }
+
+        return response.data.data;
+      } catch (error) {
+        throw new Error(readApiErrorMessage(error, "Failed to load sessions."));
+      }
+    }
+  });
+}
+
+export function useRevokeCustomerSession() {
+  const token = useUserStore((state) => state.token);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (sessionId: string) => {
+      if (!token) {
+        throw new Error("Auth token is required.");
+      }
+
+      try {
+        const response = await axios.post<ApiResponse<RevokeCustomerSessionResult>>(
+          `${webRuntimeConfig.serverUrl}/auth/session/${sessionId}/revoke`,
+          {},
+          {
+            headers: buildWebAuthHeaders(token),
+          },
+        );
+
+        if (response.data.status !== "success" || !response.data.data) {
+          throw new Error(response.data.message || "Failed to revoke session.");
+        }
+
+        return response.data.data;
+      } catch (error) {
+        throw new Error(
+          readApiErrorMessage(error, "Failed to revoke session."),
+        );
+      }
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["customer-sessions"] });
     },
   });
 }
@@ -134,7 +223,7 @@ export function useUpdateNotificationPreferences() {
           input,
           {
             headers: {
-              Authorization: `Bearer ${token}`,
+              ...buildWebAuthHeaders(token),
             },
           },
         );

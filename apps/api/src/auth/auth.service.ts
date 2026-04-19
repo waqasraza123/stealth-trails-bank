@@ -2057,6 +2057,7 @@ export class AuthService {
     supabaseUserId: string,
     currentPassword: string,
     newPassword: string,
+    context?: CustomerSessionContext,
   ): Promise<CustomJsonResponse<UpdatePasswordResponseData>> {
     if (newPassword === currentPassword) {
       throw new BadRequestException(
@@ -2101,19 +2102,20 @@ export class AuthService {
 
     const rotatedSession = await this.prismaService.$transaction(
       async (transaction) => {
-        const updatedCustomer = await transaction.customer.update({
+        await transaction.customer.update({
           where: { id: customer.id },
           data: {
             passwordHash: nextPasswordHash,
-            authTokenVersion: {
-              increment: 1,
-            },
           },
-          select: {
-            supabaseUserId: true,
-            email: true,
-            authTokenVersion: true,
-          },
+        });
+
+        const nextSession = await this.rotateCustomerSession(transaction, {
+          customerId: customer.id,
+          supabaseUserId: customer.supabaseUserId,
+          email: customer.email,
+          revocationReason:
+            CustomerAuthSessionRevocationReason.password_rotation,
+          context,
         });
 
         await transaction.auditEvent.create({
@@ -2130,7 +2132,7 @@ export class AuthService {
             } as PrismaJsonValue,
           },
         });
-        return updatedCustomer;
+        return nextSession;
       },
     );
 
@@ -2139,16 +2141,14 @@ export class AuthService {
       message: "Password updated successfully.",
       data: {
         passwordRotationAvailable: true,
-        session: await this.buildSessionRefresh({
-          customerId: customer.id,
-          ...rotatedSession,
-        }),
+        session: rotatedSession,
       },
     };
   }
 
   async revokeAllCustomerSessions(
     supabaseUserId: string,
+    context?: CustomerSessionContext,
   ): Promise<CustomJsonResponse<RevokeCustomerSessionsResponseData>> {
     const customer = await this.prismaService.customer.findUnique({
       where: { supabaseUserId },
@@ -2163,19 +2163,16 @@ export class AuthService {
       throw new NotFoundException("Customer session profile not found.");
     }
 
-    const updatedCustomer = await this.prismaService.customer.update({
-      where: { id: customer.id },
-      data: {
-        authTokenVersion: {
-          increment: 1,
-        },
-      },
-      select: {
-        supabaseUserId: true,
-        email: true,
-        authTokenVersion: true,
-      },
-    });
+    const nextSession = await this.prismaService.$transaction(
+      async (transaction) =>
+        this.rotateCustomerSession(transaction, {
+          customerId: customer.id,
+          supabaseUserId: customer.supabaseUserId,
+          email: customer.email,
+          revocationReason: CustomerAuthSessionRevocationReason.revoke_all,
+          context,
+        }),
+    );
 
     await this.appendAuditEvent({
       customerId: customer.id,
@@ -2191,10 +2188,153 @@ export class AuthService {
       status: "success",
       message: "Customer sessions revoked successfully.",
       data: {
-        session: await this.buildSessionRefresh({
+        session: nextSession,
+      },
+    };
+  }
+
+  async listCustomerSessions(
+    supabaseUserId: string,
+    currentSessionId?: string | null,
+  ): Promise<CustomJsonResponse<ListCustomerSessionsResponseData>> {
+    const customer = await this.prismaService.customer.findUnique({
+      where: { supabaseUserId },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!customer) {
+      throw new NotFoundException("Customer session profile not found.");
+    }
+
+    const sessions = await this.prismaService.customerAuthSession.findMany({
+      where: {
+        customerId: customer.id,
+        revokedAt: null,
+      },
+      select: {
+        id: true,
+        customerId: true,
+        tokenVersion: true,
+        clientPlatform: true,
+        userAgent: true,
+        ipAddress: true,
+        createdAt: true,
+        lastSeenAt: true,
+        revokedAt: true,
+      },
+      orderBy: [{ lastSeenAt: "desc" }, { createdAt: "desc" }],
+    });
+
+    return {
+      status: "success",
+      message: "Customer sessions retrieved successfully.",
+      data: {
+        sessions: sessions.map((session) =>
+          this.mapCustomerSession(session, currentSessionId),
+        ),
+        activeSessionCount: sessions.length,
+      },
+    };
+  }
+
+  async revokeCustomerSession(
+    supabaseUserId: string,
+    currentSessionId: string | null,
+    targetSessionId: string,
+  ): Promise<CustomJsonResponse<RevokeCustomerSessionResponseData>> {
+    if (!currentSessionId) {
+      throw new ConflictException(
+        "This session must be refreshed before individual session revocation is available.",
+      );
+    }
+
+    if (currentSessionId === targetSessionId) {
+      throw new ConflictException(
+        "Use revoke-all session rotation instead of revoking the current session directly.",
+      );
+    }
+
+    const customer = await this.prismaService.customer.findUnique({
+      where: { supabaseUserId },
+      select: {
+        id: true,
+        supabaseUserId: true,
+      },
+    });
+
+    if (!customer) {
+      throw new NotFoundException("Customer session profile not found.");
+    }
+
+    const targetSession = await this.prismaService.customerAuthSession.findUnique({
+      where: { id: targetSessionId },
+      select: {
+        id: true,
+        customerId: true,
+        revokedAt: true,
+      },
+    });
+
+    if (!targetSession || targetSession.customerId !== customer.id) {
+      throw new NotFoundException("Customer session was not found.");
+    }
+
+    if (targetSession.revokedAt) {
+      return {
+        status: "success",
+        message: "Customer session revoked successfully.",
+        data: {
+          revokedSessionId: targetSession.id,
+          activeSessionCount: await this.prismaService.customerAuthSession.count({
+            where: {
+              customerId: customer.id,
+              revokedAt: null,
+            },
+          }),
+        },
+      };
+    }
+
+    await this.prismaService.$transaction(async (transaction) => {
+      await transaction.customerAuthSession.update({
+        where: { id: targetSession.id },
+        data: {
+          revokedAt: new Date(),
+          revokedReason: CustomerAuthSessionRevocationReason.session_revoked,
+        },
+      });
+
+      await transaction.auditEvent.create({
+        data: {
           customerId: customer.id,
-          ...updatedCustomer,
-        }),
+          actorType: "customer",
+          actorId: customer.supabaseUserId,
+          action: "customer_account.session_revoked",
+          targetType: "CustomerAuthSession",
+          targetId: targetSession.id,
+          metadata: {
+            revokedSessionId: targetSession.id,
+            currentSessionId,
+          } as PrismaJsonValue,
+        },
+      });
+    });
+
+    const activeSessionCount = await this.prismaService.customerAuthSession.count({
+      where: {
+        customerId: customer.id,
+        revokedAt: null,
+      },
+    });
+
+    return {
+      status: "success",
+      message: "Customer session revoked successfully.",
+      data: {
+        revokedSessionId: targetSession.id,
+        activeSessionCount,
       },
     };
   }
@@ -2683,6 +2823,18 @@ export class AuthService {
                 },
         });
 
+        await transaction.customerAuthSession.updateMany({
+          where: {
+            customerId: request.customer.id,
+            revokedAt: null,
+          },
+          data: {
+            revokedAt: new Date(),
+            revokedReason:
+              CustomerAuthSessionRevocationReason.operator_mfa_recovery,
+          },
+        });
+
         const nextRequest = await transaction.customerMfaRecoveryRequest.update(
           {
             where: { id: request.id },
@@ -2794,6 +2946,7 @@ export class AuthService {
   async login(
     email: string,
     password: string,
+    context?: CustomerSessionContext,
   ): Promise<CustomJsonResponse<LoginResponseData>> {
     const normalizedEmail = this.normalizeEmail(email);
     const customer = await this.prismaService.customer.findUnique({
@@ -2828,17 +2981,34 @@ export class AuthService {
       throw new InternalServerErrorException("User profile not found.");
     }
 
-    const token = this.signToken(
-      customer.supabaseUserId,
-      customer.email,
-      customer.authTokenVersion,
+    const session = await this.buildSessionRefresh(
+      {
+        customerId: customer.id,
+        supabaseUserId: customer.supabaseUserId,
+        email: customer.email,
+        authTokenVersion: customer.authTokenVersion,
+      },
+      context,
+      false,
     );
+
+    await this.appendAuditEvent({
+      customerId: customer.id,
+      actorId: customer.supabaseUserId,
+      action: "customer_account.session_created",
+      targetType: "Customer",
+      metadata: {
+        clientPlatform: this.normalizeSessionPlatform(context?.clientPlatform),
+        userAgent: this.normalizeOptionalText(context?.userAgent),
+        ipAddress: this.normalizeOptionalText(context?.ipAddress),
+      } as PrismaJsonValue,
+    });
 
     return {
       status: "success",
       message: "User logged in successfully.",
       data: {
-        token,
+        token: session.token,
         user: {
           id: user.id,
           supabaseUserId: customer.supabaseUserId,

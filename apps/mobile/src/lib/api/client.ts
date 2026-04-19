@@ -17,6 +17,11 @@ apiClient.interceptors.request.use((config) => {
   if (token) {
     const headers = AxiosHeaders.from(config.headers);
     headers.set("Authorization", `Bearer ${token}`);
+    headers.set("x-stb-client-platform", "mobile");
+    config.headers = headers;
+  } else {
+    const headers = AxiosHeaders.from(config.headers);
+    headers.set("x-stb-client-platform", "mobile");
     config.headers = headers;
   }
 

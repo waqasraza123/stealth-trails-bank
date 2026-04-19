@@ -192,6 +192,17 @@ export const mobileMessages = {
     sessionSecurityDescription:
       "Revoke every other active customer session and keep only this device signed in with a fresh token.",
     revokeAllSessions: "Revoke all other sessions",
+    activeSessions: "Active sessions",
+    sessionsLoading: "Loading active sessions.",
+    sessionsUnavailable: "Customer session inventory is unavailable.",
+    noActiveSessions: "No active customer sessions were recorded yet.",
+    sessionLastSeen: "Last seen",
+    currentSession: "Current",
+    revokeSession: "Revoke session",
+    sessionRevoked: "Selected customer session was signed out.",
+    sessionPlatformWeb: "Web browser",
+    sessionPlatformMobile: "Mobile app",
+    sessionPlatformUnknown: "Unknown client",
     sessionsRevoked: "All other sessions were signed out.",
     sessionsRevokeFailed: "Failed to revoke other active sessions.",
     savePreferences: "Save preferences",
@@ -204,6 +215,10 @@ export const mobileMessages = {
     mfaStepUpFresh:
       "Authenticator controls are enrolled and a fresh verification is active for sensitive actions.",
     mfaAuthenticator: "Authenticator app",
+    mfaRecommendedApps:
+      "Recommended apps: {first} or {second}.",
+    mfaCompatibleApps:
+      "Scan this QR code in Google Authenticator or Microsoft Authenticator. Any compatible TOTP app also works, and the manual secret below remains available if scanning is not possible.",
     mfaEmailBackup: "Email backup factor",
     mfaStartAuthenticator: "Start authenticator setup",
     mfaVerifyAuthenticator: "Verify authenticator",

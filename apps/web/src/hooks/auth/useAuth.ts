@@ -174,6 +174,11 @@ export default function useAuth() {
       const response = await axios.post<ApiResponse<LoginResponseData>>(
         `${webRuntimeConfig.serverUrl}/auth/login`,
         payload,
+        {
+          headers: {
+            "x-stb-client-platform": "web",
+          },
+        },
       );
 
       const token = response.data.data?.token;

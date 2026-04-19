@@ -13,6 +13,7 @@ import type {
   CustomerStakingSnapshot,
   ListMyBalancesResult,
   ListMyTransactionHistoryResult,
+  ListCustomerSessionsResult,
   ListSupportedAssetsResult,
   LoanApplicationInput,
   LoanQuotePreview,
@@ -23,6 +24,7 @@ import type {
   StartEmailRecoveryResult,
   StartMfaChallengeResult,
   RevokeCustomerSessionsResult,
+  RevokeCustomerSessionResult,
   StartTotpEnrollmentResult,
   StakingMutationResult,
   UpdateNotificationPreferencesResult,
@@ -545,6 +547,7 @@ export function useVerifyMfaChallengeMutation() {
 
 export function useRevokeAllCustomerSessionsMutation() {
   const setToken = useSessionStore((state) => state.setToken);
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async () => {
@@ -558,6 +561,50 @@ export function useRevokeAllCustomerSessionsMutation() {
 
       await setToken(response.data.data.session.token);
       return response.data.data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["customer-sessions"] });
+    },
+  });
+}
+
+export function useCustomerSessionsQuery() {
+  const token = useSessionStore((state) => state.token);
+
+  return useQuery({
+    queryKey: ["customer-sessions"],
+    enabled: Boolean(token),
+    queryFn: async () => {
+      const response = await apiClient.get<ApiEnvelope<ListCustomerSessionsResult>>(
+        "/auth/sessions",
+      );
+
+      if (response.data.status !== "success" || !response.data.data) {
+        throw new Error(response.data.message || "Failed to load customer sessions.");
+      }
+
+      return response.data.data;
+    },
+  });
+}
+
+export function useRevokeCustomerSessionMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (sessionId: string) => {
+      const response = await apiClient.post<
+        ApiEnvelope<RevokeCustomerSessionResult>
+      >(`/auth/session/${sessionId}/revoke`);
+
+      if (response.data.status !== "success" || !response.data.data) {
+        throw new Error(response.data.message || "Failed to revoke customer session.");
+      }
+
+      return response.data.data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["customer-sessions"] });
     },
   });
 }

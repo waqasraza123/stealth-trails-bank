@@ -1,6 +1,10 @@
 import { Alert, Switch, View } from "react-native";
 import { useEffect, useState } from "react";
-import type { CustomerNotificationPreferences } from "@stealth-trails-bank/types";
+import QRCode from "react-native-qrcode-svg";
+import type {
+  CustomerNotificationPreferences,
+  CustomerSessionProjection,
+} from "@stealth-trails-bank/types";
 import { AppScreen } from "../components/ui/AppScreen";
 import { AppButton } from "../components/ui/AppButton";
 import { AppText } from "../components/ui/AppText";
@@ -12,7 +16,9 @@ import { SectionCard } from "../components/ui/SectionCard";
 import { StatusChip } from "../components/ui/StatusChip";
 import {
   useMfaStatusQuery,
+  useCustomerSessionsQuery,
   useProfileQuery,
+  useRevokeCustomerSessionMutation,
   useRotatePasswordMutation,
   useRevokeAllCustomerSessionsMutation,
   useStartEmailEnrollmentMutation,
@@ -38,15 +44,37 @@ const emptyPasswordForm = {
   confirmPassword: "",
 };
 
+const recommendedAuthenticatorApps = [
+  "Google Authenticator",
+  "Microsoft Authenticator",
+];
+
+function formatSessionLabel(
+  session: CustomerSessionProjection,
+  t: ReturnType<typeof useT>,
+) {
+  if (session.clientPlatform === "mobile") {
+    return t("profile.sessionPlatformMobile");
+  }
+
+  if (session.clientPlatform === "web") {
+    return t("profile.sessionPlatformWeb");
+  }
+
+  return t("profile.sessionPlatformUnknown");
+}
+
 export function ProfileScreen() {
   const t = useT();
   const { locale } = useLocale();
   const profileQuery = useProfileQuery();
   useMfaStatusQuery();
+  const customerSessionsQuery = useCustomerSessionsQuery();
   const signOut = useSessionStore((state) => state.signOut);
   const sessionUser = useSessionStore((state) => state.user);
   const rotatePasswordMutation = useRotatePasswordMutation();
   const revokeSessionsMutation = useRevokeAllCustomerSessionsMutation();
+  const revokeCustomerSessionMutation = useRevokeCustomerSessionMutation();
   const updatePreferencesMutation = useUpdateNotificationPreferencesMutation();
   const startTotpEnrollmentMutation = useStartTotpEnrollmentMutation();
   const verifyTotpEnrollmentMutation = useVerifyTotpEnrollmentMutation();
@@ -62,6 +90,7 @@ export function ProfileScreen() {
   const [notificationDraft, setNotificationDraft] =
     useState<CustomerNotificationPreferences | null>(null);
   const [totpSecret, setTotpSecret] = useState<string | null>(null);
+  const [totpOtpAuthUri, setTotpOtpAuthUri] = useState<string | null>(null);
   const [totpCode, setTotpCode] = useState("");
   const [emailChallengeId, setEmailChallengeId] = useState<string | null>(null);
   const [emailCode, setEmailCode] = useState("");
@@ -91,6 +120,7 @@ export function ProfileScreen() {
   const stepUpFresh =
     Boolean(mfa?.stepUpFreshUntil) &&
     Date.parse(mfa?.stepUpFreshUntil ?? "") > Date.now();
+  const customerSessions = customerSessionsQuery.data?.sessions ?? [];
 
   async function handlePasswordUpdate() {
     if (!stepUpFresh) {
@@ -157,6 +187,23 @@ export function ProfileScreen() {
     }
   }
 
+  async function handleRevokeSession(sessionId: string) {
+    try {
+      await revokeCustomerSessionMutation.mutateAsync(sessionId);
+      Alert.alert(
+        t("profile.sessionSecurity"),
+        t("profile.sessionRevoked"),
+      );
+    } catch (error) {
+      Alert.alert(
+        t("profile.sessionSecurity"),
+        error instanceof Error
+          ? error.message
+          : t("profile.sessionsRevokeFailed"),
+      );
+    }
+  }
+
   async function handlePreferencesSave() {
     if (!notificationDraft) {
       return;
@@ -179,6 +226,7 @@ export function ProfileScreen() {
     try {
       const result = await startTotpEnrollmentMutation.mutateAsync();
       setTotpSecret(result.secret);
+      setTotpOtpAuthUri(result.otpAuthUri);
       setTotpCode("");
     } catch (requestError) {
       Alert.alert(
@@ -196,6 +244,7 @@ export function ProfileScreen() {
         code: totpCode.trim(),
       });
       setTotpSecret(null);
+      setTotpOtpAuthUri(null);
       setTotpCode("");
       Alert.alert(t("profile.mfaTitle"), t("profile.mfaTotpReady"));
     } catch (requestError) {
@@ -432,6 +481,14 @@ export function ProfileScreen() {
                     ? t("common.enabled")
                     : t("common.disabled")}
                 </AppText>
+                {!mfa?.totpEnrolled ? (
+                  <AppText className="mt-3 text-sm text-slate">
+                    {t("profile.mfaRecommendedApps", {
+                      first: recommendedAuthenticatorApps[0],
+                      second: recommendedAuthenticatorApps[1],
+                    })}
+                  </AppText>
+                ) : null}
               </View>
               <View className="rounded-2xl border border-border bg-white px-4 py-4">
                 <AppText className="text-sm text-slate">
@@ -455,6 +512,14 @@ export function ProfileScreen() {
                 />
                 {totpSecret ? (
                   <View className="gap-3 rounded-2xl border border-border bg-white px-4 py-4">
+                    <AppText className="text-sm text-slate">
+                      {t("profile.mfaCompatibleApps")}
+                    </AppText>
+                    {totpOtpAuthUri ? (
+                      <View className="items-center rounded-2xl border border-border bg-white py-4">
+                        <QRCode value={totpOtpAuthUri} size={168} />
+                      </View>
+                    ) : null}
                     <AppText className="text-sm text-slate">
                       {t("profile.mfaSecretLabel")}
                     </AppText>
@@ -733,6 +798,74 @@ export function ProfileScreen() {
               }}
               variant="secondary"
             />
+            <View className="gap-3">
+              <AppText className="text-sm text-slate">
+                {t("profile.activeSessions")}
+              </AppText>
+              {customerSessionsQuery.isLoading ? (
+                <InlineNotice
+                  message={t("profile.sessionsLoading")}
+                  tone="neutral"
+                />
+              ) : customerSessionsQuery.isError ? (
+                <InlineNotice
+                  message={
+                    customerSessionsQuery.error instanceof Error
+                      ? customerSessionsQuery.error.message
+                      : t("profile.sessionsUnavailable")
+                  }
+                  tone="critical"
+                />
+              ) : customerSessions.length > 0 ? (
+                customerSessions.map((session) => (
+                  <View
+                    key={session.id}
+                    className="gap-3 rounded-2xl border border-border bg-white px-4 py-4"
+                  >
+                    <View className="flex-row items-center justify-between gap-3">
+                      <View className="flex-1 gap-1">
+                        <AppText className="text-base text-ink" weight="semibold">
+                          {formatSessionLabel(session, t)}
+                        </AppText>
+                        <AppText className="text-sm text-slate">
+                          {t("profile.sessionLastSeen")}{" "}
+                          {formatDateLabel(session.lastSeenAt, locale)}
+                        </AppText>
+                        {session.ipAddress ? (
+                          <LtrValue value={`IP ${session.ipAddress}`} />
+                        ) : null}
+                        {session.userAgent ? (
+                          <AppText className="text-xs text-slate">
+                            {session.userAgent}
+                          </AppText>
+                        ) : null}
+                      </View>
+                      {session.current ? (
+                        <StatusChip
+                          label={t("profile.currentSession")}
+                          tone="positive"
+                        />
+                      ) : null}
+                    </View>
+                    {!session.current ? (
+                      <AppButton
+                        disabled={revokeCustomerSessionMutation.isPending}
+                        label={t("profile.revokeSession")}
+                        onPress={() => {
+                          void handleRevokeSession(session.id);
+                        }}
+                        variant="secondary"
+                      />
+                    ) : null}
+                  </View>
+                ))
+              ) : (
+                <InlineNotice
+                  message={t("profile.noActiveSessions")}
+                  tone="neutral"
+                />
+              )}
+            </View>
           </SectionCard>
 
           <AppButton

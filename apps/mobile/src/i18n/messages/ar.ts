@@ -187,6 +187,17 @@ export const mobileMessagesAr: MobileMessages = {
     sessionSecurityDescription:
       "قم بإلغاء كل الجلسات الأخرى النشطة لهذا العميل مع إبقاء هذا الجهاز فقط مسجل الدخول برمز جديد.",
     revokeAllSessions: "إلغاء كل الجلسات الأخرى",
+    activeSessions: "الجلسات النشطة",
+    sessionsLoading: "يتم تحميل الجلسات النشطة.",
+    sessionsUnavailable: "بيانات جلسات العميل غير متاحة حالياً.",
+    noActiveSessions: "لا توجد جلسات عميل نشطة مسجلة حالياً.",
+    sessionLastSeen: "آخر ظهور",
+    currentSession: "الحالية",
+    revokeSession: "إلغاء الجلسة",
+    sessionRevoked: "تم تسجيل خروج الجلسة المحددة.",
+    sessionPlatformWeb: "متصفح ويب",
+    sessionPlatformMobile: "تطبيق الهاتف",
+    sessionPlatformUnknown: "عميل غير معروف",
     sessionsRevoked: "تم تسجيل خروج كل الجلسات الأخرى.",
     sessionsRevokeFailed: "تعذر إلغاء الجلسات الأخرى النشطة.",
     savePreferences: "حفظ التفضيلات",
@@ -199,6 +210,10 @@ export const mobileMessagesAr: MobileMessages = {
     mfaStepUpFresh:
       "تم تفعيل عوامل المصادقة ويوجد تحقق حديث للإجراءات الحساسة.",
     mfaAuthenticator: "تطبيق المصادقة",
+    mfaRecommendedApps:
+      "التطبيقات الموصى بها: {first} أو {second}.",
+    mfaCompatibleApps:
+      "امسح رمز QR هذا داخل Google Authenticator أو Microsoft Authenticator. كما يعمل أي تطبيق TOTP متوافق، ويبقى السر اليدوي أدناه متاحاً إذا لم يكن المسح ممكناً.",
     mfaEmailBackup: "عامل البريد الاحتياطي",
     mfaStartAuthenticator: "ابدأ إعداد التطبيق",
     mfaVerifyAuthenticator: "تحقق من التطبيق",

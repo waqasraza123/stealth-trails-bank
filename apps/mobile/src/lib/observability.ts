@@ -23,7 +23,14 @@ function isReportableHttpError(error: unknown) {
   }
 
   const status = error.response?.status;
-  return status === undefined || status >= 500;
+
+  // Browser-level network and CORS failures already surface in devtools and
+  // often fail telemetry delivery too, which just adds duplicate noise.
+  if (status === undefined) {
+    return false;
+  }
+
+  return status >= 500;
 }
 
 export function reportMobileApiError(

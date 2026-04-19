@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import type { CustomerNotificationPreferences } from "@stealth-trails-bank/types";
+import type {
+  CustomerNotificationPreferences,
+  CustomerSessionProjection,
+} from "@stealth-trails-bank/types";
+import { QRCodeSVG } from "qrcode.react";
 import { Layout } from "@/components/Layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -9,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
+  MonitorSmartphone,
   CheckCircle2,
   Loader2,
   LogOut,
@@ -22,6 +27,8 @@ import { useNavigate } from "react-router-dom";
 import { useLocale } from "@/i18n/use-locale";
 import { useT } from "@/i18n/use-t";
 import {
+  useListCustomerSessions,
+  useRevokeCustomerSession,
   useRevokeAllSessions,
   useRotatePassword,
   useUpdateNotificationPreferences,
@@ -53,6 +60,11 @@ const emptyPasswordForm = {
   confirmPassword: "",
 };
 
+const recommendedAuthenticatorApps = [
+  "Google Authenticator",
+  "Microsoft Authenticator",
+];
+
 function sameNotificationPreferences(
   left: CustomerNotificationPreferences | null,
   right: CustomerNotificationPreferences | null,
@@ -69,6 +81,18 @@ function sameNotificationPreferences(
   );
 }
 
+function formatSessionLabel(session: CustomerSessionProjection): string {
+  if (session.clientPlatform === "mobile") {
+    return "Mobile app";
+  }
+
+  if (session.clientPlatform === "web") {
+    return "Web browser";
+  }
+
+  return "Unknown client";
+}
+
 const Profile = () => {
   const t = useT();
   const { locale } = useLocale();
@@ -78,6 +102,8 @@ const Profile = () => {
   const profileQuery = useGetUser(userFromStore?.supabaseUserId);
   const rotatePasswordMutation = useRotatePassword();
   const revokeAllSessionsMutation = useRevokeAllSessions();
+  const customerSessionsQuery = useListCustomerSessions();
+  const revokeCustomerSessionMutation = useRevokeCustomerSession();
   const updateNotificationPreferencesMutation =
     useUpdateNotificationPreferences();
   useCustomerMfaStatus();
@@ -106,6 +132,7 @@ const Profile = () => {
     null,
   );
   const [totpSecret, setTotpSecret] = useState<string | null>(null);
+  const [totpOtpAuthUri, setTotpOtpAuthUri] = useState<string | null>(null);
   const [totpCode, setTotpCode] = useState("");
   const [emailChallengeId, setEmailChallengeId] = useState<string | null>(null);
   const [emailCode, setEmailCode] = useState("");
@@ -165,6 +192,7 @@ const Profile = () => {
     notificationDraft,
     profile?.notificationPreferences ?? null,
   );
+  const customerSessions = customerSessionsQuery.data?.sessions ?? [];
 
   async function handlePasswordSubmit() {
     setPasswordNotice(null);
@@ -230,10 +258,25 @@ const Profile = () => {
     }
   }
 
+  async function handleRevokeSession(sessionId: string) {
+    setSessionNotice(null);
+    setSessionError(null);
+
+    try {
+      await revokeCustomerSessionMutation.mutateAsync(sessionId);
+      setSessionNotice("Selected customer session was signed out.");
+    } catch (error) {
+      setSessionError(
+        error instanceof Error ? error.message : "Session revocation failed.",
+      );
+    }
+  }
+
   async function handleStartTotp() {
     try {
       const result = await startTotpEnrollment.mutateAsync();
       setTotpSecret(result.secret);
+      setTotpOtpAuthUri(result.otpAuthUri);
       setTotpCode("");
     } catch (error) {
       setPasswordError(
@@ -248,6 +291,7 @@ const Profile = () => {
     try {
       await verifyTotpEnrollment.mutateAsync({ code: totpCode });
       setTotpSecret(null);
+      setTotpOtpAuthUri(null);
       setTotpCode("");
     } catch (error) {
       setPasswordError(
@@ -594,6 +638,12 @@ const Profile = () => {
                     <p className="mt-2 font-medium text-foreground">
                       {mfa?.totpEnrolled ? "Enabled" : "Not enrolled"}
                     </p>
+                    {!mfa?.totpEnrolled ? (
+                      <p className="mt-3 text-sm text-muted-foreground">
+                        Recommended apps: {recommendedAuthenticatorApps[0]} or{" "}
+                        {recommendedAuthenticatorApps[1]}.
+                      </p>
+                    ) : null}
                   </div>
                   <div className="stb-section-frame p-4">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -621,11 +671,31 @@ const Profile = () => {
                     {totpSecret ? (
                       <>
                         <div className="stb-section-frame p-4">
+                          <p className="text-sm text-muted-foreground">
+                            Scan this QR code in Google Authenticator or
+                            Microsoft Authenticator. Any compatible TOTP app
+                            also works.
+                          </p>
+                          {totpOtpAuthUri ? (
+                            <div className="mt-4 flex justify-center">
+                              <QRCodeSVG
+                                data-testid="totp-qr-code"
+                                size={168}
+                                value={totpOtpAuthUri}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="stb-section-frame p-4">
                           <p className="text-xs uppercase tracking-wide text-muted-foreground">
                             Manual secret
                           </p>
                           <p className="mt-2 break-all font-mono text-sm text-foreground">
                             {totpSecret}
+                          </p>
+                          <p className="mt-3 text-sm text-muted-foreground">
+                            Use the manual secret only if QR scanning is not
+                            available.
                           </p>
                         </div>
                         <div className="space-y-2">
@@ -1028,6 +1098,87 @@ const Profile = () => {
                       ? "Revoking sessions..."
                       : "Revoke all other sessions"}
                   </Button>
+
+                  <div className="space-y-3">
+                    <div className="stb-trust-note text-sm text-muted-foreground">
+                      <p className="text-sm font-medium text-foreground">
+                        Active sessions
+                      </p>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Review every active device or browser token and revoke
+                        anything you do not recognize.
+                      </p>
+                    </div>
+
+                    {customerSessionsQuery.isLoading ? (
+                      <div className="stb-section-frame p-4 text-sm text-muted-foreground">
+                        Loading active sessions...
+                      </div>
+                    ) : customerSessionsQuery.isError ? (
+                      <Alert variant="destructive">
+                        <ShieldAlert className="h-4 w-4" />
+                        <AlertTitle>Session inventory unavailable</AlertTitle>
+                        <AlertDescription>
+                          {customerSessionsQuery.error instanceof Error
+                            ? customerSessionsQuery.error.message
+                            : "Failed to load customer sessions."}
+                        </AlertDescription>
+                      </Alert>
+                    ) : customerSessions.length > 0 ? (
+                      <div className="space-y-3">
+                        {customerSessions.map((session) => (
+                          <div
+                            key={session.id}
+                            className="stb-section-frame flex flex-col gap-3 p-4"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <MonitorSmartphone className="h-4 w-4 text-muted-foreground" />
+                                  <p className="text-sm font-medium text-foreground">
+                                    {formatSessionLabel(session)}
+                                  </p>
+                                  {session.current ? (
+                                    <Badge variant="secondary">Current</Badge>
+                                  ) : null}
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  Last seen{" "}
+                                  {formatDateLabel(session.lastSeenAt, locale)}
+                                </p>
+                                {session.ipAddress ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    IP {session.ipAddress}
+                                  </p>
+                                ) : null}
+                                {session.userAgent ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    {session.userAgent}
+                                  </p>
+                                ) : null}
+                              </div>
+
+                              {!session.current ? (
+                                <Button
+                                  variant="outline"
+                                  onClick={() => void handleRevokeSession(session.id)}
+                                  disabled={revokeCustomerSessionMutation.isPending}
+                                >
+                                  {revokeCustomerSessionMutation.isPending
+                                    ? "Revoking..."
+                                    : "Revoke session"}
+                                </Button>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="stb-section-frame p-4 text-sm text-muted-foreground">
+                        No active customer sessions were recorded yet.
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
 

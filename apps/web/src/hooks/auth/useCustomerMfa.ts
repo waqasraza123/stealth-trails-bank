@@ -90,6 +90,7 @@ function useAuthenticatedRequester() {
               {
                 headers: {
                   Authorization: `Bearer ${token}`,
+                  "x-stb-client-platform": "web",
                 },
               },
             )
@@ -99,6 +100,7 @@ function useAuthenticatedRequester() {
               {
                 headers: {
                   Authorization: `Bearer ${token}`,
+                  "x-stb-client-platform": "web",
                 },
               },
             );

@@ -2,6 +2,8 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  useListCustomerSessions,
+  useRevokeCustomerSession,
   useRevokeAllSessions,
   useRotatePassword,
   useUpdateNotificationPreferences,
@@ -14,6 +16,8 @@ import { renderWithRouter } from "@/test/render-with-router";
 const mockUseGetUser = vi.mocked(useGetUser);
 const mockUseRotatePassword = vi.mocked(useRotatePassword);
 const mockUseRevokeAllSessions = vi.mocked(useRevokeAllSessions);
+const mockUseListCustomerSessions = vi.mocked(useListCustomerSessions);
+const mockUseRevokeCustomerSession = vi.mocked(useRevokeCustomerSession);
 const mockUseUpdateNotificationPreferences = vi.mocked(
   useUpdateNotificationPreferences,
 );
@@ -23,6 +27,8 @@ vi.mock("@/hooks/user/useGetUser", () => ({
 }));
 
 vi.mock("@/hooks/user/useProfileSettings", () => ({
+  useListCustomerSessions: vi.fn(),
+  useRevokeCustomerSession: vi.fn(),
   useRevokeAllSessions: vi.fn(),
   useRotatePassword: vi.fn(),
   useUpdateNotificationPreferences: vi.fn(),
@@ -31,6 +37,7 @@ vi.mock("@/hooks/user/useProfileSettings", () => ({
 describe("profile page", () => {
   const rotatePassword = vi.fn();
   const revokeAllSessions = vi.fn();
+  const revokeCustomerSession = vi.fn();
   const updateNotificationPreferences = vi.fn();
   const freshMfa = {
     required: true,
@@ -46,6 +53,7 @@ describe("profile page", () => {
     localStorage.clear();
     rotatePassword.mockReset();
     revokeAllSessions.mockReset();
+    revokeCustomerSession.mockReset();
     updateNotificationPreferences.mockReset();
 
     useUserStore.setState({
@@ -98,6 +106,40 @@ describe("profile page", () => {
       isPending: false,
     } as ReturnType<typeof useRevokeAllSessions>);
 
+    mockUseListCustomerSessions.mockReturnValue({
+      data: {
+        sessions: [
+          {
+            id: "session_current",
+            current: true,
+            clientPlatform: "web",
+            userAgent: "Mozilla/5.0",
+            ipAddress: "203.0.113.10",
+            createdAt: "2026-04-19T10:00:00.000Z",
+            lastSeenAt: "2026-04-19T10:15:00.000Z",
+          },
+          {
+            id: "session_other",
+            current: false,
+            clientPlatform: "mobile",
+            userAgent: "Expo/ios",
+            ipAddress: "198.51.100.24",
+            createdAt: "2026-04-18T10:00:00.000Z",
+            lastSeenAt: "2026-04-18T12:30:00.000Z",
+          },
+        ],
+        activeSessionCount: 2,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as ReturnType<typeof useListCustomerSessions>);
+
+    mockUseRevokeCustomerSession.mockReturnValue({
+      mutateAsync: revokeCustomerSession,
+      isPending: false,
+    } as ReturnType<typeof useRevokeCustomerSession>);
+
     mockUseUpdateNotificationPreferences.mockReturnValue({
       mutateAsync: updateNotificationPreferences,
       isPending: false,
@@ -129,6 +171,51 @@ describe("profile page", () => {
     expect(
       screen.getByText(
         /security and account-risk notifications remain mandatory/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("recommends named authenticator apps when MFA setup is incomplete", () => {
+    mockUseGetUser.mockReturnValue({
+      data: {
+        id: 1,
+        customerId: "customer_1",
+        supabaseUserId: "supabase_1",
+        email: "amina@example.com",
+        firstName: "Amina",
+        lastName: "Rahman",
+        ethereumAddress: "0x1111222233334444555566667777888899990000",
+        accountStatus: "active",
+        activatedAt: "2026-04-01T10:00:00.000Z",
+        restrictedAt: null,
+        frozenAt: null,
+        closedAt: null,
+        passwordRotationAvailable: true,
+        notificationPreferences: {
+          depositEmails: true,
+          withdrawalEmails: true,
+          loanEmails: true,
+          productUpdateEmails: false,
+        },
+        mfa: {
+          ...freshMfa,
+          totpEnrolled: false,
+          emailOtpEnrolled: false,
+          requiresSetup: true,
+          moneyMovementBlocked: true,
+          stepUpFreshUntil: null,
+        },
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as ReturnType<typeof useGetUser>);
+
+    renderWithRouter(<Profile />);
+
+    expect(
+      screen.getByText(
+        /recommended apps: google authenticator or microsoft authenticator/i,
       ),
     ).toBeInTheDocument();
   });
@@ -279,6 +366,23 @@ describe("profile page", () => {
       await screen.findByText(
         /all other active customer sessions were signed out/i,
       ),
+    ).toBeInTheDocument();
+  });
+
+  it("lists active sessions and revokes a selected non-current session", async () => {
+    const user = userEvent.setup();
+
+    renderWithRouter(<Profile />);
+
+    expect(screen.getByText(/active sessions/i)).toBeInTheDocument();
+    expect(screen.getByText(/web browser/i)).toBeInTheDocument();
+    expect(screen.getByText(/mobile app/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /revoke session/i }));
+
+    expect(revokeCustomerSession).toHaveBeenCalledWith("session_other");
+    expect(
+      await screen.findByText(/selected customer session was signed out/i),
     ).toBeInTheDocument();
   });
 });

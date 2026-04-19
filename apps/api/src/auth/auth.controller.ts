@@ -32,10 +32,39 @@ import { VerifyMfaChallengeDto } from "./dto/verify-mfa-challenge.dto";
 import { VerifyTotpEnrollmentDto } from "./dto/verify-totp-enrollment.dto";
 
 type AuthenticatedRequest = {
+  headers?: Record<string, string | string[] | undefined>;
+  ip?: string;
   user: {
     id: string;
+    sessionId?: string | null;
   };
 };
+
+function readSingleHeader(
+  value: string | string[] | undefined,
+): string | null {
+  if (Array.isArray(value)) {
+    return value[0]?.trim() || null;
+  }
+
+  return value?.trim() || null;
+}
+
+function buildCustomerSessionContext(
+  request: Pick<AuthenticatedRequest, "headers" | "ip" | "user">,
+) {
+  const forwardedFor = readSingleHeader(request.headers?.["x-forwarded-for"]);
+  const ipAddress = forwardedFor?.split(",")[0]?.trim() || request.ip || null;
+
+  return {
+    currentSessionId: request.user.sessionId ?? null,
+    clientPlatform: readSingleHeader(
+      request.headers?.["x-stb-client-platform"],
+    ) as "web" | "mobile" | "unknown" | null,
+    userAgent: readSingleHeader(request.headers?.["user-agent"]),
+    ipAddress,
+  };
+}
 
 type AuthenticatedOperatorRequest = {
   internalOperator: {
@@ -70,8 +99,20 @@ export class AuthController {
   @Post("login")
   async login(
     @Body(new ValidationPipe()) loginDto: LoginDto,
+    @Request() request: Omit<AuthenticatedRequest, "user"> & {
+      headers?: Record<string, string | string[] | undefined>;
+      ip?: string;
+    },
   ): Promise<CustomJsonResponse> {
-    return this.authService.login(loginDto.email, loginDto.password);
+    return this.authService.login(
+      loginDto.email,
+      loginDto.password,
+      buildCustomerSessionContext({
+        headers: request.headers,
+        ip: request.ip,
+        user: {},
+      } as AuthenticatedRequest),
+    );
   }
 
   @UseGuards(JwtAuthGuard)
@@ -84,6 +125,7 @@ export class AuthController {
       request.user.id,
       updatePasswordDto.currentPassword,
       updatePasswordDto.newPassword,
+      buildCustomerSessionContext(request),
     );
   }
 
@@ -92,7 +134,34 @@ export class AuthController {
   async revokeAllCustomerSessions(
     @Request() request: AuthenticatedRequest,
   ): Promise<CustomJsonResponse> {
-    return this.authService.revokeAllCustomerSessions(request.user.id);
+    return this.authService.revokeAllCustomerSessions(
+      request.user.id,
+      buildCustomerSessionContext(request),
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("sessions")
+  async listCustomerSessions(
+    @Request() request: AuthenticatedRequest,
+  ): Promise<CustomJsonResponse> {
+    return this.authService.listCustomerSessions(
+      request.user.id,
+      request.user.sessionId ?? null,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("session/:sessionId/revoke")
+  async revokeCustomerSession(
+    @Param("sessionId") sessionId: string,
+    @Request() request: AuthenticatedRequest,
+  ): Promise<CustomJsonResponse> {
+    return this.authService.revokeCustomerSession(
+      request.user.id,
+      request.user.sessionId ?? null,
+      sessionId,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
@@ -117,7 +186,11 @@ export class AuthController {
     @Body(new ValidationPipe()) dto: VerifyTotpEnrollmentDto,
     @Request() request: AuthenticatedRequest,
   ): Promise<CustomJsonResponse> {
-    return this.authService.verifyTotpEnrollment(request.user.id, dto.code);
+    return this.authService.verifyTotpEnrollment(
+      request.user.id,
+      dto.code,
+      buildCustomerSessionContext(request),
+    );
   }
 
   @UseGuards(JwtAuthGuard)
@@ -138,6 +211,7 @@ export class AuthController {
       request.user.id,
       dto.challengeId,
       dto.code,
+      buildCustomerSessionContext(request),
     );
   }
 
@@ -159,6 +233,7 @@ export class AuthController {
       request.user.id,
       dto.challengeId,
       dto.code,
+      buildCustomerSessionContext(request),
     );
   }
 

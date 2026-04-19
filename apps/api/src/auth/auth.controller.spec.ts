@@ -14,6 +14,8 @@ describe("AuthController", () => {
     login: jest.fn(),
     updatePassword: jest.fn(),
     revokeAllCustomerSessions: jest.fn(),
+    listCustomerSessions: jest.fn(),
+    revokeCustomerSession: jest.fn(),
     startEmailRecovery: jest.fn(),
     verifyEmailRecovery: jest.fn(),
     listCustomerMfaRecoveryRequests: jest.fn(),
@@ -68,6 +70,7 @@ describe("AuthController", () => {
     authService.validateToken.mockResolvedValue({
       id: "supabase_1",
       email: "amina@example.com",
+      sessionId: "session_current",
     });
   });
 
@@ -110,6 +113,9 @@ describe("AuthController", () => {
       "supabase_1",
       "current-pass",
       "new-strong-pass",
+      expect.objectContaining({
+        currentSessionId: "session_current",
+      }),
     );
     expect(response.body).toEqual({
       status: "success",
@@ -143,6 +149,9 @@ describe("AuthController", () => {
 
     expect(authService.revokeAllCustomerSessions).toHaveBeenCalledWith(
       "supabase_1",
+      expect.objectContaining({
+        currentSessionId: "session_current",
+      }),
     );
     expect(response.body).toEqual({
       status: "success",
@@ -195,6 +204,49 @@ describe("AuthController", () => {
       "supabase_1",
       "challenge_1",
       "123456",
+      expect.objectContaining({
+        currentSessionId: "session_current",
+      }),
+    );
+  });
+
+  it("passes session inventory endpoints through to the auth service", async () => {
+    authService.listCustomerSessions.mockResolvedValue({
+      status: "success",
+      message: "Customer sessions retrieved successfully.",
+      data: {
+        sessions: [],
+        activeSessionCount: 1,
+      },
+    });
+    authService.revokeCustomerSession.mockResolvedValue({
+      status: "success",
+      message: "Customer session revoked successfully.",
+      data: {
+        revokedSessionId: "session_other",
+        activeSessionCount: 1,
+      },
+    });
+
+    await request(app.getHttpServer())
+      .get("/auth/sessions")
+      .set("Authorization", "Bearer test-token")
+      .expect(200);
+
+    expect(authService.listCustomerSessions).toHaveBeenCalledWith(
+      "supabase_1",
+      "session_current",
+    );
+
+    await request(app.getHttpServer())
+      .post("/auth/session/session_other/revoke")
+      .set("Authorization", "Bearer test-token")
+      .expect(201);
+
+    expect(authService.revokeCustomerSession).toHaveBeenCalledWith(
+      "supabase_1",
+      "session_current",
+      "session_other",
     );
   });
 

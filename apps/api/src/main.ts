@@ -39,6 +39,7 @@ async function bootstrap() {
       "Authorization",
       "Content-Type",
       "X-Request-Id",
+      "X-Stb-Client-Platform",
       "X-Internal-Operator-Api-Key",
       "X-Internal-Worker-Api-Key"
     ],
