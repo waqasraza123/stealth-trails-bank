@@ -40,6 +40,7 @@ import {
 } from "./customer-mfa.util";
 import { generateEthereumAddress } from "./auth.util";
 import { CustomerMfaEmailDeliveryService } from "./customer-mfa-email-delivery.service";
+import { CustomerSecurityEmailDeliveryService } from "./customer-security-email-delivery.service";
 import { assertOperatorRoleAuthorized } from "./internal-operator-role-policy";
 
 type LegacyUserRecord = {
@@ -333,6 +334,7 @@ export class AuthService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly customerMfaEmailDeliveryService: CustomerMfaEmailDeliveryService,
+    private readonly customerSecurityEmailDeliveryService: CustomerSecurityEmailDeliveryService,
   ) {
     this.productChainId = loadProductChainRuntimeConfig().productChainId;
     const customerMfaPolicy = loadCustomerMfaPolicyRuntimeConfig();
@@ -530,6 +532,36 @@ export class AuthService {
   private normalizeOptionalText(value?: string | null): string | null {
     const normalized = value?.trim();
     return normalized ? normalized : null;
+  }
+
+  private async hasRecognizedCustomerSessionSignature(
+    customerId: string,
+    context?: CustomerSessionContext,
+  ): Promise<boolean> {
+    const clientPlatform = this.normalizeSessionPlatform(context?.clientPlatform);
+    const userAgent = this.normalizeOptionalText(context?.userAgent);
+    const ipAddress = this.normalizeOptionalText(context?.ipAddress);
+
+    if (
+      clientPlatform === CustomerAuthSessionPlatform.unknown &&
+      !userAgent &&
+      !ipAddress
+    ) {
+      return true;
+    }
+
+    const matchingSession = await this.prismaService.customerAuthSession.findFirst({
+      where: {
+        customerId,
+        clientPlatform,
+        ...(userAgent ? { userAgent } : { userAgent: null }),
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    return Boolean(matchingSession);
   }
 
   private mapCustomerSession(
@@ -2981,6 +3013,8 @@ export class AuthService {
       throw new InternalServerErrorException("User profile not found.");
     }
 
+    const recognizedSessionSignature =
+      await this.hasRecognizedCustomerSessionSignature(customer.id, context);
     const session = await this.buildSessionRefresh(
       {
         customerId: customer.id,
@@ -3003,6 +3037,21 @@ export class AuthService {
         ipAddress: this.normalizeOptionalText(context?.ipAddress),
       } as PrismaJsonValue,
     });
+
+    if (!recognizedSessionSignature) {
+      void this.customerSecurityEmailDeliveryService
+        .sendSessionAlert({
+          customerId: customer.id,
+          actorId: customer.supabaseUserId,
+          email: customer.email,
+          purpose: "new_session_login",
+          clientPlatform: this.normalizeSessionPlatform(context?.clientPlatform),
+          userAgent: this.normalizeOptionalText(context?.userAgent),
+          ipAddress: this.normalizeOptionalText(context?.ipAddress),
+          occurredAt: new Date().toISOString(),
+        })
+        .catch(() => undefined);
+    }
 
     return {
       status: "success",

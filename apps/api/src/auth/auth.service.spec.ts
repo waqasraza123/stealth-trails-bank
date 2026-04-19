@@ -94,6 +94,7 @@ describe("AuthService", () => {
       customerAuthSession: {
         create: jest.fn(),
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         findMany: jest.fn(),
         count: jest.fn(),
         update: jest.fn(),
@@ -121,10 +122,14 @@ describe("AuthService", () => {
     const customerMfaEmailDeliveryService = {
       sendCode: jest.fn(),
     };
+    const customerSecurityEmailDeliveryService = {
+      sendSessionAlert: jest.fn().mockResolvedValue(undefined),
+    };
 
     const service = new AuthService(
       prismaService as never,
       customerMfaEmailDeliveryService as never,
+      customerSecurityEmailDeliveryService as never,
     );
 
     transaction.customerAuthSession.create.mockResolvedValue({
@@ -137,6 +142,7 @@ describe("AuthService", () => {
     prismaService.customerAuthSession.create.mockResolvedValue({
       id: "session_1",
     });
+    prismaService.customerAuthSession.findFirst.mockResolvedValue(null);
     prismaService.customerAuthSession.findMany.mockResolvedValue([]);
     prismaService.customerAuthSession.count.mockResolvedValue(0);
     prismaService.customerAuthSession.updateMany.mockResolvedValue({
@@ -149,6 +155,7 @@ describe("AuthService", () => {
       prismaService,
       transaction,
       customerMfaEmailDeliveryService,
+      customerSecurityEmailDeliveryService,
     };
   }
 
@@ -265,7 +272,11 @@ describe("AuthService", () => {
   });
 
   it("logs in without returning a private key", async () => {
-    const { service, prismaService } = createService();
+    const {
+      service,
+      prismaService,
+      customerSecurityEmailDeliveryService,
+    } = createService();
     const passwordHash = await bcrypt.hash("s3cret-pass", 4);
 
     prismaService.customer.findUnique.mockResolvedValue({
@@ -288,8 +299,13 @@ describe("AuthService", () => {
       supabaseUserId: "supabase_1",
       ethereumAddress: "0xgenerated",
     });
+    prismaService.customerAuthSession.findFirst.mockResolvedValue(null);
 
-    const result = await service.login("ada@example.com", "s3cret-pass");
+    const result = await service.login("ada@example.com", "s3cret-pass", {
+      clientPlatform: "web",
+      userAgent: "Mozilla/5.0",
+      ipAddress: "203.0.113.10",
+    });
 
     expect(result.status).toBe("success");
     expect(result.data?.token).toEqual(expect.any(String));
@@ -311,6 +327,59 @@ describe("AuthService", () => {
       },
     });
     expect(result.data?.user).not.toHaveProperty("privateKey");
+    expect(
+      customerSecurityEmailDeliveryService.sendSessionAlert,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        purpose: "new_session_login",
+        clientPlatform: "web",
+        userAgent: "Mozilla/5.0",
+        ipAddress: "203.0.113.10",
+      }),
+    );
+  });
+
+  it("does not send a new-session alert for a recognized device signature", async () => {
+    const {
+      service,
+      prismaService,
+      customerSecurityEmailDeliveryService,
+    } = createService();
+    const passwordHash = await bcrypt.hash("s3cret-pass", 4);
+
+    prismaService.customer.findUnique.mockResolvedValue({
+      id: "customer_1",
+      supabaseUserId: "supabase_1",
+      email: "ada@example.com",
+      passwordHash,
+      authTokenVersion: 0,
+      mfaRequired: true,
+      mfaTotpEnrolled: false,
+      mfaEmailOtpEnrolled: false,
+      mfaLastVerifiedAt: null,
+      mfaLockedUntil: null,
+    });
+    prismaService.user.findFirst.mockResolvedValue({
+      id: 42,
+      firstName: "Ada",
+      lastName: "Lovelace",
+      email: "ada@example.com",
+      supabaseUserId: "supabase_1",
+      ethereumAddress: "0xgenerated",
+    });
+    prismaService.customerAuthSession.findFirst.mockResolvedValue({
+      id: "session_existing",
+    });
+
+    await service.login("ada@example.com", "s3cret-pass", {
+      clientPlatform: "web",
+      userAgent: "Mozilla/5.0",
+      ipAddress: "203.0.113.10",
+    });
+
+    expect(
+      customerSecurityEmailDeliveryService.sendSessionAlert,
+    ).not.toHaveBeenCalled();
   });
 
   it("bootstraps a shared login account idempotently", async () => {

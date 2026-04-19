@@ -1131,6 +1131,17 @@ export type CustomerMfaEmailDeliveryRuntimeConfig = {
   readonly fromName: string;
 };
 
+export type CustomerSecurityEmailDeliveryMode = "preview" | "webhook";
+
+export type CustomerSecurityEmailDeliveryRuntimeConfig = {
+  readonly mode: CustomerSecurityEmailDeliveryMode;
+  readonly webhookUrl: string | null;
+  readonly bearerToken: string | null;
+  readonly requestTimeoutMs: number;
+  readonly fromEmail: string;
+  readonly fromName: string;
+};
+
 export type AccountHoldPolicyRuntimeConfig = {
   readonly accountHoldApplyAllowedOperatorRoles: readonly string[];
   readonly accountHoldReleaseAllowedOperatorRoles: readonly string[];
@@ -2199,6 +2210,54 @@ export function loadCustomerMfaEmailDeliveryRuntimeConfig(
       "security@stealthtrailsbank.local",
     fromName:
       readOptionalRuntimeEnv(env, "CUSTOMER_MFA_EMAIL_DELIVERY_FROM_NAME") ??
+      "Stealth Trails Bank Security",
+  };
+}
+
+export function loadCustomerSecurityEmailDeliveryRuntimeConfig(
+  env: RuntimeEnvShape = getNodeRuntimeEnv(),
+): CustomerSecurityEmailDeliveryRuntimeConfig {
+  const mode =
+    readOptionalRuntimeEnv(env, "CUSTOMER_SECURITY_EMAIL_DELIVERY_MODE") ??
+    "preview";
+
+  if (mode !== "preview" && mode !== "webhook") {
+    throw new Error(
+      "CUSTOMER_SECURITY_EMAIL_DELIVERY_MODE must be one of: preview, webhook.",
+    );
+  }
+
+  const webhookUrl = readOptionalRuntimeEnv(
+    env,
+    "CUSTOMER_SECURITY_EMAIL_DELIVERY_WEBHOOK_URL",
+  );
+
+  if (mode === "webhook" && !webhookUrl) {
+    throw new Error(
+      "CUSTOMER_SECURITY_EMAIL_DELIVERY_WEBHOOK_URL is required when CUSTOMER_SECURITY_EMAIL_DELIVERY_MODE=webhook.",
+    );
+  }
+
+  return {
+    mode,
+    webhookUrl: webhookUrl?.trim() ?? null,
+    bearerToken:
+      readOptionalRuntimeEnv(
+        env,
+        "CUSTOMER_SECURITY_EMAIL_DELIVERY_BEARER_TOKEN",
+      ) ?? null,
+    requestTimeoutMs: parsePositiveInteger(
+      readOptionalRuntimeEnv(
+        env,
+        "CUSTOMER_SECURITY_EMAIL_DELIVERY_REQUEST_TIMEOUT_MS",
+      ) ?? "5000",
+      "CUSTOMER_SECURITY_EMAIL_DELIVERY_REQUEST_TIMEOUT_MS",
+    ),
+    fromEmail:
+      readOptionalRuntimeEnv(env, "CUSTOMER_SECURITY_EMAIL_DELIVERY_FROM_EMAIL") ??
+      "security@stealthtrailsbank.local",
+    fromName:
+      readOptionalRuntimeEnv(env, "CUSTOMER_SECURITY_EMAIL_DELIVERY_FROM_NAME") ??
       "Stealth Trails Bank Security",
   };
 }

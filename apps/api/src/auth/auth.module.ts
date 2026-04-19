@@ -9,6 +9,7 @@ import { InternalOperatorApiKeyGuard } from "./guards/internal-operator-api-key.
 import { InternalOperatorBearerGuard } from "./guards/internal-operator-bearer.guard";
 import { PlatformAlertDeliveryService } from "../operations-monitoring/platform-alert-delivery.service";
 import { CustomerMfaEmailDeliveryService } from "./customer-mfa-email-delivery.service";
+import { CustomerSecurityEmailDeliveryService } from "./customer-security-email-delivery.service";
 
 @Global()
 @Module({
@@ -24,6 +25,7 @@ import { CustomerMfaEmailDeliveryService } from "./customer-mfa-email-delivery.s
     InternalOperatorBearerGuard,
     PlatformAlertDeliveryService,
     CustomerMfaEmailDeliveryService,
+    CustomerSecurityEmailDeliveryService,
   ],
   exports: [
     AuthService,
