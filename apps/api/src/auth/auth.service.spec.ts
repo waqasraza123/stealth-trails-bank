@@ -78,6 +78,8 @@ describe("AuthService", () => {
       },
       auditEvent: {
         create: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn(),
       },
     };
 
@@ -109,6 +111,8 @@ describe("AuthService", () => {
       },
       auditEvent: {
         create: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn(),
       },
       customerAccount: {
         findFirst: jest.fn(),
@@ -145,6 +149,8 @@ describe("AuthService", () => {
     prismaService.customerAuthSession.findFirst.mockResolvedValue(null);
     prismaService.customerAuthSession.findMany.mockResolvedValue([]);
     prismaService.customerAuthSession.count.mockResolvedValue(0);
+    prismaService.auditEvent.findMany.mockResolvedValue([]);
+    prismaService.auditEvent.count.mockResolvedValue(0);
     prismaService.customerAuthSession.updateMany.mockResolvedValue({
       count: 1,
     });
@@ -1121,6 +1127,65 @@ describe("AuthService", () => {
     expect(result.data?.session).toEqual({
       token: expect.any(String),
       revokedOtherSessions: true,
+    });
+  });
+
+  it("lists normalized customer security activity", async () => {
+    const { service, prismaService } = createService();
+
+    prismaService.customer.findUnique.mockResolvedValue({
+      id: "customer_1",
+    });
+    prismaService.auditEvent.findMany.mockResolvedValue([
+      {
+        id: "audit_login",
+        action: "customer_account.session_created",
+        metadata: {
+          clientPlatform: "web",
+          ipAddress: "203.0.113.10",
+          userAgent: "Mozilla/5.0",
+        },
+        createdAt: new Date("2026-04-19T10:00:00.000Z"),
+      },
+      {
+        id: "audit_mfa",
+        action: "customer_account.mfa_challenge_verified",
+        metadata: {
+          purpose: "withdrawal_step_up",
+          method: "totp",
+        },
+        createdAt: new Date("2026-04-19T09:00:00.000Z"),
+      },
+    ]);
+    prismaService.auditEvent.count.mockResolvedValue(2);
+
+    const result = await service.listCustomerSecurityActivity("supabase_1");
+
+    expect(result.data).toEqual({
+      events: [
+        {
+          id: "audit_login",
+          kind: "login",
+          createdAt: "2026-04-19T10:00:00.000Z",
+          clientPlatform: "web",
+          ipAddress: "203.0.113.10",
+          userAgent: "Mozilla/5.0",
+          purpose: null,
+          method: null,
+        },
+        {
+          id: "audit_mfa",
+          kind: "mfa_step_up_verified",
+          createdAt: "2026-04-19T09:00:00.000Z",
+          clientPlatform: null,
+          ipAddress: null,
+          userAgent: null,
+          purpose: "withdrawal_step_up",
+          method: "totp",
+        },
+      ],
+      limit: 20,
+      totalCount: 2,
     });
   });
 });

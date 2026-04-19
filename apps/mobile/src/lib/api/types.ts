@@ -1,6 +1,7 @@
 import type {
   CustomerMfaStatus,
   CustomerNotificationPreferences,
+  CustomerSecurityActivityProjection,
   CustomerSessionProjection,
   UserProfileProjection,
 } from "@stealth-trails-bank/types";
@@ -455,6 +456,12 @@ export type ListCustomerSessionsResult = {
 export type RevokeCustomerSessionResult = {
   revokedSessionId: string;
   activeSessionCount: number;
+};
+
+export type ListCustomerSecurityActivityResult = {
+  events: CustomerSecurityActivityProjection[];
+  limit: number;
+  totalCount: number;
 };
 
 export type UpdateNotificationPreferencesResult = {

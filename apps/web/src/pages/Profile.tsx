@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type {
   CustomerNotificationPreferences,
+  CustomerSecurityActivityProjection,
   CustomerSessionProjection,
 } from "@stealth-trails-bank/types";
 import { QRCodeSVG } from "qrcode.react";
@@ -28,6 +29,7 @@ import { useLocale } from "@/i18n/use-locale";
 import { useT } from "@/i18n/use-t";
 import {
   useListCustomerSessions,
+  useListCustomerSecurityActivity,
   useRevokeCustomerSession,
   useRevokeAllSessions,
   useRotatePassword,
@@ -93,6 +95,57 @@ function formatSessionLabel(session: CustomerSessionProjection): string {
   return "Unknown client";
 }
 
+function formatSecurityActivityTitle(
+  event: CustomerSecurityActivityProjection,
+): string {
+  switch (event.kind) {
+    case "login":
+      return "New sign-in";
+    case "session_revoked":
+      return "Session revoked";
+    case "sessions_revoked":
+      return "Other sessions revoked";
+    case "password_rotated":
+      return "Password changed";
+    case "mfa_authenticator_enrolled":
+      return "Authenticator enrolled";
+    case "mfa_email_backup_enrolled":
+      return "Email backup enrolled";
+    case "mfa_recovery_completed":
+      return "Authenticator recovered";
+    case "mfa_step_up_verified":
+      return "MFA challenge verified";
+  }
+}
+
+function formatSecurityActivityDetail(
+  event: CustomerSecurityActivityProjection,
+): string | null {
+  if (event.kind === "login") {
+    if (event.clientPlatform === "web") {
+      return "Web browser session started.";
+    }
+
+    if (event.clientPlatform === "mobile") {
+      return "Mobile app session started.";
+    }
+
+    return "A new customer session started.";
+  }
+
+  if (event.kind === "mfa_step_up_verified") {
+    if (event.purpose === "withdrawal_step_up") {
+      return "Verified for money movement.";
+    }
+
+    if (event.purpose === "password_step_up") {
+      return "Verified for password change.";
+    }
+  }
+
+  return null;
+}
+
 const Profile = () => {
   const t = useT();
   const { locale } = useLocale();
@@ -103,6 +156,7 @@ const Profile = () => {
   const rotatePasswordMutation = useRotatePassword();
   const revokeAllSessionsMutation = useRevokeAllSessions();
   const customerSessionsQuery = useListCustomerSessions();
+  const securityActivityQuery = useListCustomerSecurityActivity();
   const revokeCustomerSessionMutation = useRevokeCustomerSession();
   const updateNotificationPreferencesMutation =
     useUpdateNotificationPreferences();
@@ -193,6 +247,7 @@ const Profile = () => {
     profile?.notificationPreferences ?? null,
   );
   const customerSessions = customerSessionsQuery.data?.sessions ?? [];
+  const securityActivity = securityActivityQuery.data?.events ?? [];
 
   async function handlePasswordSubmit() {
     setPasswordNotice(null);
@@ -1176,6 +1231,68 @@ const Profile = () => {
                     ) : (
                       <div className="stb-section-frame p-4 text-sm text-muted-foreground">
                         No active customer sessions were recorded yet.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="stb-trust-note text-sm text-muted-foreground">
+                      <p className="text-sm font-medium text-foreground">
+                        Recent security activity
+                      </p>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Review recent sign-ins, MFA changes, and session actions.
+                      </p>
+                    </div>
+
+                    {securityActivityQuery.isLoading ? (
+                      <div className="stb-section-frame p-4 text-sm text-muted-foreground">
+                        Loading security activity...
+                      </div>
+                    ) : securityActivityQuery.isError ? (
+                      <Alert variant="destructive">
+                        <ShieldAlert className="h-4 w-4" />
+                        <AlertTitle>Security activity unavailable</AlertTitle>
+                        <AlertDescription>
+                          {securityActivityQuery.error instanceof Error
+                            ? securityActivityQuery.error.message
+                            : "Failed to load security activity."}
+                        </AlertDescription>
+                      </Alert>
+                    ) : securityActivity.length > 0 ? (
+                      <div className="space-y-3">
+                        {securityActivity.map((event) => (
+                          <div
+                            key={event.id}
+                            className="stb-section-frame flex flex-col gap-2 p-4"
+                          >
+                            <p className="text-sm font-medium text-foreground">
+                              {formatSecurityActivityTitle(event)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatDateLabel(event.createdAt, locale)}
+                            </p>
+                            {formatSecurityActivityDetail(event) ? (
+                              <p className="text-sm text-muted-foreground">
+                                {formatSecurityActivityDetail(event)}
+                              </p>
+                            ) : null}
+                            {event.ipAddress ? (
+                              <p className="text-xs text-muted-foreground">
+                                IP {event.ipAddress}
+                              </p>
+                            ) : null}
+                            {event.userAgent ? (
+                              <p className="text-xs text-muted-foreground">
+                                {event.userAgent}
+                              </p>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="stb-section-frame p-4 text-sm text-muted-foreground">
+                        No recent security activity was recorded yet.
                       </div>
                     )}
                   </div>

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   useListCustomerSessions,
+  useListCustomerSecurityActivity,
   useRevokeCustomerSession,
   useRevokeAllSessions,
   useRotatePassword,
@@ -17,6 +18,9 @@ const mockUseGetUser = vi.mocked(useGetUser);
 const mockUseRotatePassword = vi.mocked(useRotatePassword);
 const mockUseRevokeAllSessions = vi.mocked(useRevokeAllSessions);
 const mockUseListCustomerSessions = vi.mocked(useListCustomerSessions);
+const mockUseListCustomerSecurityActivity = vi.mocked(
+  useListCustomerSecurityActivity,
+);
 const mockUseRevokeCustomerSession = vi.mocked(useRevokeCustomerSession);
 const mockUseUpdateNotificationPreferences = vi.mocked(
   useUpdateNotificationPreferences,
@@ -28,6 +32,7 @@ vi.mock("@/hooks/user/useGetUser", () => ({
 
 vi.mock("@/hooks/user/useProfileSettings", () => ({
   useListCustomerSessions: vi.fn(),
+  useListCustomerSecurityActivity: vi.fn(),
   useRevokeCustomerSession: vi.fn(),
   useRevokeAllSessions: vi.fn(),
   useRotatePassword: vi.fn(),
@@ -134,6 +139,27 @@ describe("profile page", () => {
       isError: false,
       error: null,
     } as ReturnType<typeof useListCustomerSessions>);
+    mockUseListCustomerSecurityActivity.mockReturnValue({
+      data: {
+        events: [
+          {
+            id: "audit_login",
+            kind: "login",
+            createdAt: "2026-04-19T10:00:00.000Z",
+            clientPlatform: "web",
+            ipAddress: "203.0.113.10",
+            userAgent: "Mozilla/5.0",
+            purpose: null,
+            method: null,
+          },
+        ],
+        limit: 20,
+        totalCount: 1,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as ReturnType<typeof useListCustomerSecurityActivity>);
 
     mockUseRevokeCustomerSession.mockReturnValue({
       mutateAsync: revokeCustomerSession,
@@ -375,7 +401,7 @@ describe("profile page", () => {
     renderWithRouter(<Profile />);
 
     expect(screen.getByText(/active sessions/i)).toBeInTheDocument();
-    expect(screen.getByText(/web browser/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/web browser/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/mobile app/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /revoke session/i }));
@@ -384,5 +410,13 @@ describe("profile page", () => {
     expect(
       await screen.findByText(/selected customer session was signed out/i),
     ).toBeInTheDocument();
+  });
+
+  it("renders recent customer security activity in the session security card", () => {
+    renderWithRouter(<Profile />);
+
+    expect(screen.getByText(/recent security activity/i)).toBeInTheDocument();
+    expect(screen.getByText(/new sign-in/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/203.0.113.10/i).length).toBeGreaterThan(0);
   });
 });

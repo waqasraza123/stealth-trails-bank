@@ -2,6 +2,7 @@ import axios from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CustomerNotificationPreferences,
+  CustomerSecurityActivityProjection,
   CustomerSessionProjection,
 } from "@stealth-trails-bank/types";
 import { loadWebRuntimeConfig } from "@stealth-trails-bank/config/web";
@@ -44,6 +45,12 @@ type ListCustomerSessionsResult = {
 type RevokeCustomerSessionResult = {
   revokedSessionId: string;
   activeSessionCount: number;
+};
+
+type ListCustomerSecurityActivityResult = {
+  events: CustomerSecurityActivityProjection[];
+  limit: number;
+  totalCount: number;
 };
 
 function buildWebAuthHeaders(token: string) {
@@ -161,6 +168,40 @@ export function useListCustomerSessions() {
         throw new Error(readApiErrorMessage(error, "Failed to load sessions."));
       }
     }
+  });
+}
+
+export function useListCustomerSecurityActivity() {
+  const token = useUserStore((state) => state.token);
+
+  return useQuery({
+    queryKey: ["customer-security-activity"],
+    enabled: Boolean(token),
+    queryFn: async () => {
+      if (!token) {
+        throw new Error("Auth token is required.");
+      }
+
+      try {
+        const response = await axios.get<
+          ApiResponse<ListCustomerSecurityActivityResult>
+        >(`${webRuntimeConfig.serverUrl}/auth/security-activity`, {
+          headers: buildWebAuthHeaders(token),
+        });
+
+        if (response.data.status !== "success" || !response.data.data) {
+          throw new Error(
+            response.data.message || "Failed to load security activity.",
+          );
+        }
+
+        return response.data.data;
+      } catch (error) {
+        throw new Error(
+          readApiErrorMessage(error, "Failed to load security activity."),
+        );
+      }
+    },
   });
 }
 

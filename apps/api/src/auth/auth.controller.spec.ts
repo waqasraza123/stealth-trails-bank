@@ -15,6 +15,7 @@ describe("AuthController", () => {
     updatePassword: jest.fn(),
     revokeAllCustomerSessions: jest.fn(),
     listCustomerSessions: jest.fn(),
+    listCustomerSecurityActivity: jest.fn(),
     revokeCustomerSession: jest.fn(),
     startEmailRecovery: jest.fn(),
     verifyEmailRecovery: jest.fn(),
@@ -247,6 +248,27 @@ describe("AuthController", () => {
       "supabase_1",
       "session_current",
       "session_other",
+    );
+  });
+
+  it("passes the security activity endpoint through to the auth service", async () => {
+    authService.listCustomerSecurityActivity.mockResolvedValue({
+      status: "success",
+      message: "Customer security activity retrieved successfully.",
+      data: {
+        events: [],
+        limit: 20,
+        totalCount: 0,
+      },
+    });
+
+    await request(app.getHttpServer())
+      .get("/auth/security-activity")
+      .set("Authorization", "Bearer test-token")
+      .expect(200);
+
+    expect(authService.listCustomerSecurityActivity).toHaveBeenCalledWith(
+      "supabase_1",
     );
   });
 

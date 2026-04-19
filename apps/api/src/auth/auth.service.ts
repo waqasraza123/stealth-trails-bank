@@ -174,6 +174,36 @@ type CustomerSessionProjection = {
   lastSeenAt: string;
 };
 
+type CustomerSecurityActivityProjection = {
+  id: string;
+  kind:
+    | "login"
+    | "session_revoked"
+    | "sessions_revoked"
+    | "password_rotated"
+    | "mfa_authenticator_enrolled"
+    | "mfa_email_backup_enrolled"
+    | "mfa_recovery_completed"
+    | "mfa_step_up_verified";
+  createdAt: string;
+  clientPlatform: "web" | "mobile" | "unknown" | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  purpose:
+    | "withdrawal_step_up"
+    | "password_step_up"
+    | "email_enrollment"
+    | "email_recovery"
+    | null;
+  method: "totp" | "email_otp" | null;
+};
+
+type ListCustomerSecurityActivityResponseData = {
+  events: CustomerSecurityActivityProjection[];
+  limit: number;
+  totalCount: number;
+};
+
 type ListCustomerSessionsResponseData = {
   sessions: CustomerSessionProjection[];
   activeSessionCount: number;
@@ -236,6 +266,15 @@ type CustomerAuthSessionRecord = Prisma.CustomerAuthSessionGetPayload<{
     lastSeenAt: true;
     revokedAt: true;
     customerId: true;
+  };
+}>;
+
+type CustomerSecurityAuditEventRecord = Prisma.AuditEventGetPayload<{
+  select: {
+    id: true;
+    action: true;
+    metadata: true;
+    createdAt: true;
   };
 }>;
 
@@ -577,6 +616,89 @@ export class AuthService {
       createdAt: session.createdAt.toISOString(),
       lastSeenAt: session.lastSeenAt.toISOString(),
     };
+  }
+
+  private mapCustomerSecurityActivity(
+    event: CustomerSecurityAuditEventRecord,
+  ): CustomerSecurityActivityProjection | null {
+    const metadata =
+      event.metadata && typeof event.metadata === "object" && !Array.isArray(event.metadata)
+        ? (event.metadata as Record<string, unknown>)
+        : {};
+    const clientPlatformValue = metadata["clientPlatform"];
+    const purposeValue = metadata["purpose"];
+    const methodValue = metadata["method"];
+
+    const base = {
+      id: event.id,
+      createdAt: event.createdAt.toISOString(),
+      clientPlatform:
+        clientPlatformValue === "web" ||
+        clientPlatformValue === "mobile" ||
+        clientPlatformValue === "unknown"
+          ? clientPlatformValue
+          : null,
+      ipAddress:
+        typeof metadata["ipAddress"] === "string" ? metadata["ipAddress"] : null,
+      userAgent:
+        typeof metadata["userAgent"] === "string" ? metadata["userAgent"] : null,
+      purpose:
+        purposeValue === "withdrawal_step_up" ||
+        purposeValue === "password_step_up" ||
+        purposeValue === "email_enrollment" ||
+        purposeValue === "email_recovery"
+          ? purposeValue
+          : null,
+      method:
+        methodValue === "totp" || methodValue === "email_otp"
+          ? methodValue
+          : null,
+    } satisfies Omit<CustomerSecurityActivityProjection, "kind">;
+
+    switch (event.action) {
+      case "customer_account.session_created":
+        return {
+          ...base,
+          kind: "login",
+        };
+      case "customer_account.session_revoked":
+        return {
+          ...base,
+          kind: "session_revoked",
+        };
+      case "customer_account.sessions_revoked":
+        return {
+          ...base,
+          kind: "sessions_revoked",
+        };
+      case "customer_account.password_rotated":
+        return {
+          ...base,
+          kind: "password_rotated",
+        };
+      case "customer_account.mfa_totp_enrolled":
+        return {
+          ...base,
+          kind: "mfa_authenticator_enrolled",
+        };
+      case "customer_account.mfa_email_enrolled":
+        return {
+          ...base,
+          kind: "mfa_email_backup_enrolled",
+        };
+      case "customer_account.mfa_recovery_completed":
+        return {
+          ...base,
+          kind: "mfa_recovery_completed",
+        };
+      case "customer_account.mfa_challenge_verified":
+        return {
+          ...base,
+          kind: "mfa_step_up_verified",
+        };
+      default:
+        return null;
+    }
   }
 
   private async createCustomerAuthSession(
@@ -2267,6 +2389,76 @@ export class AuthService {
           this.mapCustomerSession(session, currentSessionId),
         ),
         activeSessionCount: sessions.length,
+      },
+    };
+  }
+
+  async listCustomerSecurityActivity(
+    supabaseUserId: string,
+  ): Promise<CustomJsonResponse<ListCustomerSecurityActivityResponseData>> {
+    const customer = await this.prismaService.customer.findUnique({
+      where: { supabaseUserId },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!customer) {
+      throw new NotFoundException("Customer security profile not found.");
+    }
+
+    const actions = [
+      "customer_account.session_created",
+      "customer_account.session_revoked",
+      "customer_account.sessions_revoked",
+      "customer_account.password_rotated",
+      "customer_account.mfa_totp_enrolled",
+      "customer_account.mfa_email_enrolled",
+      "customer_account.mfa_recovery_completed",
+      "customer_account.mfa_challenge_verified",
+    ] as const;
+    const limit = 20;
+
+    const [events, totalCount] = await Promise.all([
+      this.prismaService.auditEvent.findMany({
+        where: {
+          customerId: customer.id,
+          action: {
+            in: [...actions],
+          },
+        },
+        select: {
+          id: true,
+          action: true,
+          metadata: true,
+          createdAt: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: limit,
+      }),
+      this.prismaService.auditEvent.count({
+        where: {
+          customerId: customer.id,
+          action: {
+            in: [...actions],
+          },
+        },
+      }),
+    ]);
+
+    return {
+      status: "success",
+      message: "Customer security activity retrieved successfully.",
+      data: {
+        events: events
+          .map((event) => this.mapCustomerSecurityActivity(event))
+          .filter(
+            (event): event is CustomerSecurityActivityProjection => event !== null,
+          ),
+        limit,
+        totalCount,
       },
     };
   }

@@ -11,6 +11,7 @@ import type {
   CreateWithdrawalIntentResult,
   CustomerLoansDashboard,
   CustomerStakingSnapshot,
+  ListCustomerSecurityActivityResult,
   ListMyBalancesResult,
   ListMyTransactionHistoryResult,
   ListCustomerSessionsResult,
@@ -581,6 +582,28 @@ export function useCustomerSessionsQuery() {
 
       if (response.data.status !== "success" || !response.data.data) {
         throw new Error(response.data.message || "Failed to load customer sessions.");
+      }
+
+      return response.data.data;
+    },
+  });
+}
+
+export function useCustomerSecurityActivityQuery() {
+  const token = useSessionStore((state) => state.token);
+
+  return useQuery({
+    queryKey: ["customer-security-activity"],
+    enabled: Boolean(token),
+    queryFn: async () => {
+      const response = await apiClient.get<
+        ApiEnvelope<ListCustomerSecurityActivityResult>
+      >("/auth/security-activity");
+
+      if (response.data.status !== "success" || !response.data.data) {
+        throw new Error(
+          response.data.message || "Failed to load security activity.",
+        );
       }
 
       return response.data.data;

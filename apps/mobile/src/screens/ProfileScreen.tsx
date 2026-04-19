@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import QRCode from "react-native-qrcode-svg";
 import type {
   CustomerNotificationPreferences,
+  CustomerSecurityActivityProjection,
   CustomerSessionProjection,
 } from "@stealth-trails-bank/types";
 import { AppScreen } from "../components/ui/AppScreen";
@@ -17,6 +18,7 @@ import { StatusChip } from "../components/ui/StatusChip";
 import {
   useMfaStatusQuery,
   useCustomerSessionsQuery,
+  useCustomerSecurityActivityQuery,
   useProfileQuery,
   useRevokeCustomerSessionMutation,
   useRotatePasswordMutation,
@@ -64,12 +66,66 @@ function formatSessionLabel(
   return t("profile.sessionPlatformUnknown");
 }
 
+function formatSecurityActivityTitle(
+  event: CustomerSecurityActivityProjection,
+  t: ReturnType<typeof useT>,
+) {
+  switch (event.kind) {
+    case "login":
+      return t("profile.securityActivityLogin");
+    case "session_revoked":
+      return t("profile.securityActivitySessionRevoked");
+    case "sessions_revoked":
+      return t("profile.securityActivitySessionsRevoked");
+    case "password_rotated":
+      return t("profile.securityActivityPasswordRotated");
+    case "mfa_authenticator_enrolled":
+      return t("profile.securityActivityMfaAuthenticatorEnrolled");
+    case "mfa_email_backup_enrolled":
+      return t("profile.securityActivityMfaEmailEnrolled");
+    case "mfa_recovery_completed":
+      return t("profile.securityActivityMfaRecovery");
+    case "mfa_step_up_verified":
+      return t("profile.securityActivityMfaVerified");
+  }
+}
+
+function formatSecurityActivityDetail(
+  event: CustomerSecurityActivityProjection,
+  t: ReturnType<typeof useT>,
+) {
+  if (event.kind === "login") {
+    if (event.clientPlatform === "web") {
+      return t("profile.securityActivityLoginWeb");
+    }
+
+    if (event.clientPlatform === "mobile") {
+      return t("profile.securityActivityLoginMobile");
+    }
+
+    return t("profile.securityActivityLoginUnknown");
+  }
+
+  if (event.kind === "mfa_step_up_verified") {
+    if (event.purpose === "withdrawal_step_up") {
+      return t("profile.securityActivityStepUpWithdrawal");
+    }
+
+    if (event.purpose === "password_step_up") {
+      return t("profile.securityActivityStepUpPassword");
+    }
+  }
+
+  return null;
+}
+
 export function ProfileScreen() {
   const t = useT();
   const { locale } = useLocale();
   const profileQuery = useProfileQuery();
   useMfaStatusQuery();
   const customerSessionsQuery = useCustomerSessionsQuery();
+  const securityActivityQuery = useCustomerSecurityActivityQuery();
   const signOut = useSessionStore((state) => state.signOut);
   const sessionUser = useSessionStore((state) => state.user);
   const rotatePasswordMutation = useRotatePasswordMutation();
@@ -121,6 +177,7 @@ export function ProfileScreen() {
     Boolean(mfa?.stepUpFreshUntil) &&
     Date.parse(mfa?.stepUpFreshUntil ?? "") > Date.now();
   const customerSessions = customerSessionsQuery.data?.sessions ?? [];
+  const securityActivity = securityActivityQuery.data?.events ?? [];
 
   async function handlePasswordUpdate() {
     if (!stepUpFresh) {
@@ -862,6 +919,58 @@ export function ProfileScreen() {
               ) : (
                 <InlineNotice
                   message={t("profile.noActiveSessions")}
+                  tone="neutral"
+                />
+              )}
+            </View>
+            <View className="gap-3">
+              <AppText className="text-sm text-slate">
+                {t("profile.securityActivity")}
+              </AppText>
+              {securityActivityQuery.isLoading ? (
+                <InlineNotice
+                  message={t("profile.securityActivityLoading")}
+                  tone="neutral"
+                />
+              ) : securityActivityQuery.isError ? (
+                <InlineNotice
+                  message={
+                    securityActivityQuery.error instanceof Error
+                      ? securityActivityQuery.error.message
+                      : t("profile.securityActivityUnavailable")
+                  }
+                  tone="critical"
+                />
+              ) : securityActivity.length > 0 ? (
+                securityActivity.map((event) => (
+                  <View
+                    key={event.id}
+                    className="gap-2 rounded-2xl border border-border bg-white px-4 py-4"
+                  >
+                    <AppText className="text-base text-ink" weight="semibold">
+                      {formatSecurityActivityTitle(event, t)}
+                    </AppText>
+                    <AppText className="text-sm text-slate">
+                      {formatDateLabel(event.createdAt, locale)}
+                    </AppText>
+                    {formatSecurityActivityDetail(event, t) ? (
+                      <AppText className="text-sm text-slate">
+                        {formatSecurityActivityDetail(event, t)}
+                      </AppText>
+                    ) : null}
+                    {event.ipAddress ? (
+                      <LtrValue value={`IP ${event.ipAddress}`} />
+                    ) : null}
+                    {event.userAgent ? (
+                      <AppText className="text-xs text-slate">
+                        {event.userAgent}
+                      </AppText>
+                    ) : null}
+                  </View>
+                ))
+              ) : (
+                <InlineNotice
+                  message={t("profile.securityActivityEmpty")}
                   tone="neutral"
                 />
               )}

@@ -34,6 +34,30 @@ export type CustomerSessionProjection = {
   lastSeenAt: string;
 };
 
+export type CustomerSecurityActivityProjection = {
+  id: string;
+  kind:
+    | "login"
+    | "session_revoked"
+    | "sessions_revoked"
+    | "password_rotated"
+    | "mfa_authenticator_enrolled"
+    | "mfa_email_backup_enrolled"
+    | "mfa_recovery_completed"
+    | "mfa_step_up_verified";
+  createdAt: string;
+  clientPlatform: "web" | "mobile" | "unknown" | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  purpose:
+    | "withdrawal_step_up"
+    | "password_step_up"
+    | "email_enrollment"
+    | "email_recovery"
+    | null;
+  method: "totp" | "email_otp" | null;
+};
+
 export type UserProfileProjection = {
   id: number | null;
   customerId: string | null;

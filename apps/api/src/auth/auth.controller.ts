@@ -152,6 +152,14 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get("security-activity")
+  async listCustomerSecurityActivity(
+    @Request() request: AuthenticatedRequest,
+  ): Promise<CustomJsonResponse> {
+    return this.authService.listCustomerSecurityActivity(request.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post("session/:sessionId/revoke")
   async revokeCustomerSession(
     @Param("sessionId") sessionId: string,
