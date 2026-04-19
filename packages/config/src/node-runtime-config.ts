@@ -115,6 +115,8 @@ const DEFAULT_GOVERNED_EXECUTION_APPROVER_ALLOWED_OPERATOR_ROLES = [
 const DEFAULT_GOVERNED_EXECUTION_OVERRIDE_MAX_HOURS = 12;
 const DEFAULT_LOCAL_SOLVENCY_REPORT_SIGNER_PRIVATE_KEY =
   "0x59c6995e998f97a5a0044966f094538c5f6d4e07f16b8ad8cc7658f0f1b0f9d8";
+const DEFAULT_LOCAL_GOVERNED_EXECUTION_PACKAGE_SIGNER_PRIVATE_KEY =
+  DEFAULT_LOCAL_SOLVENCY_REPORT_SIGNER_PRIVATE_KEY;
 const DEFAULT_LOCAL_WORKER_ID = "worker-local-1";
 const DEFAULT_LOCAL_INTERNAL_API_BASE_URL = "http://localhost:9001";
 const DEFAULT_LOCAL_INTERNAL_WORKER_API_KEY = "local-dev-worker-key";
@@ -2391,11 +2393,14 @@ export function loadGovernedExecutionRuntimeConfig(
   );
   const executionPackageSignerPrivateKey =
     readOptionalRuntimeEnv(env, "GOVERNED_EXECUTION_PACKAGE_SIGNER_PRIVATE_KEY") ??
-    readOptionalRuntimeEnv(env, "SOLVENCY_REPORT_SIGNER_PRIVATE_KEY");
+    readOptionalRuntimeEnv(env, "SOLVENCY_REPORT_SIGNER_PRIVATE_KEY") ??
+    (environment === "production"
+      ? ""
+      : DEFAULT_LOCAL_GOVERNED_EXECUTION_PACKAGE_SIGNER_PRIVATE_KEY);
 
   if (!executionPackageSignerPrivateKey) {
     throw new Error(
-      "GOVERNED_EXECUTION_PACKAGE_SIGNER_PRIVATE_KEY is required."
+      "GOVERNED_EXECUTION_PACKAGE_SIGNER_PRIVATE_KEY must be configured in production."
     );
   }
 
