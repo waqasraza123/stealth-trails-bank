@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { PrismaService } from "../prisma/prisma.service";
 import { AccountRestrictionReleaseReviewController } from "./account-restriction-release-review.controller";
 import { AccountRestrictionReleaseReviewService } from "./account-restriction-release-review.service";
@@ -19,7 +20,8 @@ import { ReviewCasesService } from "./review-cases.service";
     ManualResolutionReportingService,
     AccountRestrictionReleaseReviewService,
     PrismaService,
-    InternalOperatorApiKeyGuard
+    InternalOperatorApiKeyGuard,
+    InternalOperatorBearerGuard
   ],
   exports: [ReviewCasesService]
 })

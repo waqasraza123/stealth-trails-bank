@@ -4,10 +4,10 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
   })
 }));
 
-import { INestApplication } from "@nestjs/common";
+import { ExecutionContext, INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { ReleaseReadinessController } from "./release-readiness.controller";
 import { ReleaseReadinessService } from "./release-readiness.service";
 
@@ -86,13 +86,31 @@ describe("ReleaseReadinessController", () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [ReleaseReadinessController],
       providers: [
-        InternalOperatorApiKeyGuard,
         {
           provide: ReleaseReadinessService,
           useValue: releaseReadinessService
         }
       ]
-    }).compile();
+    })
+      .overrideGuard(InternalOperatorBearerGuard)
+      .useValue({
+        canActivate: (context: ExecutionContext) => {
+          const request = context.switchToHttp().getRequest();
+          request.internalOperator = {
+            operatorId:
+              typeof request.headers["x-operator-id"] === "string"
+                ? request.headers["x-operator-id"]
+                : "ops_1",
+            operatorRole:
+              typeof request.headers["x-operator-role"] === "string"
+                ? request.headers["x-operator-role"]
+                : null
+          };
+
+          return true;
+        }
+      })
+      .compile();
 
     app = moduleRef.createNestApplication();
     await app.init();
@@ -186,7 +204,7 @@ describe("ReleaseReadinessController", () => {
       },
       {
         operatorId: "ops_1",
-        operatorRole: undefined
+        operatorRole: null
       }
     );
     expect(response.body.data.releaseIdentifier).toBe("launch-2026.04.10.1");
@@ -805,7 +823,7 @@ describe("ReleaseReadinessController", () => {
       },
       {
         operatorId: "ops_1",
-        operatorRole: undefined
+        operatorRole: null
       }
     );
     expect(response.body.data.summaryMarkdown).toContain(

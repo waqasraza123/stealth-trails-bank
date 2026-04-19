@@ -5,14 +5,14 @@ import {
   UseGuards,
   ValidationPipe
 } from "@nestjs/common";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { AccountHoldReportingService } from "./account-hold-reporting.service";
 import { GetAccountHoldSummaryDto } from "./dto/get-account-hold-summary.dto";
 import { ListActiveAccountHoldsDto } from "./dto/list-active-account-holds.dto";
 import { ListReleasedAccountHoldsDto } from "./dto/list-released-account-holds.dto";
 
-@UseGuards(InternalOperatorApiKeyGuard)
+@UseGuards(InternalOperatorBearerGuard)
 @Controller("oversight-incidents/internal/account-holds")
 export class AccountHoldReportingController {
   constructor(

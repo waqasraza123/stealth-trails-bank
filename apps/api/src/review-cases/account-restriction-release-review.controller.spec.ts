@@ -4,10 +4,10 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
   })
 }));
 
-import { INestApplication } from "@nestjs/common";
+import { ExecutionContext, INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { AccountRestrictionReleaseReviewController } from "./account-restriction-release-review.controller";
 import { AccountRestrictionReleaseReviewService } from "./account-restriction-release-review.service";
 
@@ -21,13 +21,31 @@ describe("AccountRestrictionReleaseReviewController", () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [AccountRestrictionReleaseReviewController],
       providers: [
-        InternalOperatorApiKeyGuard,
         {
           provide: AccountRestrictionReleaseReviewService,
           useValue: accountRestrictionReleaseReviewService
         }
       ]
-    }).compile();
+    })
+      .overrideGuard(InternalOperatorBearerGuard)
+      .useValue({
+        canActivate: (context: ExecutionContext) => {
+          const request = context.switchToHttp().getRequest();
+          request.internalOperator = {
+            operatorId:
+              typeof request.headers["x-operator-id"] === "string"
+                ? request.headers["x-operator-id"]
+                : "ops_1",
+            operatorRole:
+              typeof request.headers["x-operator-role"] === "string"
+                ? request.headers["x-operator-role"]
+                : null
+          };
+
+          return true;
+        }
+      })
+      .compile();
 
     app = moduleRef.createNestApplication();
     await app.init();

@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { InternalWorkerApiKeyGuard } from "../auth/guards/internal-worker-api-key.guard";
 import { ApiRequestMetricsService } from "../logging/api-request-metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -21,6 +22,7 @@ import { PlatformAlertDeliveryService } from "./platform-alert-delivery.service"
     ApiRequestMetricsService,
     PrismaService,
     InternalOperatorApiKeyGuard,
+    InternalOperatorBearerGuard,
     InternalWorkerApiKeyGuard
   ],
   exports: [OperationsMonitoringService, ApiRequestMetricsService]

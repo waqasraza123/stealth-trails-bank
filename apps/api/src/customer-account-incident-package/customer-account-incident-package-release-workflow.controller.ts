@@ -9,7 +9,7 @@ import {
   UseGuards,
   ValidationPipe
 } from "@nestjs/common";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { CustomerAccountIncidentPackageReleaseWorkflowService } from "./customer-account-incident-package-release-workflow.service";
 import { ApproveCustomerAccountIncidentPackageReleaseDto } from "./dto/approve-customer-account-incident-package-release.dto";
@@ -26,7 +26,7 @@ type InternalOperatorRequest = {
   };
 };
 
-@UseGuards(InternalOperatorApiKeyGuard)
+@UseGuards(InternalOperatorBearerGuard)
 @Controller("customer-account-incident-package/internal/releases")
 export class CustomerAccountIncidentPackageReleaseWorkflowController {
   constructor(

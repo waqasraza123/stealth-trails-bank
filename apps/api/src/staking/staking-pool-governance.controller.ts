@@ -9,7 +9,7 @@ import {
   UseGuards,
   ValidationPipe
 } from "@nestjs/common";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { StakingPoolGovernanceService } from "./staking-pool-governance.service";
 import { CreateStakingPoolGovernanceRequestDto } from "./dto/create-staking-pool-governance-request.dto";
@@ -27,7 +27,7 @@ type InternalOperatorRequest = {
   };
 };
 
-@UseGuards(InternalOperatorApiKeyGuard)
+@UseGuards(InternalOperatorBearerGuard)
 @Controller("staking/internal/pool-governance-requests")
 export class StakingPoolGovernanceController {
   constructor(

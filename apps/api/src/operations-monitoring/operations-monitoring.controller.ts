@@ -10,7 +10,7 @@ import {
   UseGuards,
   ValidationPipe
 } from "@nestjs/common";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { ApiRequestMetricsService } from "../logging/api-request-metrics.service";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { AcknowledgePlatformAlertDto } from "./dto/acknowledge-platform-alert.dto";
@@ -35,7 +35,7 @@ type InternalOperatorRequest = {
   };
 };
 
-@UseGuards(InternalOperatorApiKeyGuard)
+@UseGuards(InternalOperatorBearerGuard)
 @Controller("operations/internal")
 export class OperationsMonitoringController {
   constructor(

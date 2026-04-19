@@ -9,7 +9,7 @@ import {
   ValidationPipe,
   Body
 } from "@nestjs/common";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { GetSolvencyWorkspaceDto } from "./dto/get-solvency-workspace.dto";
 import { ApproveSolvencyPolicyResumeRequestDto } from "./dto/approve-solvency-policy-resume-request.dto";
@@ -24,7 +24,7 @@ type InternalOperatorRequest = {
   };
 };
 
-@UseGuards(InternalOperatorApiKeyGuard)
+@UseGuards(InternalOperatorBearerGuard)
 @Controller("solvency/internal")
 export class SolvencyController {
   constructor(private readonly solvencyService: SolvencyService) {}

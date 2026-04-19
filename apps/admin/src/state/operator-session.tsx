@@ -29,60 +29,40 @@ type OperatorSessionContextValue = {
 
 const OperatorSessionContext = createContext<OperatorSessionContextValue | null>(null);
 
+function buildDefaultDraft(serverUrl: string): SessionDraft {
+  return {
+    baseUrl: serverUrl,
+    accessToken: "",
+    operatorId: "",
+    operatorRole: null
+  };
+}
+
 function loadStoredDraft(serverUrl: string): SessionDraft {
   if (typeof window === "undefined") {
-    return {
-      baseUrl: serverUrl,
-      accessToken: "",
-      operatorId: "",
-      operatorRole: null
-    };
+    return buildDefaultDraft(serverUrl);
   }
 
   const serializedSettings = window.localStorage.getItem(
     operatorSessionSettingsStorageKey
   );
-  const sessionToken =
-    window.sessionStorage.getItem(operatorSessionTokenStorageKey) ?? "";
+  window.sessionStorage.removeItem(operatorSessionTokenStorageKey);
 
   if (!serializedSettings) {
-    return {
-      baseUrl: serverUrl,
-      accessToken: sessionToken,
-      operatorId: "",
-      operatorRole: null
-    };
+    return buildDefaultDraft(serverUrl);
   }
 
   try {
     const parsedSettings = JSON.parse(serializedSettings) as Partial<SessionDraft>;
-    const storedAccessToken =
-      sessionToken ||
-      (typeof (parsedSettings as { accessToken?: unknown }).accessToken === "string"
-        ? ((parsedSettings as { accessToken?: string }).accessToken ?? "")
-        : typeof (parsedSettings as { apiKey?: unknown }).apiKey === "string"
-          ? ((parsedSettings as { apiKey?: string }).apiKey ?? "")
-          : "");
 
     return {
       baseUrl: parsedSettings.baseUrl || serverUrl,
-      accessToken: storedAccessToken,
-      operatorId:
-        typeof (parsedSettings as { operatorId?: unknown }).operatorId === "string"
-          ? (((parsedSettings as { operatorId?: string }).operatorId as string) ?? "")
-          : "",
-      operatorRole:
-        typeof (parsedSettings as { operatorRole?: unknown }).operatorRole === "string"
-          ? ((parsedSettings as { operatorRole?: string }).operatorRole ?? null)
-          : null
-    };
-  } catch {
-    return {
-      baseUrl: serverUrl,
-      accessToken: sessionToken,
+      accessToken: "",
       operatorId: "",
       operatorRole: null
     };
+  } catch {
+    return buildDefaultDraft(serverUrl);
   }
 }
 
@@ -98,26 +78,25 @@ function persistDraft(session: SessionDraft): void {
     })
   );
 
-  if (session.accessToken.trim()) {
-    window.sessionStorage.setItem(
-      operatorSessionTokenStorageKey,
-      session.accessToken
-    );
-    return;
-  }
-
   window.sessionStorage.removeItem(operatorSessionTokenStorageKey);
 }
 
 export function OperatorSessionProvider({
   serverUrl,
+  initialDraft,
   children
 }: {
   serverUrl: string;
+  initialDraft?: Partial<SessionDraft>;
   children: ReactNode;
 }) {
   const [sessionDraft, setSessionDraft] = useState<SessionDraft>(() =>
-    loadStoredDraft(serverUrl)
+    initialDraft
+      ? {
+          ...buildDefaultDraft(serverUrl),
+          ...initialDraft
+        }
+      : loadStoredDraft(serverUrl)
   );
   const [resolvedSessionInfo, setResolvedSessionInfo] =
     useState<OperatorSessionInfo | null>(null);

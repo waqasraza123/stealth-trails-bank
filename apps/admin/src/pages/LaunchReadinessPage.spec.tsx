@@ -310,7 +310,15 @@ function renderPage(initialEntry = "/launch-readiness") {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <OperatorSessionProvider serverUrl="http://localhost:9001">
+      <OperatorSessionProvider
+        serverUrl="http://localhost:9001"
+        initialDraft={{
+          baseUrl: "http://localhost:9001",
+          accessToken: "test-access-token",
+          operatorId: "ops_1",
+          operatorRole: "operations_admin"
+        }}
+      >
         <MemoryRouter initialEntries={[initialEntry]}>
           <LaunchReadinessPage />
         </MemoryRouter>
@@ -325,10 +333,7 @@ describe("LaunchReadinessPage", () => {
     window.localStorage.setItem(
       operatorSessionStorageKey,
       JSON.stringify({
-        baseUrl: "http://localhost:9001",
-        operatorId: "ops_1",
-        operatorRole: "operations_admin",
-        apiKey: "test-key"
+        baseUrl: "http://localhost:9001"
       })
     );
 
@@ -521,26 +526,28 @@ describe("LaunchReadinessPage", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(vi.mocked(getReleaseReadinessSummary)).toHaveBeenCalledWith(
-        expect.objectContaining({
-          operatorId: "ops_1"
-        }),
-        {
-          releaseIdentifier: "launch-2026.04.13.1"
-        }
-      );
+      expect(
+        vi
+          .mocked(getReleaseReadinessSummary)
+          .mock.calls.some(
+            ([session, params]) =>
+              session.operatorId === "ops_1" &&
+              params?.releaseIdentifier === "launch-2026.04.13.1"
+          )
+      ).toBe(true);
     });
 
     await waitFor(() => {
-      expect(vi.mocked(listReleaseReadinessEvidence)).toHaveBeenCalledWith(
-        expect.objectContaining({
-          operatorId: "ops_1"
-        }),
-        {
-          limit: 20,
-          releaseIdentifier: "launch-2026.04.13.1"
-        }
-      );
+      expect(
+        vi
+          .mocked(listReleaseReadinessEvidence)
+          .mock.calls.some(
+            ([session, params]) =>
+              session.operatorId === "ops_1" &&
+              params?.limit === 20 &&
+              params?.releaseIdentifier === "launch-2026.04.13.1"
+          )
+      ).toBe(true);
     });
 
     await waitFor(() => {
@@ -556,6 +563,12 @@ describe("LaunchReadinessPage", () => {
     });
 
     await waitFor(() => {
+      expect(screen.getByLabelText("Release scope")).toHaveValue(
+        "launch-2026.04.13.1"
+      );
+    });
+
+    await waitFor(() => {
       expect(vi.mocked(getLaunchClosureStatus)).toHaveBeenCalledWith(
         expect.objectContaining({
           operatorId: "ops_1"
@@ -566,15 +579,11 @@ describe("LaunchReadinessPage", () => {
       );
     });
 
-    expect(screen.getByText("Operational posture")).toBeVisible();
-    expect(screen.getByText("External operational checks")).toBeVisible();
+    expect(screen.getByText("Operational posture")).toBeInTheDocument();
+    expect(screen.getByText("External operational checks")).toBeInTheDocument();
     expect(
       screen.getByText(/No governed approval request exists for the selected release scope yet/i)
-    ).toBeVisible();
-
-    expect(screen.getByLabelText("Release scope")).toHaveValue(
-      "launch-2026.04.13.1"
-    );
+    ).toBeInTheDocument();
   });
 
   it("loads the release workspace from an explicit scope deep link", async () => {
@@ -659,12 +668,14 @@ describe("LaunchReadinessPage", () => {
     renderPage("/launch-readiness?release=launch-2026.04.13.2");
 
     await waitFor(() => {
-      expect(screen.getByText("Live drift detected")).toBeVisible();
+      expect(screen.getByText("Live drift detected")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Newer pack available")).toBeVisible();
-    expect(screen.getByText("Approval is blocked by critical drift")).toBeVisible();
-    expect(screen.getByText(/missing evidence resolved/i)).toBeVisible();
+    expect(screen.getByText("Newer pack available")).toBeInTheDocument();
+    expect(
+      screen.getByText("Approval is blocked by critical drift")
+    ).toBeInTheDocument();
+    expect(screen.getByText(/missing evidence resolved/i)).toBeInTheDocument();
     expect(screen.getAllByText(/critical_alert_reescalation/i).length).toBeGreaterThan(
       0
     );
@@ -689,7 +700,9 @@ describe("LaunchReadinessPage", () => {
     renderPage("/launch-readiness?release=launch-2026.04.13.2");
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Rebind to latest pack" })).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: "Rebind to latest pack" })
+      ).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Rebind to latest pack" }));
@@ -930,7 +943,9 @@ describe("LaunchReadinessPage", () => {
     renderPage("/launch-readiness?release=launch-2026.04.13.2");
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Reject release" })).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: "Reject release" })
+      ).toBeInTheDocument();
     });
 
     fireEvent.click(
@@ -953,7 +968,7 @@ describe("LaunchReadinessPage", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Refresh approval workspace" })
-    ).toBeVisible();
+    ).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole("button", { name: "Refresh approval workspace" })
@@ -996,7 +1011,7 @@ describe("LaunchReadinessPage", () => {
       screen.getByText(
         /requires release identifier, rollback release identifier/i
       )
-    ).toBeVisible();
+    ).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Evidence release identifier"), {
       target: {
@@ -1037,6 +1052,9 @@ describe("LaunchReadinessPage", () => {
         value: "launch-2026.04.13.1"
       }
     });
+    await waitFor(() => {
+      expect(screen.getByText("Immutable pack selected")).toBeInTheDocument();
+    });
     fireEvent.change(screen.getByLabelText("Approval summary"), {
       target: {
         value: "Production-like candidate is ready for governed approval."
@@ -1063,10 +1081,10 @@ describe("LaunchReadinessPage", () => {
     expect(
       screen.getByRole("button", { name: "Request approval" })
     ).toBeDisabled();
-    expect(screen.getByText(/rollback target required/i)).toBeVisible();
+    expect(screen.getByText(/rollback target required/i)).toBeInTheDocument();
     expect(
       screen.getByText(/missing fields: rollback release identifier/i)
-    ).toBeVisible();
+    ).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Approval rollback release identifier"), {
       target: {

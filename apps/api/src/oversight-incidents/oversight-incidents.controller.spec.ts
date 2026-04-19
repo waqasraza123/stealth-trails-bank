@@ -4,10 +4,14 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
   })
 }));
 
-import { INestApplication } from "@nestjs/common";
+import {
+  ExecutionContext,
+  INestApplication,
+  UnauthorizedException
+} from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { OversightIncidentsController } from "./oversight-incidents.controller";
 import { OversightIncidentsService } from "./oversight-incidents.service";
 
@@ -23,13 +27,41 @@ describe("OversightIncidentsController", () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [OversightIncidentsController],
       providers: [
-        InternalOperatorApiKeyGuard,
         {
           provide: OversightIncidentsService,
           useValue: oversightIncidentsService
         }
       ]
-    }).compile();
+    })
+      .overrideGuard(InternalOperatorBearerGuard)
+      .useValue({
+        canActivate: (context: ExecutionContext) => {
+          const request = context.switchToHttp().getRequest();
+
+          if (
+            typeof request.headers.authorization !== "string" ||
+            !request.headers.authorization.startsWith("Bearer ")
+          ) {
+            throw new UnauthorizedException(
+              "Operator authentication requires a bearer token."
+            );
+          }
+
+          request.internalOperator = {
+            operatorId:
+              typeof request.headers["x-operator-id"] === "string"
+                ? request.headers["x-operator-id"]
+                : "ops_1",
+            operatorRole:
+              typeof request.headers["x-operator-role"] === "string"
+                ? request.headers["x-operator-role"].toLowerCase()
+                : null
+          };
+
+          return true;
+        }
+      })
+      .compile();
 
     app = moduleRef.createNestApplication();
     await app.init();
@@ -59,6 +91,7 @@ describe("OversightIncidentsController", () => {
   it("rejects governed oversight note payloads that exceed the limit", async () => {
     await request(app.getHttpServer())
       .post("/oversight-incidents/internal/incident_1/notes")
+      .set("Authorization", "Bearer test-token")
       .set("x-operator-api-key", "test-operator-key")
       .set("x-operator-id", "ops_1")
       .send({
@@ -74,6 +107,7 @@ describe("OversightIncidentsController", () => {
   it("rejects malformed oversight incident list filters", async () => {
     await request(app.getHttpServer())
       .get("/oversight-incidents/internal")
+      .set("Authorization", "Bearer test-token")
       .set("x-operator-api-key", "test-operator-key")
       .set("x-operator-id", "ops_1")
       .query({
@@ -91,6 +125,7 @@ describe("OversightIncidentsController", () => {
   it("rejects malformed account-hold payloads", async () => {
     await request(app.getHttpServer())
       .post("/oversight-incidents/internal/incident_1/place-account-hold")
+      .set("Authorization", "Bearer test-token")
       .set("x-operator-api-key", "test-operator-key")
       .set("x-operator-id", "ops_1")
       .send({
@@ -113,6 +148,7 @@ describe("OversightIncidentsController", () => {
 
     const response = await request(app.getHttpServer())
       .get("/oversight-incidents/internal")
+      .set("Authorization", "Bearer test-token")
       .set("x-operator-api-key", "test-operator-key")
       .set("x-operator-id", "ops_1")
       .query({
@@ -160,6 +196,7 @@ describe("OversightIncidentsController", () => {
 
     const response = await request(app.getHttpServer())
       .post("/oversight-incidents/internal/incident_1/place-account-hold")
+      .set("Authorization", "Bearer test-token")
       .set("x-operator-api-key", "test-operator-key")
       .set("x-operator-id", "ops_1")
       .set("x-operator-role", "Senior_Operator")

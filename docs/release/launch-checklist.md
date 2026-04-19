@@ -37,8 +37,8 @@ Important truth:
 
 - `NODE_ENV=production`
 - `CORS_ALLOWED_ORIGINS` limited to approved explicit origins
-- `SHARED_LOGIN_ENABLED=false` or formal exception attached
-- shared-login production defaults are not in use
+- `SHARED_LOGIN_ENABLED=false`
+- shared-login bootstrap is not configured as a staging, production-like, or production fallback
 - `JWT_SECRET` rotated for launch
 - `INTERNAL_OPERATOR_API_KEY` rotated for launch
 - `INTERNAL_WORKER_API_KEY` rotated for launch
@@ -49,6 +49,7 @@ Important truth:
 
 - operator roster reviewed
 - operator role assignments reviewed
+- admin console bearer-token flow verified without browser token persistence across reload
 - role review evidence recorded in release-readiness evidence
 - incident package release approvers reviewed
 - account-hold apply and release roles reviewed

@@ -5,12 +5,12 @@ import {
   UseGuards,
   ValidationPipe
 } from "@nestjs/common";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { AuditEventsService } from "./audit-events.service";
 import { ListAuditEventsDto } from "./dto/list-audit-events.dto";
 
-@UseGuards(InternalOperatorApiKeyGuard)
+@UseGuards(InternalOperatorBearerGuard)
 @Controller("audit-events/internal")
 export class AuditEventsController {
   constructor(private readonly auditEventsService: AuditEventsService) {}

@@ -1,7 +1,8 @@
-import type { INestApplication } from "@nestjs/common";
+import type { ExecutionContext, INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
+import { InternalOperatorBearerGuard } from "./guards/internal-operator-bearer.guard";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { createIntegrationTestApp } from "../test-utils/create-integration-test-app";
 
@@ -13,7 +14,8 @@ describe("AuthController", () => {
     updatePassword: jest.fn(),
     validateToken: jest.fn(),
     getCustomerAccountProjectionBySupabaseUserId: jest.fn(),
-    getCustomerWalletProjectionBySupabaseUserId: jest.fn()
+    getCustomerWalletProjectionBySupabaseUserId: jest.fn(),
+    getOperatorSession: jest.fn()
   };
 
   beforeAll(async () => {
@@ -23,6 +25,24 @@ describe("AuthController", () => {
         {
           provide: AuthService,
           useValue: authService
+        },
+        {
+          provide: InternalOperatorBearerGuard,
+          useValue: {
+            canActivate: (context: ExecutionContext) => {
+              const request = context.switchToHttp().getRequest();
+              request.internalOperator = {
+                operatorId: "ops_1",
+                operatorRole: "operations_admin",
+                operatorRoles: ["operations_admin"],
+                authSource: "supabase_jwt",
+                environment: "development",
+                sessionCorrelationId: "session_1"
+              };
+
+              return true;
+            }
+          }
         },
         JwtAuthGuard
       ]

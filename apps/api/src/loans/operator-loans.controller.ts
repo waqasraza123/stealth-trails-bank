@@ -9,7 +9,7 @@ import {
   UseGuards,
   ValidationPipe
 } from "@nestjs/common";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { ListOperatorLoanAgreementsDto } from "./dto/list-operator-loan-agreements.dto";
 import { ListOperatorLoanApplicationsDto } from "./dto/list-operator-loan-applications.dto";
@@ -23,7 +23,7 @@ type InternalOperatorRequest = {
   };
 };
 
-@UseGuards(InternalOperatorApiKeyGuard)
+@UseGuards(InternalOperatorBearerGuard)
 @Controller("loans/internal")
 export class OperatorLoansController {
   constructor(private readonly loansService: LoansService) {}

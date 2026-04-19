@@ -10,7 +10,7 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
 import { ExecutionContext, INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { LedgerReconciliationController } from "./ledger-reconciliation.controller";
 import { LedgerReconciliationService } from "./ledger-reconciliation.service";
 
@@ -37,7 +37,7 @@ describe("LedgerReconciliationController", () => {
         }
       ]
     })
-      .overrideGuard(InternalOperatorApiKeyGuard)
+      .overrideGuard(InternalOperatorBearerGuard)
       .useValue({
         canActivate: (context: ExecutionContext) => {
           const request = context.switchToHttp().getRequest();

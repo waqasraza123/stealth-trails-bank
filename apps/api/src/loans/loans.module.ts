@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { InternalWorkerApiKeyGuard } from "../auth/guards/internal-worker-api-key.guard";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthService } from "../auth/auth.service";
@@ -26,6 +27,7 @@ import { WorkerLoansController } from "./worker-loans.controller";
     AuthService,
     JwtAuthGuard,
     InternalOperatorApiKeyGuard,
+    InternalOperatorBearerGuard,
     InternalWorkerApiKeyGuard
   ]
 })

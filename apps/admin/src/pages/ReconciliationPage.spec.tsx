@@ -412,7 +412,7 @@ describe("ReconciliationPage", () => {
         expect.objectContaining({
           accessToken: "test-access-token",
           baseUrl: "http://localhost:9001",
-          operatorId: ""
+          operatorId: "ops_1"
         }),
         "approval_confirm_1",
         {

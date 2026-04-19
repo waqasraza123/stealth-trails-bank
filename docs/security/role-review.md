@@ -7,19 +7,19 @@
 - `senior_operator`
 - `compliance_lead`
 
-These roles are carried through operator requests via `x-operator-role` and then normalized inside internal operator workflows.
+These roles are now resolved from bearer-authenticated operator identity and then normalized inside internal operator workflows.
 
 ## Current permission model
 
 ### Internal operator API access
 
 Baseline requirement:
-- valid `x-operator-api-key`
-- valid `x-operator-id`
+- valid bearer token tied to an active operator record
+- active environment access for the target runtime
 
 Risk:
-- any caller with the internal operator key can reach the internal operator surface
-- fine-grained safety depends on per-workflow role checks, not a single centralized RBAC layer
+- any operator token with excessive role assignment can reach more of the internal surface than intended
+- fine-grained safety still depends on per-workflow role checks, not a single centralized RBAC layer
 
 ### Manual resolution
 
@@ -77,7 +77,8 @@ Weak points:
 2. verify no launch operator needs broader roles than their routine duty
 3. verify incident package release approvers are not an unreviewed superset
 4. verify shared-login bootstrap is disabled for launch
-5. record the approved operator roster and their mapped roles in the launch checklist
+5. verify launch operators authenticate through bearer-backed operator identity, not legacy browser API-key headers
+6. record the approved operator roster and their mapped roles in the launch checklist
 
 ## Recommended next hardening
 

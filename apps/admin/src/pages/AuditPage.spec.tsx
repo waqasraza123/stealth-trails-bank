@@ -24,7 +24,15 @@ function renderPage(initialEntry = "/audit") {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <OperatorSessionProvider serverUrl="http://localhost:9001">
+      <OperatorSessionProvider
+        serverUrl="http://localhost:9001"
+        initialDraft={{
+          baseUrl: "http://localhost:9001",
+          accessToken: "test-access-token",
+          operatorId: "ops_1",
+          operatorRole: "operations_admin"
+        }}
+      >
         <MemoryRouter
           initialEntries={[initialEntry]}
           future={{
@@ -45,10 +53,7 @@ describe("AuditPage", () => {
     window.localStorage.setItem(
       operatorSessionStorageKey,
       JSON.stringify({
-        baseUrl: "http://localhost:9001",
-        operatorId: "ops_1",
-        operatorRole: "operations_admin",
-        apiKey: "test-key"
+        baseUrl: "http://localhost:9001"
       })
     );
 

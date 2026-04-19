@@ -5,14 +5,14 @@ import {
   UseGuards,
   ValidationPipe
 } from "@nestjs/common";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { GetManualResolutionSummaryDto } from "./dto/get-manual-resolution-summary.dto";
 import { ListManuallyResolvedIntentsDto } from "./dto/list-manually-resolved-intents.dto";
 import { ListManuallyResolvedReviewCasesDto } from "./dto/list-manually-resolved-review-cases.dto";
 import { ManualResolutionReportingService } from "./manual-resolution-reporting.service";
 
-@UseGuards(InternalOperatorApiKeyGuard)
+@UseGuards(InternalOperatorBearerGuard)
 @Controller("review-cases/internal/manual-resolutions")
 export class ManualResolutionReportingController {
   constructor(

@@ -8,7 +8,7 @@ import {
   UseGuards,
   ValidationPipe
 } from "@nestjs/common";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { ApproveGovernedExecutionOverrideDto } from "./dto/approve-governed-execution-override.dto";
 import { RecordGovernedTreasuryExecutionFailureDto } from "./dto/record-governed-treasury-execution-failure.dto";
@@ -24,7 +24,7 @@ type InternalOperatorRequest = {
   };
 };
 
-@UseGuards(InternalOperatorApiKeyGuard)
+@UseGuards(InternalOperatorBearerGuard)
 @Controller("governed-execution/internal")
 export class GovernedExecutionController {
   constructor(

@@ -9,7 +9,7 @@ import {
   UseGuards,
   ValidationPipe
 } from "@nestjs/common";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { AddReviewCaseNoteDto } from "./dto/add-review-case-note.dto";
 import { ApplyManualResolutionDto } from "./dto/apply-manual-resolution.dto";
@@ -29,7 +29,7 @@ type InternalOperatorRequest = {
   };
 };
 
-@UseGuards(InternalOperatorApiKeyGuard)
+@UseGuards(InternalOperatorBearerGuard)
 @Controller("review-cases/internal")
 export class ReviewCasesController {
   constructor(private readonly reviewCasesService: ReviewCasesService) {}

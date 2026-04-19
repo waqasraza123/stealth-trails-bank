@@ -4,10 +4,14 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
   })
 }));
 
-import { INestApplication } from "@nestjs/common";
+import {
+  ExecutionContext,
+  INestApplication,
+  UnauthorizedException
+} from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { ReviewCasesController } from "./review-cases.controller";
 import { ReviewCasesService } from "./review-cases.service";
 
@@ -23,13 +27,41 @@ describe("ReviewCasesController", () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [ReviewCasesController],
       providers: [
-        InternalOperatorApiKeyGuard,
         {
           provide: ReviewCasesService,
           useValue: reviewCasesService
         }
       ]
-    }).compile();
+    })
+      .overrideGuard(InternalOperatorBearerGuard)
+      .useValue({
+        canActivate: (context: ExecutionContext) => {
+          const request = context.switchToHttp().getRequest();
+
+          if (
+            typeof request.headers.authorization !== "string" ||
+            !request.headers.authorization.startsWith("Bearer ")
+          ) {
+            throw new UnauthorizedException(
+              "Operator authentication requires a bearer token."
+            );
+          }
+
+          request.internalOperator = {
+            operatorId:
+              typeof request.headers["x-operator-id"] === "string"
+                ? request.headers["x-operator-id"]
+                : "ops_1",
+            operatorRole:
+              typeof request.headers["x-operator-role"] === "string"
+                ? request.headers["x-operator-role"].toLowerCase()
+                : null
+          };
+
+          return true;
+        }
+      })
+      .compile();
 
     app = moduleRef.createNestApplication();
     await app.init();
@@ -57,6 +89,7 @@ describe("ReviewCasesController", () => {
   it("rejects governed review-case note payloads that exceed the limit", async () => {
     await request(app.getHttpServer())
       .post("/review-cases/internal/review_case_1/notes")
+      .set("Authorization", "Bearer test-token")
       .set("x-operator-api-key", "test-operator-key")
       .set("x-operator-id", "ops_1")
       .send({
@@ -70,6 +103,7 @@ describe("ReviewCasesController", () => {
   it("rejects malformed review-case list filters", async () => {
     await request(app.getHttpServer())
       .get("/review-cases/internal")
+      .set("Authorization", "Bearer test-token")
       .set("x-operator-api-key", "test-operator-key")
       .set("x-operator-id", "ops_1")
       .query({
@@ -85,6 +119,7 @@ describe("ReviewCasesController", () => {
   it("rejects malformed manual resolution payloads", async () => {
     await request(app.getHttpServer())
       .post("/review-cases/internal/review_case_1/apply-manual-resolution")
+      .set("Authorization", "Bearer test-token")
       .set("x-operator-api-key", "test-operator-key")
       .set("x-operator-id", "ops_1")
       .send({
@@ -105,6 +140,7 @@ describe("ReviewCasesController", () => {
 
     const response = await request(app.getHttpServer())
       .get("/review-cases/internal")
+      .set("Authorization", "Bearer test-token")
       .set("x-operator-api-key", "test-operator-key")
       .set("x-operator-id", "ops_1")
       .query({
@@ -152,6 +188,7 @@ describe("ReviewCasesController", () => {
 
     const response = await request(app.getHttpServer())
       .post("/review-cases/internal/review_case_1/apply-manual-resolution")
+      .set("Authorization", "Bearer test-token")
       .set("x-operator-api-key", "test-operator-key")
       .set("x-operator-id", "ops_1")
       .set("x-operator-role", "Senior_Operator")

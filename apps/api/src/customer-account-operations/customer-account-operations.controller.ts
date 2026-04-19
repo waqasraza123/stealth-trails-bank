@@ -5,12 +5,12 @@ import {
   UseGuards,
   ValidationPipe
 } from "@nestjs/common";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { CustomerAccountOperationsService } from "./customer-account-operations.service";
 import { ListCustomerAccountTimelineDto } from "./dto/list-customer-account-timeline.dto";
 
-@UseGuards(InternalOperatorApiKeyGuard)
+@UseGuards(InternalOperatorBearerGuard)
 @Controller("customer-account-operations/internal")
 export class CustomerAccountOperationsController {
   constructor(

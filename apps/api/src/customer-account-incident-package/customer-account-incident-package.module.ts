@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { CustomerAccountOperationsModule } from "../customer-account-operations/customer-account-operations.module";
 import { PrismaService } from "../prisma/prisma.service";
 import { CustomerAccountIncidentPackageController } from "./customer-account-incident-package.controller";
@@ -21,7 +22,8 @@ import { CustomerAccountIncidentPackageService } from "./customer-account-incide
     CustomerAccountIncidentPackageExportGovernanceService,
     CustomerAccountIncidentPackageReleaseWorkflowService,
     PrismaService,
-    InternalOperatorApiKeyGuard
+    InternalOperatorApiKeyGuard,
+    InternalOperatorBearerGuard
   ]
 })
 export class CustomerAccountIncidentPackageModule {}

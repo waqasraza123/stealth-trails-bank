@@ -9,7 +9,7 @@ import {
   UseGuards,
   ValidationPipe
 } from "@nestjs/common";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { AddOversightIncidentNoteDto } from "./dto/add-oversight-incident-note.dto";
 import { ApplyAccountRestrictionDto } from "./dto/apply-account-restriction.dto";
@@ -30,7 +30,7 @@ type InternalOperatorRequest = {
   };
 };
 
-@UseGuards(InternalOperatorApiKeyGuard)
+@UseGuards(InternalOperatorBearerGuard)
 @Controller("oversight-incidents/internal")
 export class OversightIncidentsController {
   constructor(

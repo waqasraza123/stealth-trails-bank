@@ -23,7 +23,7 @@ It does not treat the legacy staking prototype as a production-ready custody pat
 ## Trust boundaries
 
 1. public customer requests into `apps/api`
-2. operator traffic into internal operator endpoints guarded by `x-operator-api-key`
+2. operator traffic into internal operator endpoints guarded by bearer-authenticated operator identity
 3. worker traffic into internal worker endpoints guarded by `x-worker-api-key`
 4. API and worker runtime secret material loaded from environment variables
 5. database persistence boundary behind Prisma
@@ -96,8 +96,8 @@ Impact:
 - predictable operator-style credentials could create unauthorized access if enabled unsafely
 
 Current mitigations:
-- production now defaults shared-login bootstrap to disabled
-- production bootstrap rejects default email and default password if explicitly enabled
+- shared-login bootstrap hard-fails when enabled outside development
+- operator-facing admin routes now require bearer-token identity instead of browser-supplied operator API-key headers
 
 Residual risk:
 - shared-login bootstrap remains a privileged convenience path and must stay disabled for real launch unless a documented exception is approved

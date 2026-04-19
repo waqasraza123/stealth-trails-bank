@@ -4,10 +4,10 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
   })
 }));
 
-import { INestApplication } from "@nestjs/common";
+import { ExecutionContext, INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
-import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { CustomerAccountIncidentPackageReleaseWorkflowController } from "./customer-account-incident-package-release-workflow.controller";
 import { CustomerAccountIncidentPackageReleaseWorkflowService } from "./customer-account-incident-package-release-workflow.service";
 
@@ -27,13 +27,31 @@ describe("CustomerAccountIncidentPackageReleaseWorkflowController", () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [CustomerAccountIncidentPackageReleaseWorkflowController],
       providers: [
-        InternalOperatorApiKeyGuard,
         {
           provide: CustomerAccountIncidentPackageReleaseWorkflowService,
           useValue: customerAccountIncidentPackageReleaseWorkflowService
         }
       ]
-    }).compile();
+    })
+      .overrideGuard(InternalOperatorBearerGuard)
+      .useValue({
+        canActivate: (context: ExecutionContext) => {
+          const request = context.switchToHttp().getRequest();
+          request.internalOperator = {
+            operatorId:
+              typeof request.headers["x-operator-id"] === "string"
+                ? request.headers["x-operator-id"]
+                : "ops_1",
+            operatorRole:
+              typeof request.headers["x-operator-role"] === "string"
+                ? request.headers["x-operator-role"]
+                : null
+          };
+
+          return true;
+        }
+      })
+      .compile();
 
     app = moduleRef.createNestApplication();
     await app.init();

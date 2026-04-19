@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
+import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReleaseReadinessController } from "./release-readiness.controller";
 import { ReleaseReadinessService } from "./release-readiness.service";
@@ -9,7 +10,8 @@ import { ReleaseReadinessService } from "./release-readiness.service";
   providers: [
     ReleaseReadinessService,
     PrismaService,
-    InternalOperatorApiKeyGuard
+    InternalOperatorApiKeyGuard,
+    InternalOperatorBearerGuard
   ]
 })
 export class ReleaseReadinessModule {}
