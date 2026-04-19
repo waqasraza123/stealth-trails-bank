@@ -1806,6 +1806,54 @@ export type LedgerReplayApprovalExecutionResult = {
   executionReused: boolean;
 };
 
+export type CustomerMfaRecoveryRequest = {
+  id: string;
+  requestType: "release_lockout" | "reset_mfa";
+  status: "pending_approval" | "approved" | "executed" | "rejected";
+  requestNote: string | null;
+  requestedByOperatorId: string;
+  requestedByOperatorRole: string;
+  requestedAt: string;
+  approvedByOperatorId: string | null;
+  approvedByOperatorRole: string | null;
+  approvalNote: string | null;
+  approvedAt: string | null;
+  rejectedByOperatorId: string | null;
+  rejectedByOperatorRole: string | null;
+  rejectionNote: string | null;
+  rejectedAt: string | null;
+  executedByOperatorId: string | null;
+  executedByOperatorRole: string | null;
+  executionNote: string | null;
+  executedAt: string | null;
+  customer: {
+    customerId: string;
+    customerAccountId: string | null;
+    accountStatus: string | null;
+    supabaseUserId: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+  };
+};
+
+export type CustomerMfaRecoveryRequestList = {
+  requests: CustomerMfaRecoveryRequest[];
+  limit: number;
+  totalCount: number;
+  summary: {
+    byStatus: Array<{
+      status: CustomerMfaRecoveryRequest["status"];
+      count: number;
+    }>;
+  };
+};
+
+export type CustomerMfaRecoveryRequestMutationResult = {
+  request: CustomerMfaRecoveryRequest;
+  stateReused: boolean;
+};
+
 export type CustomerBalance = {
   asset: {
     id: string;

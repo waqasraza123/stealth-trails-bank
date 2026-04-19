@@ -30,6 +30,15 @@ const DEFAULT_ACCOUNT_HOLD_RELEASE_ALLOWED_OPERATOR_ROLES = [
   "risk_manager",
   "compliance_lead",
 ] as const;
+const DEFAULT_CUSTOMER_MFA_RECOVERY_REQUEST_ALLOWED_OPERATOR_ROLES = [
+  "operations_admin",
+  "senior_operator",
+  "risk_manager",
+] as const;
+const DEFAULT_CUSTOMER_MFA_RECOVERY_APPROVER_ALLOWED_OPERATOR_ROLES = [
+  "risk_manager",
+  "compliance_lead",
+] as const;
 const DEFAULT_INCIDENT_PACKAGE_EXPORT_MAX_RECENT_LIMIT = 100;
 const DEFAULT_INCIDENT_PACKAGE_EXPORT_MAX_TIMELINE_LIMIT = 500;
 const DEFAULT_INCIDENT_PACKAGE_EXPORT_MAX_SINCE_DAYS = 90;
@@ -1107,6 +1116,8 @@ export type CustomerMfaPolicyRuntimeConfig = {
   readonly maxFailedAttempts: number;
   readonly lockoutSeconds: number;
   readonly challengeStartCooldownSeconds: number;
+  readonly recoveryRequestAllowedOperatorRoles: readonly string[];
+  readonly recoveryApproverAllowedOperatorRoles: readonly string[];
 };
 
 export type CustomerMfaEmailDeliveryMode = "preview" | "webhook";
@@ -2087,6 +2098,15 @@ export function loadDepositRiskPolicyRuntimeConfig(
 export function loadCustomerMfaPolicyRuntimeConfig(
   env: RuntimeEnvShape = getNodeRuntimeEnv(),
 ): CustomerMfaPolicyRuntimeConfig {
+  const recoveryRequestAllowedOperatorRoles = readOptionalRuntimeEnv(
+    env,
+    "CUSTOMER_MFA_RECOVERY_REQUEST_ALLOWED_OPERATOR_ROLES",
+  );
+  const recoveryApproverAllowedOperatorRoles = readOptionalRuntimeEnv(
+    env,
+    "CUSTOMER_MFA_RECOVERY_APPROVER_ALLOWED_OPERATOR_ROLES",
+  );
+
   return {
     emailOtpExpirySeconds: parsePositiveInteger(
       readOptionalRuntimeEnv(env, "CUSTOMER_MFA_EMAIL_OTP_EXPIRY_SECONDS") ??
@@ -2120,6 +2140,20 @@ export function loadCustomerMfaPolicyRuntimeConfig(
       ) ?? "60",
       "CUSTOMER_MFA_CHALLENGE_START_COOLDOWN_SECONDS",
     ),
+    recoveryRequestAllowedOperatorRoles:
+      recoveryRequestAllowedOperatorRoles !== undefined
+        ? parseCommaSeparatedValues(
+            recoveryRequestAllowedOperatorRoles,
+            "CUSTOMER_MFA_RECOVERY_REQUEST_ALLOWED_OPERATOR_ROLES",
+          )
+        : [...DEFAULT_CUSTOMER_MFA_RECOVERY_REQUEST_ALLOWED_OPERATOR_ROLES],
+    recoveryApproverAllowedOperatorRoles:
+      recoveryApproverAllowedOperatorRoles !== undefined
+        ? parseCommaSeparatedValues(
+            recoveryApproverAllowedOperatorRoles,
+            "CUSTOMER_MFA_RECOVERY_APPROVER_ALLOWED_OPERATOR_ROLES",
+          )
+        : [...DEFAULT_CUSTOMER_MFA_RECOVERY_APPROVER_ALLOWED_OPERATOR_ROLES],
   };
 }
 

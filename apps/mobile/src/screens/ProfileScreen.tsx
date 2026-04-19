@@ -16,10 +16,12 @@ import {
   useRotatePasswordMutation,
   useRevokeAllCustomerSessionsMutation,
   useStartEmailEnrollmentMutation,
+  useStartEmailRecoveryMutation,
   useStartMfaChallengeMutation,
   useStartTotpEnrollmentMutation,
   useUpdateNotificationPreferencesMutation,
   useVerifyEmailEnrollmentMutation,
+  useVerifyEmailRecoveryMutation,
   useVerifyMfaChallengeMutation,
   useVerifyTotpEnrollmentMutation,
 } from "../hooks/use-customer-queries";
@@ -50,6 +52,8 @@ export function ProfileScreen() {
   const verifyTotpEnrollmentMutation = useVerifyTotpEnrollmentMutation();
   const startEmailEnrollmentMutation = useStartEmailEnrollmentMutation();
   const verifyEmailEnrollmentMutation = useVerifyEmailEnrollmentMutation();
+  const startEmailRecoveryMutation = useStartEmailRecoveryMutation();
+  const verifyEmailRecoveryMutation = useVerifyEmailRecoveryMutation();
   const startMfaChallengeMutation = useStartMfaChallengeMutation();
   const verifyMfaChallengeMutation = useVerifyMfaChallengeMutation();
   const profile = profileQuery.data;
@@ -62,6 +66,13 @@ export function ProfileScreen() {
   const [emailChallengeId, setEmailChallengeId] = useState<string | null>(null);
   const [emailCode, setEmailCode] = useState("");
   const [emailPreviewCode, setEmailPreviewCode] = useState<string | null>(null);
+  const [recoveryChallengeId, setRecoveryChallengeId] = useState<string | null>(
+    null,
+  );
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [recoveryPreviewCode, setRecoveryPreviewCode] = useState<string | null>(
+    null,
+  );
   const [passwordChallengeId, setPasswordChallengeId] = useState<string | null>(
     null,
   );
@@ -250,6 +261,46 @@ export function ProfileScreen() {
     } catch (requestError) {
       Alert.alert(
         t("profile.passwordManagement"),
+        requestError instanceof Error
+          ? requestError.message
+          : String(requestError),
+      );
+    }
+  }
+
+  async function handleStartEmailRecovery() {
+    try {
+      const result = await startEmailRecoveryMutation.mutateAsync();
+      setRecoveryChallengeId(result.challengeId);
+      setRecoveryCode("");
+      setRecoveryPreviewCode(result.previewCode);
+    } catch (requestError) {
+      Alert.alert(
+        t("profile.mfaTitle"),
+        requestError instanceof Error
+          ? requestError.message
+          : String(requestError),
+      );
+    }
+  }
+
+  async function handleVerifyEmailRecovery() {
+    if (!recoveryChallengeId) {
+      return;
+    }
+
+    try {
+      await verifyEmailRecoveryMutation.mutateAsync({
+        challengeId: recoveryChallengeId,
+        code: recoveryCode.trim(),
+      });
+      setRecoveryChallengeId(null);
+      setRecoveryCode("");
+      setRecoveryPreviewCode(null);
+      Alert.alert(t("profile.mfaTitle"), t("profile.mfaRecoveryComplete"));
+    } catch (requestError) {
+      Alert.alert(
+        t("profile.mfaTitle"),
         requestError instanceof Error
           ? requestError.message
           : String(requestError),
@@ -461,6 +512,43 @@ export function ProfileScreen() {
                   </View>
                 ) : null}
               </>
+            ) : null}
+            {mfa?.totpEnrolled && mfa?.emailOtpEnrolled ? (
+              <View className="gap-3 rounded-2xl border border-border bg-white px-4 py-4">
+                <AppText className="text-sm text-slate">
+                  {t("profile.mfaRecoveryDescription")}
+                </AppText>
+                <AppButton
+                  disabled={startEmailRecoveryMutation.isPending}
+                  label={t("profile.mfaStartRecovery")}
+                  onPress={() => {
+                    void handleStartEmailRecovery();
+                  }}
+                  variant="secondary"
+                />
+                {recoveryChallengeId ? (
+                  <>
+                    {recoveryPreviewCode ? (
+                      <LtrValue
+                        value={`${t("profile.mfaPreviewCode")}: ${recoveryPreviewCode}`}
+                      />
+                    ) : null}
+                    <FieldInput
+                      keyboardType="number-pad"
+                      label={t("profile.mfaCodeLabel")}
+                      onChangeText={setRecoveryCode}
+                      value={recoveryCode}
+                    />
+                    <AppButton
+                      disabled={verifyEmailRecoveryMutation.isPending}
+                      label={t("profile.mfaVerifyRecovery")}
+                      onPress={() => {
+                        void handleVerifyEmailRecovery();
+                      }}
+                    />
+                  </>
+                ) : null}
+              </View>
             ) : null}
             {!mfa?.requiresSetup && !stepUpFresh ? (
               <View className="gap-3 rounded-2xl border border-border bg-white px-4 py-4">

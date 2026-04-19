@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
@@ -8,6 +9,8 @@ import {
 } from "@nestjs/common";
 import {
   AccountLifecycleStatus,
+  CustomerMfaRecoveryRequestStatus,
+  CustomerMfaRecoveryRequestType,
   Prisma,
   WalletCustodyType,
   WalletKind,
@@ -35,6 +38,7 @@ import {
 } from "./customer-mfa.util";
 import { generateEthereumAddress } from "./auth.util";
 import { CustomerMfaEmailDeliveryService } from "./customer-mfa-email-delivery.service";
+import { assertOperatorRoleAuthorized } from "./internal-operator-role-policy";
 
 type LegacyUserRecord = {
   id: number;
@@ -91,6 +95,7 @@ export type CustomerMfaStatus = {
 type CustomerMfaChallengeMethod = "totp" | "email_otp";
 type CustomerMfaChallengePurpose =
   | "email_enrollment"
+  | "email_recovery"
   | "withdrawal_step_up"
   | "password_step_up";
 
@@ -190,6 +195,75 @@ type RevokeCustomerSessionsResponseData = {
   session: CustomerSessionRefreshData;
 };
 
+type CustomerMfaRecoveryRequestRecord =
+  Prisma.CustomerMfaRecoveryRequestGetPayload<{
+    include: {
+      customer: {
+        select: {
+          id: true;
+          supabaseUserId: true;
+          email: true;
+          firstName: true;
+          lastName: true;
+        };
+      };
+      customerAccount: {
+        select: {
+          id: true;
+          status: true;
+        };
+      };
+    };
+  }>;
+
+type CustomerMfaRecoveryRequestProjection = {
+  id: string;
+  requestType: CustomerMfaRecoveryRequestType;
+  status: CustomerMfaRecoveryRequestStatus;
+  requestNote: string | null;
+  requestedByOperatorId: string;
+  requestedByOperatorRole: string;
+  requestedAt: string;
+  approvedByOperatorId: string | null;
+  approvedByOperatorRole: string | null;
+  approvalNote: string | null;
+  approvedAt: string | null;
+  rejectedByOperatorId: string | null;
+  rejectedByOperatorRole: string | null;
+  rejectionNote: string | null;
+  rejectedAt: string | null;
+  executedByOperatorId: string | null;
+  executedByOperatorRole: string | null;
+  executionNote: string | null;
+  executedAt: string | null;
+  customer: {
+    customerId: string;
+    customerAccountId: string | null;
+    accountStatus: AccountLifecycleStatus | null;
+    supabaseUserId: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+  };
+};
+
+type CustomerMfaRecoveryRequestMutationResult = {
+  request: CustomerMfaRecoveryRequestProjection;
+  stateReused: boolean;
+};
+
+type ListCustomerMfaRecoveryRequestsResult = {
+  requests: CustomerMfaRecoveryRequestProjection[];
+  limit: number;
+  totalCount: number;
+  summary: {
+    byStatus: Array<{
+      status: CustomerMfaRecoveryRequestStatus;
+      count: number;
+    }>;
+  };
+};
+
 type SharedLoginBootstrapResult = {
   customerId: string;
   customerAccountId: string;
@@ -210,6 +284,8 @@ export class AuthService {
   private readonly maxFailedAttempts: number;
   private readonly lockoutDurationMs: number;
   private readonly challengeStartCooldownMs: number;
+  private readonly recoveryRequestAllowedOperatorRoles: readonly string[];
+  private readonly recoveryApproverAllowedOperatorRoles: readonly string[];
 
   constructor(
     private readonly prismaService: PrismaService,
@@ -225,6 +301,10 @@ export class AuthService {
     this.lockoutDurationMs = customerMfaPolicy.lockoutSeconds * 1000;
     this.challengeStartCooldownMs =
       customerMfaPolicy.challengeStartCooldownSeconds * 1000;
+    this.recoveryRequestAllowedOperatorRoles =
+      customerMfaPolicy.recoveryRequestAllowedOperatorRoles;
+    this.recoveryApproverAllowedOperatorRoles =
+      customerMfaPolicy.recoveryApproverAllowedOperatorRoles;
   }
 
   private buildCustomerMfaStatus(input: {
@@ -369,6 +449,78 @@ export class AuthService {
     });
   }
 
+  private async appendOperatorAuditEvent(input: {
+    customerId: string;
+    actorId: string;
+    action: string;
+    targetType: string;
+    targetId?: string | null;
+    metadata?: PrismaJsonValue;
+  }): Promise<void> {
+    await this.prismaService.auditEvent.create({
+      data: {
+        customerId: input.customerId,
+        actorType: "operator",
+        actorId: input.actorId,
+        action: input.action,
+        targetType: input.targetType,
+        targetId: input.targetId ?? input.customerId,
+        metadata: input.metadata,
+      },
+    });
+  }
+
+  private mapCustomerMfaRecoveryRequest(
+    request: CustomerMfaRecoveryRequestRecord,
+  ): CustomerMfaRecoveryRequestProjection {
+    return {
+      id: request.id,
+      requestType: request.requestType,
+      status: request.status,
+      requestNote: request.requestNote ?? null,
+      requestedByOperatorId: request.requestedByOperatorId,
+      requestedByOperatorRole: request.requestedByOperatorRole,
+      requestedAt: request.requestedAt.toISOString(),
+      approvedByOperatorId: request.approvedByOperatorId ?? null,
+      approvedByOperatorRole: request.approvedByOperatorRole ?? null,
+      approvalNote: request.approvalNote ?? null,
+      approvedAt: request.approvedAt?.toISOString() ?? null,
+      rejectedByOperatorId: request.rejectedByOperatorId ?? null,
+      rejectedByOperatorRole: request.rejectedByOperatorRole ?? null,
+      rejectionNote: request.rejectionNote ?? null,
+      rejectedAt: request.rejectedAt?.toISOString() ?? null,
+      executedByOperatorId: request.executedByOperatorId ?? null,
+      executedByOperatorRole: request.executedByOperatorRole ?? null,
+      executionNote: request.executionNote ?? null,
+      executedAt: request.executedAt?.toISOString() ?? null,
+      customer: {
+        customerId: request.customer.id,
+        customerAccountId: request.customerAccount?.id ?? null,
+        accountStatus: request.customerAccount?.status ?? null,
+        supabaseUserId: request.customer.supabaseUserId,
+        email: request.customer.email,
+        firstName: request.customer.firstName ?? "",
+        lastName: request.customer.lastName ?? "",
+      },
+    };
+  }
+
+  private assertCanRequestCustomerMfaRecovery(operatorRole?: string | null) {
+    return assertOperatorRoleAuthorized(
+      operatorRole,
+      this.recoveryRequestAllowedOperatorRoles,
+      "Operator role is not authorized to request customer MFA recovery.",
+    );
+  }
+
+  private assertCanApproveCustomerMfaRecovery(operatorRole?: string | null) {
+    return assertOperatorRoleAuthorized(
+      operatorRole,
+      this.recoveryApproverAllowedOperatorRoles,
+      "Operator role is not authorized to approve customer MFA recovery.",
+    );
+  }
+
   private assertMfaNotLocked(input: { mfaLockedUntil?: Date | null }): void {
     if (input.mfaLockedUntil && input.mfaLockedUntil.getTime() > Date.now()) {
       throw new ForbiddenException(
@@ -476,6 +628,58 @@ export class AuthService {
     }
 
     return customer;
+  }
+
+  private async getCustomerMfaRecoveryTargetBySupabaseUserId(
+    supabaseUserId: string,
+  ) {
+    const customer = await this.prismaService.customer.findUnique({
+      where: { supabaseUserId },
+      include: {
+        accounts: {
+          orderBy: { createdAt: "asc" },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    if (!customer) {
+      throw new NotFoundException("Customer MFA recovery profile not found.");
+    }
+
+    return {
+      customer,
+      customerAccount: customer.accounts[0] ?? null,
+    };
+  }
+
+  private async findCustomerMfaRecoveryRequestById(
+    requestId: string,
+  ): Promise<CustomerMfaRecoveryRequestRecord | null> {
+    return this.prismaService.customerMfaRecoveryRequest.findUnique({
+      where: { id: requestId },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            supabaseUserId: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        customerAccount: {
+          select: {
+            id: true,
+            status: true,
+          },
+        },
+      },
+    });
   }
 
   async getCustomerMfaStatus(
@@ -760,6 +964,177 @@ export class AuthService {
     return {
       status: "success",
       message: "Backup email MFA enrolled successfully.",
+      data: {
+        mfa: this.buildCustomerMfaStatus(updatedCustomer),
+        session: this.buildSessionRefresh(updatedCustomer),
+      },
+    };
+  }
+
+  async startEmailRecovery(
+    supabaseUserId: string,
+  ): Promise<CustomJsonResponse<StartEmailEnrollmentResponseData>> {
+    const customer =
+      await this.getCustomerMfaRecordBySupabaseUserId(supabaseUserId);
+
+    if (!customer.mfaEmailOtpEnrolled) {
+      throw new ForbiddenException("Email backup MFA is not enrolled.");
+    }
+
+    if (!customer.mfaTotpEnrolled) {
+      throw new ConflictException(
+        "Authenticator MFA is not currently enrolled for this customer.",
+      );
+    }
+
+    this.assertChallengeCooldown(customer);
+
+    const emailOtpCode = generateEmailOtpCode();
+    const challengeId = randomUUID();
+    const challenge: CustomerMfaChallengeRecord = {
+      id: challengeId,
+      purpose: "email_recovery",
+      method: "email_otp",
+      codeHash: createOtpHash(emailOtpCode),
+      expiresAt: new Date(Date.now() + this.emailOtpExpiryMs).toISOString(),
+      sentAt: new Date().toISOString(),
+    };
+
+    await this.prismaService.customer.update({
+      where: { id: customer.id },
+      data: {
+        mfaActiveChallenge: this.serializeChallenge(challenge),
+        mfaLastChallengeStartedAt: new Date(),
+      },
+    });
+
+    let deliveryResult: Awaited<
+      ReturnType<CustomerMfaEmailDeliveryService["sendCode"]>
+    >;
+
+    try {
+      deliveryResult = await this.customerMfaEmailDeliveryService.sendCode({
+        customerId: customer.id,
+        actorId: customer.supabaseUserId,
+        email: customer.email,
+        challengeId,
+        purpose: "email_recovery",
+        code: emailOtpCode,
+        expiresAt: challenge.expiresAt,
+      });
+    } catch (error) {
+      await this.prismaService.customer.update({
+        where: { id: customer.id },
+        data: {
+          mfaActiveChallenge: Prisma.DbNull,
+          mfaLastChallengeStartedAt: null,
+        },
+      });
+
+      throw error;
+    }
+
+    await this.appendAuditEvent({
+      customerId: customer.id,
+      actorId: customer.supabaseUserId,
+      action: "customer_account.mfa_recovery_started",
+      targetType: "Customer",
+      metadata: {
+        challengeId,
+        deliveryBackendType: deliveryResult.backendType,
+        deliveryBackendReference: deliveryResult.backendReference,
+      } as PrismaJsonValue,
+    });
+
+    return {
+      status: "success",
+      message: "Customer MFA recovery challenge created successfully.",
+      data: {
+        mfa: this.buildCustomerMfaStatus(customer),
+        challengeId,
+        expiresAt: challenge.expiresAt,
+        deliveryChannel: deliveryResult.deliveryChannel,
+        previewCode: deliveryResult.previewCode,
+      },
+    };
+  }
+
+  async verifyEmailRecovery(
+    supabaseUserId: string,
+    challengeId: string,
+    code: string,
+  ): Promise<CustomJsonResponse<VerifyMfaResponseData>> {
+    const customer =
+      await this.getCustomerMfaRecordBySupabaseUserId(supabaseUserId);
+    const challenge = this.assertChallengeActive(
+      this.parseChallenge(customer.mfaActiveChallenge),
+      "email_recovery",
+      "email_otp",
+      challengeId,
+    );
+
+    if (
+      !challenge.codeHash ||
+      !otpHashMatches(code.trim(), challenge.codeHash)
+    ) {
+      const lockedUntil = await this.recordFailedMfaAttempt({
+        customerId: customer.id,
+        actorId: customer.supabaseUserId,
+        currentFailedAttemptCount: customer.mfaFailedAttemptCount,
+        method: "email_otp",
+        purpose: "email_recovery",
+        challengeId,
+      });
+
+      throw new BadRequestException(
+        lockedUntil
+          ? `Recovery verification code was invalid. MFA is locked until ${lockedUntil.toISOString()}.`
+          : "Recovery verification code is invalid.",
+      );
+    }
+
+    const updatedCustomer = await this.prismaService.customer.update({
+      where: { id: customer.id },
+      data: {
+        mfaTotpEnrolled: false,
+        mfaTotpSecret: null,
+        mfaPendingTotpSecret: null,
+        mfaPendingTotpIssuedAt: null,
+        mfaActiveChallenge: Prisma.DbNull,
+        mfaLastVerifiedAt: null,
+        mfaFailedAttemptCount: 0,
+        mfaLockedUntil: null,
+        authTokenVersion: {
+          increment: 1,
+        },
+      },
+      select: {
+        supabaseUserId: true,
+        email: true,
+        authTokenVersion: true,
+        mfaRequired: true,
+        mfaTotpEnrolled: true,
+        mfaEmailOtpEnrolled: true,
+        mfaLastVerifiedAt: true,
+        mfaLockedUntil: true,
+      },
+    });
+
+    await this.appendAuditEvent({
+      customerId: customer.id,
+      actorId: customer.supabaseUserId,
+      action: "customer_account.mfa_recovery_completed",
+      targetType: "Customer",
+      metadata: {
+        challengeId,
+        recoveryMethod: "email_backup",
+        revokedOtherSessions: true,
+      } as PrismaJsonValue,
+    });
+
+    return {
+      status: "success",
+      message: "Customer MFA recovery completed successfully.",
       data: {
         mfa: this.buildCustomerMfaStatus(updatedCustomer),
         session: this.buildSessionRefresh(updatedCustomer),
@@ -1557,6 +1932,552 @@ export class AuthService {
       data: {
         session: this.buildSessionRefresh(updatedCustomer),
       },
+    };
+  }
+
+  async listCustomerMfaRecoveryRequests(query: {
+    limit?: number;
+    status?: CustomerMfaRecoveryRequestStatus;
+    requestType?: CustomerMfaRecoveryRequestType;
+  }): Promise<ListCustomerMfaRecoveryRequestsResult> {
+    const limit = query.limit ?? 25;
+    const where: Prisma.CustomerMfaRecoveryRequestWhereInput = {
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.requestType ? { requestType: query.requestType } : {}),
+    };
+
+    const [requests, totalCount, byStatus] = await Promise.all([
+      this.prismaService.customerMfaRecoveryRequest.findMany({
+        where,
+        orderBy: { requestedAt: "desc" },
+        take: limit,
+        include: {
+          customer: {
+            select: {
+              id: true,
+              supabaseUserId: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          customerAccount: {
+            select: {
+              id: true,
+              status: true,
+            },
+          },
+        },
+      }),
+      this.prismaService.customerMfaRecoveryRequest.count({ where }),
+      this.prismaService.customerMfaRecoveryRequest.groupBy({
+        by: ["status"],
+        where,
+        _count: {
+          _all: true,
+        },
+      }),
+    ]);
+
+    return {
+      requests: requests.map((request) =>
+        this.mapCustomerMfaRecoveryRequest(request),
+      ),
+      limit,
+      totalCount,
+      summary: {
+        byStatus: byStatus.map((entry) => ({
+          status: entry.status,
+          count: entry._count._all,
+        })),
+      },
+    };
+  }
+
+  async requestCustomerMfaRecovery(
+    supabaseUserId: string,
+    operatorId: string,
+    operatorRole: string | null,
+    dto: {
+      requestType: CustomerMfaRecoveryRequestType;
+      note?: string | null;
+    },
+  ): Promise<CustomerMfaRecoveryRequestMutationResult> {
+    const normalizedOperatorRole =
+      this.assertCanRequestCustomerMfaRecovery(operatorRole);
+    const target =
+      await this.getCustomerMfaRecoveryTargetBySupabaseUserId(supabaseUserId);
+    const normalizedRequestNote = dto.note?.trim() || null;
+
+    if (dto.requestType === CustomerMfaRecoveryRequestType.release_lockout) {
+      if (
+        !target.customer.mfaLockedUntil &&
+        target.customer.mfaFailedAttemptCount <= 0
+      ) {
+        throw new ConflictException(
+          "Customer MFA is not currently locked or pending failed-attempt release.",
+        );
+      }
+    } else if (
+      !target.customer.mfaTotpEnrolled &&
+      !target.customer.mfaEmailOtpEnrolled &&
+      !target.customer.mfaTotpSecret &&
+      !target.customer.mfaPendingTotpSecret &&
+      !target.customer.mfaActiveChallenge &&
+      !target.customer.mfaLockedUntil &&
+      target.customer.mfaFailedAttemptCount <= 0
+    ) {
+      throw new ConflictException(
+        "Customer MFA does not currently have any active factor or lockout state to reset.",
+      );
+    }
+
+    const existingRequest =
+      await this.prismaService.customerMfaRecoveryRequest.findFirst({
+        where: {
+          customerId: target.customer.id,
+          requestType: dto.requestType,
+          status: {
+            in: [
+              CustomerMfaRecoveryRequestStatus.pending_approval,
+              CustomerMfaRecoveryRequestStatus.approved,
+            ],
+          },
+        },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              supabaseUserId: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          customerAccount: {
+            select: {
+              id: true,
+              status: true,
+            },
+          },
+        },
+        orderBy: {
+          requestedAt: "desc",
+        },
+      });
+
+    if (existingRequest) {
+      if (existingRequest.requestedByOperatorId !== operatorId) {
+        throw new ConflictException(
+          "A governed customer MFA recovery request already exists for this customer and recovery type.",
+        );
+      }
+
+      return {
+        request: this.mapCustomerMfaRecoveryRequest(existingRequest),
+        stateReused: true,
+      };
+    }
+
+    const createdRequest = await this.prismaService.$transaction(
+      async (transaction) => {
+        const nextRequest = await transaction.customerMfaRecoveryRequest.create(
+          {
+            data: {
+              customerId: target.customer.id,
+              customerAccountId: target.customerAccount?.id,
+              requestType: dto.requestType,
+              status: CustomerMfaRecoveryRequestStatus.pending_approval,
+              requestedByOperatorId: operatorId,
+              requestedByOperatorRole: normalizedOperatorRole,
+              requestNote: normalizedRequestNote ?? undefined,
+            },
+            include: {
+              customer: {
+                select: {
+                  id: true,
+                  supabaseUserId: true,
+                  email: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+              customerAccount: {
+                select: {
+                  id: true,
+                  status: true,
+                },
+              },
+            },
+          },
+        );
+
+        await transaction.auditEvent.create({
+          data: {
+            customerId: target.customer.id,
+            actorType: "operator",
+            actorId: operatorId,
+            action: "customer_account.mfa_recovery_requested",
+            targetType: "CustomerMfaRecoveryRequest",
+            targetId: nextRequest.id,
+            metadata: {
+              requestType: dto.requestType,
+              operatorRole: normalizedOperatorRole,
+              requestNote: normalizedRequestNote,
+              currentLockoutUntil:
+                target.customer.mfaLockedUntil?.toISOString() ?? null,
+              currentFailedAttemptCount: target.customer.mfaFailedAttemptCount,
+              totpEnrolled: target.customer.mfaTotpEnrolled,
+              emailOtpEnrolled: target.customer.mfaEmailOtpEnrolled,
+            } as PrismaJsonValue,
+          },
+        });
+
+        return nextRequest;
+      },
+    );
+
+    return {
+      request: this.mapCustomerMfaRecoveryRequest(createdRequest),
+      stateReused: false,
+    };
+  }
+
+  async approveCustomerMfaRecoveryRequest(
+    requestId: string,
+    operatorId: string,
+    operatorRole: string | null,
+    note?: string | null,
+  ): Promise<CustomerMfaRecoveryRequestMutationResult> {
+    const normalizedOperatorRole =
+      this.assertCanApproveCustomerMfaRecovery(operatorRole);
+    const request = await this.findCustomerMfaRecoveryRequestById(requestId);
+
+    if (!request) {
+      throw new NotFoundException(
+        "Customer MFA recovery request was not found.",
+      );
+    }
+
+    if (request.status === CustomerMfaRecoveryRequestStatus.approved) {
+      return {
+        request: this.mapCustomerMfaRecoveryRequest(request),
+        stateReused: true,
+      };
+    }
+
+    if (request.status !== CustomerMfaRecoveryRequestStatus.pending_approval) {
+      throw new ConflictException(
+        "Only pending customer MFA recovery requests can be approved.",
+      );
+    }
+
+    if (request.requestedByOperatorId === operatorId) {
+      throw new ForbiddenException(
+        "Customer MFA recovery requires a different approver than the requester.",
+      );
+    }
+
+    const normalizedApprovalNote = note?.trim() || null;
+    const updatedRequest = await this.prismaService.$transaction(
+      async (transaction) => {
+        const nextRequest = await transaction.customerMfaRecoveryRequest.update(
+          {
+            where: { id: request.id },
+            data: {
+              status: CustomerMfaRecoveryRequestStatus.approved,
+              approvedByOperatorId: operatorId,
+              approvedByOperatorRole: normalizedOperatorRole,
+              approvalNote: normalizedApprovalNote ?? undefined,
+              approvedAt: new Date(),
+              rejectedByOperatorId: null,
+              rejectedByOperatorRole: null,
+              rejectionNote: null,
+              rejectedAt: null,
+            },
+            include: {
+              customer: {
+                select: {
+                  id: true,
+                  supabaseUserId: true,
+                  email: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+              customerAccount: {
+                select: {
+                  id: true,
+                  status: true,
+                },
+              },
+            },
+          },
+        );
+
+        await transaction.auditEvent.create({
+          data: {
+            customerId: request.customer.id,
+            actorType: "operator",
+            actorId: operatorId,
+            action: "customer_account.mfa_recovery_approved",
+            targetType: "CustomerMfaRecoveryRequest",
+            targetId: nextRequest.id,
+            metadata: {
+              requestType: request.requestType,
+              requestedByOperatorId: request.requestedByOperatorId,
+              requestedByOperatorRole: request.requestedByOperatorRole,
+              approvedByOperatorId: operatorId,
+              approvedByOperatorRole: normalizedOperatorRole,
+              approvalNote: normalizedApprovalNote,
+            } as PrismaJsonValue,
+          },
+        });
+
+        return nextRequest;
+      },
+    );
+
+    return {
+      request: this.mapCustomerMfaRecoveryRequest(updatedRequest),
+      stateReused: false,
+    };
+  }
+
+  async rejectCustomerMfaRecoveryRequest(
+    requestId: string,
+    operatorId: string,
+    operatorRole: string | null,
+    note: string,
+  ): Promise<CustomerMfaRecoveryRequestMutationResult> {
+    const normalizedOperatorRole =
+      this.assertCanApproveCustomerMfaRecovery(operatorRole);
+    const request = await this.findCustomerMfaRecoveryRequestById(requestId);
+
+    if (!request) {
+      throw new NotFoundException(
+        "Customer MFA recovery request was not found.",
+      );
+    }
+
+    if (request.status === CustomerMfaRecoveryRequestStatus.rejected) {
+      return {
+        request: this.mapCustomerMfaRecoveryRequest(request),
+        stateReused: true,
+      };
+    }
+
+    if (request.status !== CustomerMfaRecoveryRequestStatus.pending_approval) {
+      throw new ConflictException(
+        "Only pending customer MFA recovery requests can be rejected.",
+      );
+    }
+
+    if (request.requestedByOperatorId === operatorId) {
+      throw new ForbiddenException(
+        "Customer MFA recovery requires a different reviewer than the requester.",
+      );
+    }
+
+    const normalizedRejectionNote = note.trim();
+
+    if (!normalizedRejectionNote) {
+      throw new ConflictException(
+        "A rejection note is required to reject a customer MFA recovery request.",
+      );
+    }
+
+    const updatedRequest = await this.prismaService.$transaction(
+      async (transaction) => {
+        const nextRequest = await transaction.customerMfaRecoveryRequest.update(
+          {
+            where: { id: request.id },
+            data: {
+              status: CustomerMfaRecoveryRequestStatus.rejected,
+              rejectedByOperatorId: operatorId,
+              rejectedByOperatorRole: normalizedOperatorRole,
+              rejectionNote: normalizedRejectionNote,
+              rejectedAt: new Date(),
+            },
+            include: {
+              customer: {
+                select: {
+                  id: true,
+                  supabaseUserId: true,
+                  email: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+              customerAccount: {
+                select: {
+                  id: true,
+                  status: true,
+                },
+              },
+            },
+          },
+        );
+
+        await transaction.auditEvent.create({
+          data: {
+            customerId: request.customer.id,
+            actorType: "operator",
+            actorId: operatorId,
+            action: "customer_account.mfa_recovery_rejected",
+            targetType: "CustomerMfaRecoveryRequest",
+            targetId: nextRequest.id,
+            metadata: {
+              requestType: request.requestType,
+              requestedByOperatorId: request.requestedByOperatorId,
+              requestedByOperatorRole: request.requestedByOperatorRole,
+              rejectedByOperatorId: operatorId,
+              rejectedByOperatorRole: normalizedOperatorRole,
+              rejectionNote: normalizedRejectionNote,
+            } as PrismaJsonValue,
+          },
+        });
+
+        return nextRequest;
+      },
+    );
+
+    return {
+      request: this.mapCustomerMfaRecoveryRequest(updatedRequest),
+      stateReused: false,
+    };
+  }
+
+  async executeCustomerMfaRecoveryRequest(
+    requestId: string,
+    operatorId: string,
+    operatorRole: string | null,
+    note?: string | null,
+  ): Promise<CustomerMfaRecoveryRequestMutationResult> {
+    const normalizedOperatorRole =
+      this.assertCanRequestCustomerMfaRecovery(operatorRole);
+    const request = await this.findCustomerMfaRecoveryRequestById(requestId);
+
+    if (!request) {
+      throw new NotFoundException(
+        "Customer MFA recovery request was not found.",
+      );
+    }
+
+    if (request.status === CustomerMfaRecoveryRequestStatus.executed) {
+      return {
+        request: this.mapCustomerMfaRecoveryRequest(request),
+        stateReused: true,
+      };
+    }
+
+    if (request.status !== CustomerMfaRecoveryRequestStatus.approved) {
+      throw new ConflictException(
+        "Customer MFA recovery request must be approved before execution.",
+      );
+    }
+
+    if (request.requestedByOperatorId === operatorId) {
+      throw new ForbiddenException(
+        "Customer MFA recovery execution requires a different operator than the requester.",
+      );
+    }
+
+    const normalizedExecutionNote = note?.trim() || null;
+
+    const updatedRequest = await this.prismaService.$transaction(
+      async (transaction) => {
+        await transaction.customer.update({
+          where: { id: request.customer.id },
+          data:
+            request.requestType ===
+            CustomerMfaRecoveryRequestType.release_lockout
+              ? {
+                  mfaActiveChallenge: Prisma.DbNull,
+                  mfaLastVerifiedAt: null,
+                  mfaFailedAttemptCount: 0,
+                  mfaLockedUntil: null,
+                  mfaLastChallengeStartedAt: null,
+                  authTokenVersion: {
+                    increment: 1,
+                  },
+                }
+              : {
+                  mfaTotpEnrolled: false,
+                  mfaEmailOtpEnrolled: false,
+                  mfaTotpSecret: null,
+                  mfaPendingTotpSecret: null,
+                  mfaPendingTotpIssuedAt: null,
+                  mfaActiveChallenge: Prisma.DbNull,
+                  mfaLastVerifiedAt: null,
+                  mfaFailedAttemptCount: 0,
+                  mfaLockedUntil: null,
+                  mfaLastChallengeStartedAt: null,
+                  authTokenVersion: {
+                    increment: 1,
+                  },
+                },
+        });
+
+        const nextRequest = await transaction.customerMfaRecoveryRequest.update(
+          {
+            where: { id: request.id },
+            data: {
+              status: CustomerMfaRecoveryRequestStatus.executed,
+              executedByOperatorId: operatorId,
+              executedByOperatorRole: normalizedOperatorRole,
+              executionNote: normalizedExecutionNote ?? undefined,
+              executedAt: new Date(),
+            },
+            include: {
+              customer: {
+                select: {
+                  id: true,
+                  supabaseUserId: true,
+                  email: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+              customerAccount: {
+                select: {
+                  id: true,
+                  status: true,
+                },
+              },
+            },
+          },
+        );
+
+        await transaction.auditEvent.create({
+          data: {
+            customerId: request.customer.id,
+            actorType: "operator",
+            actorId: operatorId,
+            action: "customer_account.mfa_recovery_executed",
+            targetType: "CustomerMfaRecoveryRequest",
+            targetId: nextRequest.id,
+            metadata: {
+              requestType: request.requestType,
+              requestedByOperatorId: request.requestedByOperatorId,
+              requestedByOperatorRole: request.requestedByOperatorRole,
+              approvedByOperatorId: request.approvedByOperatorId,
+              approvedByOperatorRole: request.approvedByOperatorRole,
+              executedByOperatorId: operatorId,
+              executedByOperatorRole: normalizedOperatorRole,
+              executionNote: normalizedExecutionNote,
+              revokedOtherSessions: true,
+            } as PrismaJsonValue,
+          },
+        });
+
+        return nextRequest;
+      },
+    );
+
+    return {
+      request: this.mapCustomerMfaRecoveryRequest(updatedRequest),
+      stateReused: false,
     };
   }
 

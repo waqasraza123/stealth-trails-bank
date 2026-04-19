@@ -20,6 +20,7 @@ import type {
   ProfileProjection,
   RotatePasswordResult,
   StartEmailEnrollmentResult,
+  StartEmailRecoveryResult,
   StartMfaChallengeResult,
   RevokeCustomerSessionsResult,
   StartTotpEnrollmentResult,
@@ -424,6 +425,56 @@ export function useVerifyEmailEnrollmentMutation() {
       if (response.data.status !== "success" || !response.data.data) {
         throw new Error(
           response.data.message || "Failed to verify email MFA setup.",
+        );
+      }
+
+      await applyMfa(response.data.data.mfa);
+      await applySession(response.data.data.session?.token);
+      return response.data.data;
+    },
+  });
+}
+
+export function useStartEmailRecoveryMutation() {
+  const setUser = useSessionStore((state) => state.setUser);
+  const user = useSessionStore((state) => state.user);
+  const applyMfa = createMfaSessionUpdater(setUser, user);
+
+  return useMutation({
+    mutationFn: async () => {
+      const response = await apiClient.post<
+        ApiEnvelope<StartEmailRecoveryResult>
+      >("/auth/mfa/recovery/email/start");
+
+      if (response.data.status !== "success" || !response.data.data) {
+        throw new Error(
+          response.data.message || "Failed to start MFA recovery.",
+        );
+      }
+
+      await applyMfa(response.data.data.mfa);
+      return response.data.data;
+    },
+  });
+}
+
+export function useVerifyEmailRecoveryMutation() {
+  const setUser = useSessionStore((state) => state.setUser);
+  const setToken = useSessionStore((state) => state.setToken);
+  const user = useSessionStore((state) => state.user);
+  const applyMfa = createMfaSessionUpdater(setUser, user);
+  const applySession = createSessionRefreshUpdater(setToken);
+
+  return useMutation({
+    mutationFn: async (input: { challengeId: string; code: string }) => {
+      const response = await apiClient.post<ApiEnvelope<VerifyMfaResult>>(
+        "/auth/mfa/recovery/email/verify",
+        input,
+      );
+
+      if (response.data.status !== "success" || !response.data.data) {
+        throw new Error(
+          response.data.message || "Failed to verify MFA recovery.",
         );
       }
 

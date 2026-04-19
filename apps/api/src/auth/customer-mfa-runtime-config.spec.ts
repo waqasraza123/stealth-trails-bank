@@ -13,6 +13,8 @@ describe("loadCustomerMfaPolicyRuntimeConfig", () => {
     delete process.env["CUSTOMER_MFA_MAX_FAILED_ATTEMPTS"];
     delete process.env["CUSTOMER_MFA_LOCKOUT_SECONDS"];
     delete process.env["CUSTOMER_MFA_CHALLENGE_START_COOLDOWN_SECONDS"];
+    delete process.env["CUSTOMER_MFA_RECOVERY_REQUEST_ALLOWED_OPERATOR_ROLES"];
+    delete process.env["CUSTOMER_MFA_RECOVERY_APPROVER_ALLOWED_OPERATOR_ROLES"];
   });
 
   afterAll(() => {
@@ -27,7 +29,33 @@ describe("loadCustomerMfaPolicyRuntimeConfig", () => {
       maxFailedAttempts: 5,
       lockoutSeconds: 900,
       challengeStartCooldownSeconds: 60,
+      recoveryRequestAllowedOperatorRoles: [
+        "operations_admin",
+        "senior_operator",
+        "risk_manager",
+      ],
+      recoveryApproverAllowedOperatorRoles: ["risk_manager", "compliance_lead"],
     });
+  });
+
+  it("parses governed recovery operator role lists", () => {
+    process.env["CUSTOMER_MFA_RECOVERY_REQUEST_ALLOWED_OPERATOR_ROLES"] =
+      "operations_admin, senior_operator";
+    process.env["CUSTOMER_MFA_RECOVERY_APPROVER_ALLOWED_OPERATOR_ROLES"] =
+      "risk_manager, compliance_lead";
+
+    expect(loadCustomerMfaPolicyRuntimeConfig(process.env)).toEqual(
+      expect.objectContaining({
+        recoveryRequestAllowedOperatorRoles: [
+          "operations_admin",
+          "senior_operator",
+        ],
+        recoveryApproverAllowedOperatorRoles: [
+          "risk_manager",
+          "compliance_lead",
+        ],
+      }),
+    );
   });
 
   it("rejects non-positive runtime values", () => {

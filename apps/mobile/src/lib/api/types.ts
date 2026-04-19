@@ -46,6 +46,8 @@ export type StartEmailEnrollmentResult = {
   previewCode: string | null;
 };
 
+export type StartEmailRecoveryResult = StartEmailEnrollmentResult;
+
 export type StartMfaChallengeResult = {
   mfa: CustomerMfaStatus;
   challengeId: string;

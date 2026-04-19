@@ -46,6 +46,7 @@ model Customer {
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   accounts           CustomerAccount[]
+  mfaRecoveryRequests CustomerMfaRecoveryRequest[]
   reviewCases        ReviewCase[]
   auditEvents        AuditEvent[]
   oversightIncidents OversightIncident[] @relation("OversightIncidentCustomer")
@@ -71,6 +72,7 @@ model CustomerAccount {
   updatedAt                       DateTime                     @updatedAt
   wallets                         Wallet[]
   transactionIntents              TransactionIntent[]
+  mfaRecoveryRequests             CustomerMfaRecoveryRequest[]
   reviewCases                     ReviewCase[]
   oversightIncidents              OversightIncident[]          @relation("OversightIncidentCustomerAccount")
   restrictionRecords              CustomerAccountRestriction[]
@@ -310,6 +312,42 @@ model WithdrawalSettlementReplayApprovalRequest {
   @@index([executedByOperatorId, executedAt])
 }
 
+model CustomerMfaRecoveryRequest {
+  id                      String                           @id @default(cuid())
+  customerId              String
+  customer                Customer                         @relation(fields: [customerId], references: [id])
+  customerAccountId       String?
+  customerAccount         CustomerAccount?                 @relation(fields: [customerAccountId], references: [id])
+  requestType             CustomerMfaRecoveryRequestType
+  status                  CustomerMfaRecoveryRequestStatus @default(pending_approval)
+  requestedByOperatorId   String
+  requestedByOperatorRole String
+  requestNote             String?
+  requestedAt             DateTime                         @default(now())
+  approvedByOperatorId    String?
+  approvedByOperatorRole  String?
+  approvalNote            String?
+  approvedAt              DateTime?
+  rejectedByOperatorId    String?
+  rejectedByOperatorRole  String?
+  rejectionNote           String?
+  rejectedAt              DateTime?
+  executedByOperatorId    String?
+  executedByOperatorRole  String?
+  executionNote           String?
+  executedAt              DateTime?
+  createdAt               DateTime                         @default(now())
+  updatedAt               DateTime                         @updatedAt
+
+  @@index([customerId, requestType, status, requestedAt])
+  @@index([customerAccountId])
+  @@index([status, requestedAt])
+  @@index([requestedByOperatorId, requestedAt])
+  @@index([approvedByOperatorId, approvedAt])
+  @@index([rejectedByOperatorId, rejectedAt])
+  @@index([executedByOperatorId, executedAt])
+}
+
 model ReviewCase {
   id                  String             @id @default(cuid())
   customerId          String?
@@ -477,6 +515,18 @@ enum WithdrawalSettlementReplayAction {
 }
 
 enum WithdrawalSettlementReplayApprovalRequestStatus {
+  pending_approval
+  approved
+  executed
+  rejected
+}
+
+enum CustomerMfaRecoveryRequestType {
+  release_lockout
+  reset_mfa
+}
+
+enum CustomerMfaRecoveryRequestStatus {
   pending_approval
   approved
   executed

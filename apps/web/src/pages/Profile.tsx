@@ -28,10 +28,12 @@ import {
 } from "@/hooks/user/useProfileSettings";
 import {
   useCustomerMfaStatus,
+  useStartEmailRecovery,
   useStartCustomerMfaChallenge,
   useStartEmailEnrollment,
   useStartTotpEnrollment,
   useVerifyCustomerMfaChallenge,
+  useVerifyEmailRecovery,
   useVerifyEmailEnrollment,
   useVerifyTotpEnrollment,
 } from "@/hooks/auth/useCustomerMfa";
@@ -83,6 +85,8 @@ const Profile = () => {
   const verifyTotpEnrollment = useVerifyTotpEnrollment();
   const startEmailEnrollment = useStartEmailEnrollment();
   const verifyEmailEnrollment = useVerifyEmailEnrollment();
+  const startEmailRecovery = useStartEmailRecovery();
+  const verifyEmailRecovery = useVerifyEmailRecovery();
   const startMfaChallenge = useStartCustomerMfaChallenge();
   const verifyMfaChallenge = useVerifyCustomerMfaChallenge();
   const profile = profileQuery.data;
@@ -106,6 +110,13 @@ const Profile = () => {
   const [emailChallengeId, setEmailChallengeId] = useState<string | null>(null);
   const [emailCode, setEmailCode] = useState("");
   const [emailPreviewCode, setEmailPreviewCode] = useState<string | null>(null);
+  const [recoveryChallengeId, setRecoveryChallengeId] = useState<string | null>(
+    null,
+  );
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [recoveryPreviewCode, setRecoveryPreviewCode] = useState<string | null>(
+    null,
+  );
   const [passwordChallengeId, setPasswordChallengeId] = useState<string | null>(
     null,
   );
@@ -280,6 +291,46 @@ const Profile = () => {
         error instanceof Error
           ? error.message
           : "Failed to verify email MFA setup.",
+      );
+    }
+  }
+
+  async function handleStartEmailRecovery() {
+    try {
+      const result = await startEmailRecovery.mutateAsync();
+      setRecoveryChallengeId(result.challengeId);
+      setRecoveryPreviewCode(result.previewCode);
+      setRecoveryCode("");
+    } catch (error) {
+      setPasswordError(
+        error instanceof Error
+          ? error.message
+          : "Failed to start MFA recovery.",
+      );
+    }
+  }
+
+  async function handleVerifyEmailRecovery() {
+    if (!recoveryChallengeId) {
+      return;
+    }
+
+    try {
+      await verifyEmailRecovery.mutateAsync({
+        challengeId: recoveryChallengeId,
+        code: recoveryCode,
+      });
+      setRecoveryChallengeId(null);
+      setRecoveryPreviewCode(null);
+      setRecoveryCode("");
+      setPasswordNotice(
+        "Authenticator MFA was reset. Enroll a new authenticator now.",
+      );
+    } catch (error) {
+      setPasswordError(
+        error instanceof Error
+          ? error.message
+          : "Failed to verify MFA recovery.",
       );
     }
   }
@@ -644,6 +695,59 @@ const Profile = () => {
                           {verifyEmailEnrollment.isPending
                             ? "Verifying..."
                             : "Verify email backup"}
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {mfa?.totpEnrolled && mfa?.emailOtpEnrolled ? (
+                  <div className="space-y-3 rounded-[1.5rem] border border-border bg-white/80 p-5">
+                    <p className="text-sm font-medium text-foreground">
+                      Lost the authenticator device?
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Reset only the authenticator by proving control of the
+                      backup email factor, then enroll a new authenticator
+                      immediately after recovery.
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        void handleStartEmailRecovery();
+                      }}
+                    >
+                      Send recovery email code
+                    </Button>
+                    {recoveryChallengeId ? (
+                      <>
+                        {recoveryPreviewCode ? (
+                          <div className="stb-section-frame p-4 text-sm text-muted-foreground">
+                            Preview code:{" "}
+                            <span className="font-semibold text-foreground">
+                              {recoveryPreviewCode}
+                            </span>
+                          </div>
+                        ) : null}
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground">
+                            6-digit code
+                          </label>
+                          <Input
+                            value={recoveryCode}
+                            onChange={(event) =>
+                              setRecoveryCode(event.target.value)
+                            }
+                            placeholder="123456"
+                          />
+                        </div>
+                        <Button
+                          onClick={handleVerifyEmailRecovery}
+                          disabled={verifyEmailRecovery.isPending}
+                        >
+                          {verifyEmailRecovery.isPending
+                            ? "Verifying..."
+                            : "Verify recovery code"}
                         </Button>
                       </>
                     ) : null}

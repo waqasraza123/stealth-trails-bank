@@ -27,6 +27,8 @@ type StartEmailEnrollmentResponse = {
   previewCode: string | null;
 };
 
+type StartEmailRecoveryResponse = StartEmailEnrollmentResponse;
+
 type StartMfaChallengeResponse = {
   mfa: CustomerMfaStatus;
   challengeId: string;
@@ -189,6 +191,39 @@ export function useVerifyEmailEnrollment() {
       const result = await request<VerifyMfaResponse>(
         "post",
         "/auth/mfa/email/enrollment/verify",
+        input,
+      );
+      await applyMfa(result.mfa, result.session);
+      return result;
+    },
+  });
+}
+
+export function useStartEmailRecovery() {
+  const request = useAuthenticatedRequester();
+  const applyMfa = useMfaSessionUpdater();
+
+  return useMutation({
+    mutationFn: async () => {
+      const result = await request<StartEmailRecoveryResponse>(
+        "post",
+        "/auth/mfa/recovery/email/start",
+      );
+      await applyMfa(result.mfa);
+      return result;
+    },
+  });
+}
+
+export function useVerifyEmailRecovery() {
+  const request = useAuthenticatedRequester();
+  const applyMfa = useMfaSessionUpdater();
+
+  return useMutation({
+    mutationFn: async (input: { challengeId: string; code: string }) => {
+      const result = await request<VerifyMfaResponse>(
+        "post",
+        "/auth/mfa/recovery/email/verify",
         input,
       );
       await applyMfa(result.mfa, result.session);

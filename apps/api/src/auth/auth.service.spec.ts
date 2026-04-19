@@ -9,6 +9,12 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
     maxFailedAttempts: 3,
     lockoutSeconds: 900,
     challengeStartCooldownSeconds: 60,
+    recoveryRequestAllowedOperatorRoles: [
+      "operations_admin",
+      "senior_operator",
+      "risk_manager",
+    ],
+    recoveryApproverAllowedOperatorRoles: ["risk_manager", "compliance_lead"],
   }),
   loadJwtRuntimeConfig: () => ({
     jwtSecret: "test-secret",
@@ -33,6 +39,7 @@ jest.mock("./auth.util", () => ({
 import * as bcrypt from "bcryptjs";
 import {
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -46,6 +53,10 @@ describe("AuthService", () => {
       customer: {
         findUnique: jest.fn(),
         upsert: jest.fn(),
+        update: jest.fn(),
+      },
+      customerMfaRecoveryRequest: {
+        create: jest.fn(),
         update: jest.fn(),
       },
       customerAccount: {
@@ -74,6 +85,13 @@ describe("AuthService", () => {
       customer: {
         findUnique: jest.fn(),
         update: jest.fn(),
+      },
+      customerMfaRecoveryRequest: {
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn(),
+        groupBy: jest.fn(),
       },
       auditEvent: {
         create: jest.fn(),
@@ -563,6 +581,370 @@ describe("AuthService", () => {
         mfaLockedUntil: expect.any(Date),
       },
     });
+  });
+
+  it("starts customer email recovery through the delivery service", async () => {
+    const { service, prismaService, customerMfaEmailDeliveryService } =
+      createService();
+
+    prismaService.customer.findUnique.mockResolvedValue({
+      id: "customer_1",
+      supabaseUserId: "supabase_1",
+      email: "ada@example.com",
+      mfaRequired: true,
+      mfaTotpEnrolled: true,
+      mfaEmailOtpEnrolled: true,
+      mfaTotpSecret: "ABCDEFGHIJKLMNOP",
+      mfaPendingTotpSecret: null,
+      mfaPendingTotpIssuedAt: null,
+      mfaActiveChallenge: null,
+      mfaLastVerifiedAt: null,
+      mfaFailedAttemptCount: 0,
+      mfaLockedUntil: null,
+      mfaLastChallengeStartedAt: null,
+    });
+    prismaService.customer.update.mockResolvedValue(undefined);
+    prismaService.auditEvent.create.mockResolvedValue(undefined);
+    customerMfaEmailDeliveryService.sendCode.mockResolvedValue({
+      deliveryChannel: "email",
+      previewCode: "123456",
+      backendType: "preview",
+      backendReference: null,
+    });
+
+    const result = await service.startEmailRecovery("supabase_1");
+
+    expect(customerMfaEmailDeliveryService.sendCode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: "customer_1",
+        actorId: "supabase_1",
+        email: "ada@example.com",
+        purpose: "email_recovery",
+      }),
+    );
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        deliveryChannel: "email",
+        previewCode: "123456",
+      }),
+    );
+  });
+
+  it("verifies customer email recovery and rotates the customer session", async () => {
+    const { service, prismaService } = createService();
+
+    prismaService.customer.findUnique.mockResolvedValue({
+      id: "customer_1",
+      supabaseUserId: "supabase_1",
+      email: "ada@example.com",
+      mfaRequired: true,
+      mfaTotpEnrolled: true,
+      mfaEmailOtpEnrolled: true,
+      mfaTotpSecret: "ABCDEFGHIJKLMNOP",
+      mfaPendingTotpSecret: null,
+      mfaPendingTotpIssuedAt: null,
+      mfaActiveChallenge: {
+        id: "challenge_1",
+        purpose: "email_recovery",
+        method: "email_otp",
+        codeHash:
+          "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        sentAt: new Date().toISOString(),
+      },
+      mfaLastVerifiedAt: new Date(),
+      mfaFailedAttemptCount: 0,
+      mfaLockedUntil: null,
+      mfaLastChallengeStartedAt: null,
+    });
+    prismaService.customer.update.mockResolvedValue({
+      supabaseUserId: "supabase_1",
+      email: "ada@example.com",
+      authTokenVersion: 4,
+      mfaRequired: true,
+      mfaTotpEnrolled: false,
+      mfaEmailOtpEnrolled: true,
+      mfaLastVerifiedAt: null,
+      mfaLockedUntil: null,
+    });
+    prismaService.auditEvent.create.mockResolvedValue(undefined);
+
+    const result = await service.verifyEmailRecovery(
+      "supabase_1",
+      "challenge_1",
+      "123456",
+    );
+
+    expect(prismaService.customer.update).toHaveBeenCalledWith({
+      where: { id: "customer_1" },
+      data: {
+        mfaTotpEnrolled: false,
+        mfaTotpSecret: null,
+        mfaPendingTotpSecret: null,
+        mfaPendingTotpIssuedAt: null,
+        mfaActiveChallenge: expect.anything(),
+        mfaLastVerifiedAt: null,
+        mfaFailedAttemptCount: 0,
+        mfaLockedUntil: null,
+        authTokenVersion: {
+          increment: 1,
+        },
+      },
+      select: {
+        supabaseUserId: true,
+        email: true,
+        authTokenVersion: true,
+        mfaRequired: true,
+        mfaTotpEnrolled: true,
+        mfaEmailOtpEnrolled: true,
+        mfaLastVerifiedAt: true,
+        mfaLockedUntil: true,
+      },
+    });
+    expect(result.data?.session).toEqual({
+      token: expect.any(String),
+      revokedOtherSessions: true,
+    });
+  });
+
+  it("creates a governed customer MFA recovery request", async () => {
+    const { service, prismaService, transaction } = createService();
+
+    prismaService.customer.findUnique.mockResolvedValue({
+      id: "customer_1",
+      supabaseUserId: "supabase_1",
+      email: "ada@example.com",
+      firstName: "Ada",
+      lastName: "Lovelace",
+      mfaRequired: true,
+      mfaTotpEnrolled: true,
+      mfaEmailOtpEnrolled: true,
+      mfaTotpSecret: "ABCDEFGHIJKLMNOP",
+      mfaPendingTotpSecret: null,
+      mfaPendingTotpIssuedAt: null,
+      mfaActiveChallenge: null,
+      mfaLastVerifiedAt: null,
+      mfaFailedAttemptCount: 0,
+      mfaLockedUntil: new Date(Date.now() + 60_000),
+      mfaLastChallengeStartedAt: null,
+      accounts: [
+        {
+          id: "account_1",
+          status: "active",
+        },
+      ],
+    });
+    prismaService.customerMfaRecoveryRequest.findFirst.mockResolvedValue(null);
+    transaction.customerMfaRecoveryRequest.create.mockResolvedValue({
+      id: "recovery_1",
+      customerId: "customer_1",
+      customerAccountId: "account_1",
+      requestType: "release_lockout",
+      status: "pending_approval",
+      requestedByOperatorId: "ops_1",
+      requestedByOperatorRole: "operations_admin",
+      requestNote: "Identity verified.",
+      requestedAt: new Date("2026-04-19T18:00:00.000Z"),
+      approvedByOperatorId: null,
+      approvedByOperatorRole: null,
+      approvalNote: null,
+      approvedAt: null,
+      rejectedByOperatorId: null,
+      rejectedByOperatorRole: null,
+      rejectionNote: null,
+      rejectedAt: null,
+      executedByOperatorId: null,
+      executedByOperatorRole: null,
+      executionNote: null,
+      executedAt: null,
+      customer: {
+        id: "customer_1",
+        supabaseUserId: "supabase_1",
+        email: "ada@example.com",
+        firstName: "Ada",
+        lastName: "Lovelace",
+      },
+      customerAccount: {
+        id: "account_1",
+        status: "active",
+      },
+    });
+    transaction.auditEvent.create.mockResolvedValue(undefined);
+
+    const result = await service.requestCustomerMfaRecovery(
+      "supabase_1",
+      "ops_1",
+      "operations_admin",
+      {
+        requestType: "release_lockout",
+        note: "Identity verified.",
+      },
+    );
+
+    expect(transaction.customerMfaRecoveryRequest.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          customerId: "customer_1",
+          customerAccountId: "account_1",
+          requestType: "release_lockout",
+          requestedByOperatorId: "ops_1",
+          requestedByOperatorRole: "operations_admin",
+        }),
+      }),
+    );
+    expect(result.request.id).toBe("recovery_1");
+    expect(result.stateReused).toBe(false);
+  });
+
+  it("blocks self-approval for a customer MFA recovery request", async () => {
+    const { service, prismaService } = createService();
+
+    prismaService.customerMfaRecoveryRequest.findUnique.mockResolvedValue({
+      id: "recovery_1",
+      customerId: "customer_1",
+      customerAccountId: "account_1",
+      requestType: "release_lockout",
+      status: "pending_approval",
+      requestedByOperatorId: "ops_1",
+      requestedByOperatorRole: "operations_admin",
+      requestNote: "Identity verified.",
+      requestedAt: new Date("2026-04-19T18:00:00.000Z"),
+      approvedByOperatorId: null,
+      approvedByOperatorRole: null,
+      approvalNote: null,
+      approvedAt: null,
+      rejectedByOperatorId: null,
+      rejectedByOperatorRole: null,
+      rejectionNote: null,
+      rejectedAt: null,
+      executedByOperatorId: null,
+      executedByOperatorRole: null,
+      executionNote: null,
+      executedAt: null,
+      customer: {
+        id: "customer_1",
+        supabaseUserId: "supabase_1",
+        email: "ada@example.com",
+        firstName: "Ada",
+        lastName: "Lovelace",
+      },
+      customerAccount: {
+        id: "account_1",
+        status: "active",
+      },
+    });
+
+    await expect(
+      service.approveCustomerMfaRecoveryRequest(
+        "recovery_1",
+        "ops_1",
+        "risk_manager",
+        "Approved",
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("executes an approved customer MFA reset with session invalidation", async () => {
+    const { service, prismaService, transaction } = createService();
+
+    prismaService.customerMfaRecoveryRequest.findUnique.mockResolvedValue({
+      id: "recovery_1",
+      customerId: "customer_1",
+      customerAccountId: "account_1",
+      requestType: "reset_mfa",
+      status: "approved",
+      requestedByOperatorId: "ops_1",
+      requestedByOperatorRole: "operations_admin",
+      requestNote: "Device lost.",
+      requestedAt: new Date("2026-04-19T18:00:00.000Z"),
+      approvedByOperatorId: "ops_2",
+      approvedByOperatorRole: "risk_manager",
+      approvalNote: "Approved after KYC review.",
+      approvedAt: new Date("2026-04-19T18:10:00.000Z"),
+      rejectedByOperatorId: null,
+      rejectedByOperatorRole: null,
+      rejectionNote: null,
+      rejectedAt: null,
+      executedByOperatorId: null,
+      executedByOperatorRole: null,
+      executionNote: null,
+      executedAt: null,
+      customer: {
+        id: "customer_1",
+        supabaseUserId: "supabase_1",
+        email: "ada@example.com",
+        firstName: "Ada",
+        lastName: "Lovelace",
+      },
+      customerAccount: {
+        id: "account_1",
+        status: "active",
+      },
+    });
+    transaction.customer.update.mockResolvedValue(undefined);
+    transaction.customerMfaRecoveryRequest.update.mockResolvedValue({
+      id: "recovery_1",
+      customerId: "customer_1",
+      customerAccountId: "account_1",
+      requestType: "reset_mfa",
+      status: "executed",
+      requestedByOperatorId: "ops_1",
+      requestedByOperatorRole: "operations_admin",
+      requestNote: "Device lost.",
+      requestedAt: new Date("2026-04-19T18:00:00.000Z"),
+      approvedByOperatorId: "ops_2",
+      approvedByOperatorRole: "risk_manager",
+      approvalNote: "Approved after KYC review.",
+      approvedAt: new Date("2026-04-19T18:10:00.000Z"),
+      rejectedByOperatorId: null,
+      rejectedByOperatorRole: null,
+      rejectionNote: null,
+      rejectedAt: null,
+      executedByOperatorId: "ops_3",
+      executedByOperatorRole: "operations_admin",
+      executionNote: "Executed for customer support recovery.",
+      executedAt: new Date("2026-04-19T18:11:00.000Z"),
+      customer: {
+        id: "customer_1",
+        supabaseUserId: "supabase_1",
+        email: "ada@example.com",
+        firstName: "Ada",
+        lastName: "Lovelace",
+      },
+      customerAccount: {
+        id: "account_1",
+        status: "active",
+      },
+    });
+    transaction.auditEvent.create.mockResolvedValue(undefined);
+
+    const result = await service.executeCustomerMfaRecoveryRequest(
+      "recovery_1",
+      "ops_3",
+      "operations_admin",
+      "Executed for customer support recovery.",
+    );
+
+    expect(transaction.customer.update).toHaveBeenCalledWith({
+      where: { id: "customer_1" },
+      data: {
+        mfaTotpEnrolled: false,
+        mfaEmailOtpEnrolled: false,
+        mfaTotpSecret: null,
+        mfaPendingTotpSecret: null,
+        mfaPendingTotpIssuedAt: null,
+        mfaActiveChallenge: expect.anything(),
+        mfaLastVerifiedAt: null,
+        mfaFailedAttemptCount: 0,
+        mfaLockedUntil: null,
+        mfaLastChallengeStartedAt: null,
+        authTokenVersion: {
+          increment: 1,
+        },
+      },
+    });
+    expect(result.request.status).toBe("executed");
+    expect(result.stateReused).toBe(false);
   });
 
   it("revokes all customer sessions and returns a fresh token", async () => {

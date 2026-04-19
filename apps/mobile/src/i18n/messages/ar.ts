@@ -208,6 +208,12 @@ export const mobileMessagesAr: MobileMessages = {
     mfaCodeLabel: "رمز مكوّن من 6 أرقام",
     mfaEmailSent: "تم إنشاء رمز تحقق لعامل البريد الاحتياطي.",
     mfaPreviewCode: "رمز المعاينة",
+    mfaRecoveryDescription:
+      "إذا فقدت جهاز تطبيق المصادقة لكنك ما زلت تملك عامل البريد الاحتياطي، يمكنك إعادة ضبط التطبيق هنا ثم تسجيله من جديد فوراً بعد الاسترداد.",
+    mfaStartRecovery: "أعد ضبط التطبيق عبر البريد",
+    mfaVerifyRecovery: "تحقق من رمز الاسترداد",
+    mfaRecoveryComplete:
+      "تمت إعادة ضبط تطبيق المصادقة. سجّل تطبيقاً جديداً الآن لاستعادة الحماية الكاملة.",
     mfaPasswordStepUp:
       "قبل تغيير كلمة المرور، أكمل تحدي MFA جديداً من هذه الشاشة.",
     mfaUseAuthenticator: "استخدم التطبيق",

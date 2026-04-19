@@ -18,6 +18,7 @@ import type { PrismaJsonValue } from "../prisma/prisma-json";
 
 type CustomerMfaEmailPurpose =
   | "email_enrollment"
+  | "email_recovery"
   | "withdrawal_step_up"
   | "password_step_up";
 

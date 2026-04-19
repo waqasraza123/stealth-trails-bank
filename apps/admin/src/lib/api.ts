@@ -10,6 +10,8 @@ import type {
   ApplyManualResolutionResult,
   CriticalPlatformAlertRoutingResult,
   CustomerAccountOperationsTimeline,
+  CustomerMfaRecoveryRequestList,
+  CustomerMfaRecoveryRequestMutationResult,
   GovernedExecutionOverrideRequest,
   GovernedTreasuryExecutionRequest,
   GovernedExecutionWorkspace,
@@ -123,6 +125,74 @@ export async function getOperatorSession(
   return requestData(session, {
     method: "GET",
     url: "/auth/internal/operator/session"
+  });
+}
+
+export async function listCustomerMfaRecoveryRequests(
+  session: OperatorSession,
+  params: Record<string, string | number | undefined> = {}
+): Promise<CustomerMfaRecoveryRequestList> {
+  return requestData(session, {
+    method: "GET",
+    url: "/auth/internal/customer-mfa-recovery-requests",
+    params
+  });
+}
+
+export async function requestCustomerMfaRecovery(
+  session: OperatorSession,
+  supabaseUserId: string,
+  payload: {
+    requestType: "release_lockout" | "reset_mfa";
+    note?: string;
+  }
+): Promise<CustomerMfaRecoveryRequestMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/auth/internal/customer-mfa-recovery/${supabaseUserId}/request`,
+    data: payload
+  });
+}
+
+export async function approveCustomerMfaRecoveryRequest(
+  session: OperatorSession,
+  requestId: string,
+  payload: {
+    note?: string;
+  }
+): Promise<CustomerMfaRecoveryRequestMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/auth/internal/customer-mfa-recovery-requests/${requestId}/approve`,
+    data: payload
+  });
+}
+
+export async function rejectCustomerMfaRecoveryRequest(
+  session: OperatorSession,
+  requestId: string,
+  payload: {
+    note: string;
+  }
+): Promise<CustomerMfaRecoveryRequestMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/auth/internal/customer-mfa-recovery-requests/${requestId}/reject`,
+    data: payload
+  });
+}
+
+export async function executeCustomerMfaRecoveryRequest(
+  session: OperatorSession,
+  requestId: string,
+  payload: {
+    note?: string;
+  }
+): Promise<CustomerMfaRecoveryRequestMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/auth/internal/customer-mfa-recovery-requests/${requestId}/execute`,
+    data: payload
   });
 }
 

@@ -37,6 +37,7 @@ import { GovernedExecutionPage } from "@/pages/GovernedExecutionPage";
 import { IncidentPackagesPage } from "@/pages/IncidentPackagesPage";
 import { LaunchReadinessPage } from "@/pages/LaunchReadinessPage";
 import { LoansPage } from "@/pages/LoansPage";
+import { MfaRecoveryPage } from "@/pages/MfaRecoveryPage";
 import { OperationsPage } from "@/pages/OperationsPage";
 import { QueuesPage } from "@/pages/QueuesPage";
 import { ReconciliationPage } from "@/pages/ReconciliationPage";
@@ -59,6 +60,7 @@ const navItems = [
   { label: "Governed Execution", path: "/governed-execution" },
   { label: "Solvency", path: "/solvency" },
   { label: "Reconciliation", path: "/reconciliation" },
+  { label: "MFA Recovery", path: "/mfa-recovery" },
   { label: "Treasury", path: "/treasury" },
   { label: "Alerts & Incidents", path: "/alerts" },
   { label: "Audit Trail", path: "/audit" },
@@ -194,6 +196,7 @@ function AdminConsole() {
         <Route path="/governed-execution" element={<GovernedExecutionPage />} />
         <Route path="/solvency" element={<SolvencyPage />} />
         <Route path="/reconciliation" element={<ReconciliationPage />} />
+        <Route path="/mfa-recovery" element={<MfaRecoveryPage />} />
         <Route path="/treasury" element={<TreasuryPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/audit" element={<AuditPage />} />

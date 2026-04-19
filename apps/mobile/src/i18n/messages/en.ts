@@ -214,6 +214,12 @@ export const mobileMessages = {
     mfaEmailSent:
       "A verification code was generated for your backup email factor.",
     mfaPreviewCode: "Preview code",
+    mfaRecoveryDescription:
+      "If you lose the authenticator device but still control your email backup factor, reset only the authenticator here and enroll it again immediately after recovery.",
+    mfaStartRecovery: "Reset authenticator with email",
+    mfaVerifyRecovery: "Verify recovery code",
+    mfaRecoveryComplete:
+      "Authenticator MFA was reset. Enroll a new authenticator now to restore full protection.",
     mfaPasswordStepUp:
       "Before changing the password, complete a fresh MFA challenge from this screen.",
     mfaUseAuthenticator: "Use authenticator",

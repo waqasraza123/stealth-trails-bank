@@ -1,9 +1,10 @@
-import type { ExecutionContext, INestApplication } from "@nestjs/common";
+import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { InternalOperatorBearerGuard } from "./guards/internal-operator-bearer.guard";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
+import { OperatorIdentityService } from "./operator-identity.service";
 import { createIntegrationTestApp } from "../test-utils/create-integration-test-app";
 
 describe("AuthController", () => {
@@ -13,6 +14,13 @@ describe("AuthController", () => {
     login: jest.fn(),
     updatePassword: jest.fn(),
     revokeAllCustomerSessions: jest.fn(),
+    startEmailRecovery: jest.fn(),
+    verifyEmailRecovery: jest.fn(),
+    listCustomerMfaRecoveryRequests: jest.fn(),
+    requestCustomerMfaRecovery: jest.fn(),
+    approveCustomerMfaRecoveryRequest: jest.fn(),
+    rejectCustomerMfaRecoveryRequest: jest.fn(),
+    executeCustomerMfaRecoveryRequest: jest.fn(),
     validateToken: jest.fn(),
     getCustomerAccountProjectionBySupabaseUserId: jest.fn(),
     getCustomerWalletProjectionBySupabaseUserId: jest.fn(),
@@ -28,23 +36,22 @@ describe("AuthController", () => {
           useValue: authService,
         },
         {
-          provide: InternalOperatorBearerGuard,
+          provide: OperatorIdentityService,
           useValue: {
-            canActivate: (context: ExecutionContext) => {
-              const request = context.switchToHttp().getRequest();
-              request.internalOperator = {
-                operatorId: "ops_1",
-                operatorRole: "operations_admin",
-                operatorRoles: ["operations_admin"],
-                authSource: "supabase_jwt",
-                environment: "development",
-                sessionCorrelationId: "session_1",
-              };
-
-              return true;
-            },
+            resolveFromBearerToken: jest.fn(async () => ({
+              operatorId: "ops_1",
+              operatorRole: "operations_admin",
+              operatorRoles: ["operations_admin"],
+              operatorDbId: "operator_db_1",
+              operatorSupabaseUserId: "operator_supabase_1",
+              operatorEmail: "ops@example.com",
+              authSource: "supabase_jwt",
+              environment: "development",
+              sessionCorrelationId: "session_1",
+            })),
           },
         },
+        InternalOperatorBearerGuard,
         JwtAuthGuard,
       ],
     });
@@ -147,5 +154,155 @@ describe("AuthController", () => {
         },
       },
     });
+  });
+
+  it("passes the authenticated customer identity to email recovery endpoints", async () => {
+    authService.startEmailRecovery.mockResolvedValue({
+      status: "success",
+      message: "Customer MFA recovery challenge created successfully.",
+      data: {
+        challengeId: "challenge_1",
+      },
+    });
+    authService.verifyEmailRecovery.mockResolvedValue({
+      status: "success",
+      message: "Customer MFA recovery completed successfully.",
+      data: {
+        session: {
+          token: "fresh-token",
+          revokedOtherSessions: true,
+        },
+      },
+    });
+
+    await request(app.getHttpServer())
+      .post("/auth/mfa/recovery/email/start")
+      .set("Authorization", "Bearer test-token")
+      .expect(201);
+
+    expect(authService.startEmailRecovery).toHaveBeenCalledWith("supabase_1");
+
+    await request(app.getHttpServer())
+      .post("/auth/mfa/recovery/email/verify")
+      .set("Authorization", "Bearer test-token")
+      .send({
+        challengeId: "challenge_1",
+        code: "123456",
+      })
+      .expect(201);
+
+    expect(authService.verifyEmailRecovery).toHaveBeenCalledWith(
+      "supabase_1",
+      "challenge_1",
+      "123456",
+    );
+  });
+
+  it("passes internal operator customer MFA recovery endpoints through", async () => {
+    authService.listCustomerMfaRecoveryRequests.mockResolvedValue({
+      requests: [],
+      limit: 25,
+      totalCount: 0,
+      summary: {
+        byStatus: [],
+      },
+    });
+    authService.requestCustomerMfaRecovery.mockResolvedValue({
+      request: {
+        id: "req_1",
+      },
+      stateReused: false,
+    });
+    authService.approveCustomerMfaRecoveryRequest.mockResolvedValue({
+      request: {
+        id: "req_1",
+      },
+      stateReused: false,
+    });
+    authService.rejectCustomerMfaRecoveryRequest.mockResolvedValue({
+      request: {
+        id: "req_1",
+      },
+      stateReused: false,
+    });
+    authService.executeCustomerMfaRecoveryRequest.mockResolvedValue({
+      request: {
+        id: "req_1",
+      },
+      stateReused: false,
+    });
+
+    await request(app.getHttpServer())
+      .get("/auth/internal/customer-mfa-recovery-requests")
+      .set("Authorization", "Bearer operator-token")
+      .expect(200);
+
+    expect(authService.listCustomerMfaRecoveryRequests).toHaveBeenCalledWith(
+      {},
+    );
+
+    await request(app.getHttpServer())
+      .post("/auth/internal/customer-mfa-recovery/supabase_1/request")
+      .set("Authorization", "Bearer operator-token")
+      .send({
+        requestType: "release_lockout",
+        note: "Operator verified customer identity.",
+      })
+      .expect(201);
+
+    expect(authService.requestCustomerMfaRecovery).toHaveBeenCalledWith(
+      "supabase_1",
+      "ops_1",
+      "operations_admin",
+      {
+        requestType: "release_lockout",
+        note: "Operator verified customer identity.",
+      },
+    );
+
+    await request(app.getHttpServer())
+      .post("/auth/internal/customer-mfa-recovery-requests/req_1/approve")
+      .set("Authorization", "Bearer operator-token")
+      .send({
+        note: "Dual control approved.",
+      })
+      .expect(201);
+
+    expect(authService.approveCustomerMfaRecoveryRequest).toHaveBeenCalledWith(
+      "req_1",
+      "ops_1",
+      "operations_admin",
+      "Dual control approved.",
+    );
+
+    await request(app.getHttpServer())
+      .post("/auth/internal/customer-mfa-recovery-requests/req_1/reject")
+      .set("Authorization", "Bearer operator-token")
+      .send({
+        note: "Identity evidence was insufficient.",
+      })
+      .expect(201);
+
+    expect(authService.rejectCustomerMfaRecoveryRequest).toHaveBeenCalledWith(
+      "req_1",
+      "ops_1",
+      "operations_admin",
+      "Identity evidence was insufficient.",
+    );
+
+    await request(app.getHttpServer())
+      .post("/auth/internal/customer-mfa-recovery-requests/req_1/execute")
+      .set("Authorization", "Bearer operator-token")
+      .send({
+        note: "Operator executed the approved reset.",
+      })
+      .expect(201);
+
+    expect(authService.executeCustomerMfaRecoveryRequest).toHaveBeenCalledWith(
+      "req_1",
+      "ops_1",
+      "operations_admin",
+      "Operator executed the approved reset.",
+    );
   });
 });

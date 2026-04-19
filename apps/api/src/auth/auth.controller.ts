@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Request,
   UnauthorizedException,
   UseGuards,
@@ -14,11 +15,19 @@ import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { InternalOperatorBearerGuard } from "./guards/internal-operator-bearer.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { AuthService } from "./auth.service";
+import { ListCustomerMfaRecoveryRequestsDto } from "./dto/list-customer-mfa-recovery-requests.dto";
 import { LoginDto } from "./dto/login.dto";
+import {
+  ApproveCustomerMfaRecoveryDto,
+  ExecuteCustomerMfaRecoveryDto,
+  RejectCustomerMfaRecoveryDto,
+} from "./dto/review-customer-mfa-recovery.dto";
+import { RequestCustomerMfaRecoveryDto } from "./dto/request-customer-mfa-recovery.dto";
 import { SignUpDto } from "./dto/sign-up.dto";
 import { StartMfaChallengeDto } from "./dto/start-mfa-challenge.dto";
 import { UpdatePasswordDto } from "./dto/update-password.dto";
 import { VerifyEmailEnrollmentDto } from "./dto/verify-email-enrollment.dto";
+import { VerifyEmailRecoveryDto } from "./dto/verify-email-recovery.dto";
 import { VerifyMfaChallengeDto } from "./dto/verify-mfa-challenge.dto";
 import { VerifyTotpEnrollmentDto } from "./dto/verify-totp-enrollment.dto";
 
@@ -133,6 +142,27 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post("mfa/recovery/email/start")
+  async startEmailRecovery(
+    @Request() request: AuthenticatedRequest,
+  ): Promise<CustomJsonResponse> {
+    return this.authService.startEmailRecovery(request.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("mfa/recovery/email/verify")
+  async verifyEmailRecovery(
+    @Body(new ValidationPipe()) dto: VerifyEmailRecoveryDto,
+    @Request() request: AuthenticatedRequest,
+  ): Promise<CustomJsonResponse> {
+    return this.authService.verifyEmailRecovery(
+      request.user.id,
+      dto.challengeId,
+      dto.code,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post("mfa/challenge/start")
   async startMfaChallenge(
     @Body(new ValidationPipe()) dto: StartMfaChallengeDto,
@@ -229,6 +259,144 @@ export class AuthController {
         sessionCorrelationId:
           request.internalOperator.sessionCorrelationId ?? null,
       },
+    };
+  }
+
+  @UseGuards(InternalOperatorBearerGuard)
+  @Get("internal/customer-mfa-recovery-requests")
+  async listCustomerMfaRecoveryRequests(
+    @Query(
+      new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      }),
+    )
+    query: ListCustomerMfaRecoveryRequestsDto,
+  ): Promise<CustomJsonResponse> {
+    const result =
+      await this.authService.listCustomerMfaRecoveryRequests(query);
+
+    return {
+      status: "success",
+      message: "Customer MFA recovery requests retrieved successfully.",
+      data: result,
+    };
+  }
+
+  @UseGuards(InternalOperatorBearerGuard)
+  @Post("internal/customer-mfa-recovery/:supabaseUserId/request")
+  async requestCustomerMfaRecovery(
+    @Param("supabaseUserId") supabaseUserId: string,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      }),
+    )
+    dto: RequestCustomerMfaRecoveryDto,
+    @Request() request: AuthenticatedOperatorRequest,
+  ): Promise<CustomJsonResponse> {
+    const result = await this.authService.requestCustomerMfaRecovery(
+      supabaseUserId,
+      request.internalOperator.operatorId,
+      request.internalOperator.operatorRole ?? null,
+      dto,
+    );
+
+    return {
+      status: "success",
+      message: result.stateReused
+        ? "Customer MFA recovery request reused successfully."
+        : "Customer MFA recovery request created successfully.",
+      data: result,
+    };
+  }
+
+  @UseGuards(InternalOperatorBearerGuard)
+  @Post("internal/customer-mfa-recovery-requests/:requestId/approve")
+  async approveCustomerMfaRecoveryRequest(
+    @Param("requestId") requestId: string,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      }),
+    )
+    dto: ApproveCustomerMfaRecoveryDto,
+    @Request() request: AuthenticatedOperatorRequest,
+  ): Promise<CustomJsonResponse> {
+    const result = await this.authService.approveCustomerMfaRecoveryRequest(
+      requestId,
+      request.internalOperator.operatorId,
+      request.internalOperator.operatorRole ?? null,
+      dto.note,
+    );
+
+    return {
+      status: "success",
+      message: result.stateReused
+        ? "Customer MFA recovery approval reused successfully."
+        : "Customer MFA recovery request approved successfully.",
+      data: result,
+    };
+  }
+
+  @UseGuards(InternalOperatorBearerGuard)
+  @Post("internal/customer-mfa-recovery-requests/:requestId/reject")
+  async rejectCustomerMfaRecoveryRequest(
+    @Param("requestId") requestId: string,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      }),
+    )
+    dto: RejectCustomerMfaRecoveryDto,
+    @Request() request: AuthenticatedOperatorRequest,
+  ): Promise<CustomJsonResponse> {
+    const result = await this.authService.rejectCustomerMfaRecoveryRequest(
+      requestId,
+      request.internalOperator.operatorId,
+      request.internalOperator.operatorRole ?? null,
+      dto.note,
+    );
+
+    return {
+      status: "success",
+      message: result.stateReused
+        ? "Customer MFA recovery rejection reused successfully."
+        : "Customer MFA recovery request rejected successfully.",
+      data: result,
+    };
+  }
+
+  @UseGuards(InternalOperatorBearerGuard)
+  @Post("internal/customer-mfa-recovery-requests/:requestId/execute")
+  async executeCustomerMfaRecoveryRequest(
+    @Param("requestId") requestId: string,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      }),
+    )
+    dto: ExecuteCustomerMfaRecoveryDto,
+    @Request() request: AuthenticatedOperatorRequest,
+  ): Promise<CustomJsonResponse> {
+    const result = await this.authService.executeCustomerMfaRecoveryRequest(
+      requestId,
+      request.internalOperator.operatorId,
+      request.internalOperator.operatorRole ?? null,
+      dto.note,
+    );
+
+    return {
+      status: "success",
+      message: result.stateReused
+        ? "Customer MFA recovery execution reused successfully."
+        : "Customer MFA recovery request executed successfully.",
+      data: result,
     };
   }
 }
