@@ -34,6 +34,7 @@ import { LoansScreen } from "../screens/LoansScreen";
 import { SignInScreen } from "../screens/auth/SignInScreen";
 import { SignUpScreen } from "../screens/auth/SignUpScreen";
 import { AppButton } from "../components/ui/AppButton";
+import { EthereumBrandPanel } from "../components/ui/EthereumBrandPanel";
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -42,9 +43,16 @@ const MainTabs = createBottomTabNavigator<MainTabParamList>();
 function LoadingGate({ message }: { message: string }) {
   return (
     <View className="flex-1 items-center justify-center bg-parchment px-8">
-      <AppText className="text-center text-base text-ink" weight="semibold">
-        {message}
-      </AppText>
+      <View className="w-full max-w-[360px] gap-4">
+        <EthereumBrandPanel
+          compact
+          subtitle="Stealth Trails Bank"
+          testID="ethereum-loading-panel"
+        />
+        <AppText className="text-center text-base text-ink" weight="semibold">
+          {message}
+        </AppText>
+      </View>
     </View>
   );
 }

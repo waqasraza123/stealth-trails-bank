@@ -35,6 +35,9 @@ describe("SignInScreen", () => {
   it("blocks invalid email before calling the API action", async () => {
     const screen = renderMobile(<SignInScreen />);
 
+    expect(screen.getByTestId("ethereum-brand-panel")).toBeTruthy();
+    expect(screen.getByText("Ethereum")).toBeTruthy();
+
     fireEvent.changeText(screen.getByLabelText("Email"), "invalid-email");
     fireEvent.changeText(screen.getByLabelText("Password"), "password123");
     fireEvent.press(screen.getByText("Sign in"));

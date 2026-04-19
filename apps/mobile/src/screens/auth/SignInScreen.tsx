@@ -8,18 +8,19 @@ import { AppText } from "../../components/ui/AppText";
 import { FieldInput } from "../../components/ui/FieldInput";
 import { InlineNotice } from "../../components/ui/InlineNotice";
 import { LanguageToggle } from "../../components/ui/LanguageToggle";
+import { EthereumBrandPanel } from "../../components/ui/EthereumBrandPanel";
 import { useAuthActions } from "../../hooks/use-session";
 import { useT } from "../../i18n/use-t";
 import {
   hasMinimumLength,
   isEmailAddress,
-  isNonEmptyValue
+  isNonEmptyValue,
 } from "../../lib/validation";
 import type { AuthStackParamList } from "../../navigation/types";
 
 const sharedLoginCredentials = {
   email: "admin@gmail.com",
-  password: "P@ssw0rd"
+  password: "P@ssw0rd",
 };
 
 export function SignInScreen() {
@@ -51,7 +52,9 @@ export function SignInScreen() {
     } catch (requestError) {
       Alert.alert(
         t("auth.signIn"),
-        requestError instanceof Error ? requestError.message : String(requestError)
+        requestError instanceof Error
+          ? requestError.message
+          : String(requestError),
       );
     }
   }
@@ -60,9 +63,12 @@ export function SignInScreen() {
     <AppScreen
       title={t("auth.signInTitle")}
       subtitle={t("auth.signInDescription")}
-      trailing={<LanguageToggle />}
-    >
+      trailing={<LanguageToggle />}>
       <View className="gap-4">
+        <EthereumBrandPanel
+          subtitle="Battle-tested Ethereum bank with advanced privacy features"
+          testID="ethereum-brand-panel"
+        />
         <FieldInput
           autoCapitalize="none"
           autoCorrect={false}
@@ -99,8 +105,7 @@ export function SignInScreen() {
         <Pressable
           onPress={() => {
             navigation.navigate("SignUp");
-          }}
-        >
+          }}>
           <AppText className="text-center text-sm text-slate">
             {t("auth.switchToSignUp")}
           </AppText>
