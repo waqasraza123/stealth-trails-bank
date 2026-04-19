@@ -18,7 +18,7 @@ function readLocalWebDevApiBaseUrl(): string | undefined {
     return undefined;
   }
 
-  return "http://localhost:3000";
+  return "http://localhost:9101";
 }
 
 export function loadMobileRuntimeConfig(

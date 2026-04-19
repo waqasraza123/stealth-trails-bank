@@ -12,6 +12,12 @@ Required value:
 
 - `EXPO_PUBLIC_API_BASE_URL`
 
+Local development default:
+
+- iOS simulator or Expo web: `http://localhost:9101`
+- Android emulator: `http://10.0.2.2:9101`
+- physical device: use a LAN-visible API host on port `9101`
+
 Use a base URL reachable from the target runtime:
 
 - iOS simulator: local machine host is usually fine
