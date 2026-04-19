@@ -16,7 +16,9 @@ import { InternalOperatorBearerGuard } from "./guards/internal-operator-bearer.g
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { AuthService } from "./auth.service";
 import { ListCustomerMfaRecoveryRequestsDto } from "./dto/list-customer-mfa-recovery-requests.dto";
+import { ListCustomerSessionRisksDto } from "./dto/list-customer-session-risks.dto";
 import { LoginDto } from "./dto/login.dto";
+import { RevokeCustomerSessionRiskDto } from "./dto/revoke-customer-session-risk.dto";
 import {
   ApproveCustomerMfaRecoveryDto,
   ExecuteCustomerMfaRecoveryDto,
@@ -367,6 +369,60 @@ export class AuthController {
         sessionCorrelationId:
           request.internalOperator.sessionCorrelationId ?? null,
       },
+    };
+  }
+
+  @UseGuards(InternalOperatorBearerGuard)
+  @Get("internal/customer-session-risks")
+  async listCustomerSessionRisks(
+    @Query(
+      new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      }),
+    )
+    query: ListCustomerSessionRisksDto,
+    @Request() request: AuthenticatedOperatorRequest,
+  ): Promise<CustomJsonResponse> {
+    const result = await this.authService.listCustomerSessionRisks(
+      query,
+      request.internalOperator.operatorRole ?? null,
+    );
+
+    return {
+      status: "success",
+      message: "Customer session risk queue retrieved successfully.",
+      data: result,
+    };
+  }
+
+  @UseGuards(InternalOperatorBearerGuard)
+  @Post("internal/customer-session-risks/:sessionId/revoke")
+  async revokeCustomerSessionRisk(
+    @Param("sessionId") sessionId: string,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      }),
+    )
+    dto: RevokeCustomerSessionRiskDto,
+    @Request() request: AuthenticatedOperatorRequest,
+  ): Promise<CustomJsonResponse> {
+    const result = await this.authService.revokeCustomerSessionRisk(
+      sessionId,
+      request.internalOperator.operatorId,
+      request.internalOperator.operatorRole ?? null,
+      dto.note,
+    );
+
+    return {
+      status: "success",
+      message: result.stateReused
+        ? "Customer risky session revocation reused successfully."
+        : "Customer risky session revoked successfully.",
+      data: result,
     };
   }
 

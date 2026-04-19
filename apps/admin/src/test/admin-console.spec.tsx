@@ -69,7 +69,9 @@ vi.mock("../lib/api", () => ({
       failedCheckCount: 0,
       pendingCheckCount: 0
     }
-  }))
+  })),
+  listCustomerSessionRisks: vi.fn(),
+  revokeCustomerSessionRisk: vi.fn()
 }));
 
 vi.mock("@stealth-trails-bank/config/web", () => ({
@@ -99,6 +101,9 @@ describe("Admin console", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText("Treasury")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Session Risk")
     ).toBeInTheDocument();
     expect(
       screen.getByText(/Credentials required/i)

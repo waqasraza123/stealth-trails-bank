@@ -15,6 +15,8 @@ describe("loadCustomerMfaPolicyRuntimeConfig", () => {
     delete process.env["CUSTOMER_MFA_CHALLENGE_START_COOLDOWN_SECONDS"];
     delete process.env["CUSTOMER_MFA_RECOVERY_REQUEST_ALLOWED_OPERATOR_ROLES"];
     delete process.env["CUSTOMER_MFA_RECOVERY_APPROVER_ALLOWED_OPERATOR_ROLES"];
+    delete process.env["CUSTOMER_SESSION_RISK_READ_ALLOWED_OPERATOR_ROLES"];
+    delete process.env["CUSTOMER_SESSION_RISK_REVOKE_ALLOWED_OPERATOR_ROLES"];
   });
 
   afterAll(() => {
@@ -35,6 +37,17 @@ describe("loadCustomerMfaPolicyRuntimeConfig", () => {
         "risk_manager",
       ],
       recoveryApproverAllowedOperatorRoles: ["risk_manager", "compliance_lead"],
+      sessionRiskReadAllowedOperatorRoles: [
+        "operations_admin",
+        "senior_operator",
+        "risk_manager",
+        "compliance_lead",
+      ],
+      sessionRiskRevokeAllowedOperatorRoles: [
+        "operations_admin",
+        "risk_manager",
+        "compliance_lead",
+      ],
     });
   });
 
@@ -42,6 +55,10 @@ describe("loadCustomerMfaPolicyRuntimeConfig", () => {
     process.env["CUSTOMER_MFA_RECOVERY_REQUEST_ALLOWED_OPERATOR_ROLES"] =
       "operations_admin, senior_operator";
     process.env["CUSTOMER_MFA_RECOVERY_APPROVER_ALLOWED_OPERATOR_ROLES"] =
+      "risk_manager, compliance_lead";
+    process.env["CUSTOMER_SESSION_RISK_READ_ALLOWED_OPERATOR_ROLES"] =
+      "operations_admin, risk_manager";
+    process.env["CUSTOMER_SESSION_RISK_REVOKE_ALLOWED_OPERATOR_ROLES"] =
       "risk_manager, compliance_lead";
 
     expect(loadCustomerMfaPolicyRuntimeConfig(process.env)).toEqual(
@@ -51,6 +68,14 @@ describe("loadCustomerMfaPolicyRuntimeConfig", () => {
           "senior_operator",
         ],
         recoveryApproverAllowedOperatorRoles: [
+          "risk_manager",
+          "compliance_lead",
+        ],
+        sessionRiskReadAllowedOperatorRoles: [
+          "operations_admin",
+          "risk_manager",
+        ],
+        sessionRiskRevokeAllowedOperatorRoles: [
           "risk_manager",
           "compliance_lead",
         ],

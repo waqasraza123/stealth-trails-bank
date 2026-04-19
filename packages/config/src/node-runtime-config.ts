@@ -41,6 +41,17 @@ const DEFAULT_CUSTOMER_MFA_RECOVERY_APPROVER_ALLOWED_OPERATOR_ROLES = [
   "risk_manager",
   "compliance_lead",
 ] as const;
+const DEFAULT_CUSTOMER_SESSION_RISK_READ_ALLOWED_OPERATOR_ROLES = [
+  "operations_admin",
+  "senior_operator",
+  "risk_manager",
+  "compliance_lead",
+] as const;
+const DEFAULT_CUSTOMER_SESSION_RISK_REVOKE_ALLOWED_OPERATOR_ROLES = [
+  "operations_admin",
+  "risk_manager",
+  "compliance_lead",
+] as const;
 const DEFAULT_INCIDENT_PACKAGE_EXPORT_MAX_RECENT_LIMIT = 100;
 const DEFAULT_INCIDENT_PACKAGE_EXPORT_MAX_TIMELINE_LIMIT = 500;
 const DEFAULT_INCIDENT_PACKAGE_EXPORT_MAX_SINCE_DAYS = 90;
@@ -1120,6 +1131,8 @@ export type CustomerMfaPolicyRuntimeConfig = {
   readonly challengeStartCooldownSeconds: number;
   readonly recoveryRequestAllowedOperatorRoles: readonly string[];
   readonly recoveryApproverAllowedOperatorRoles: readonly string[];
+  readonly sessionRiskReadAllowedOperatorRoles: readonly string[];
+  readonly sessionRiskRevokeAllowedOperatorRoles: readonly string[];
 };
 
 export type CustomerMfaEmailDeliveryMode = "preview" | "webhook";
@@ -2119,6 +2132,14 @@ export function loadCustomerMfaPolicyRuntimeConfig(
     env,
     "CUSTOMER_MFA_RECOVERY_APPROVER_ALLOWED_OPERATOR_ROLES",
   );
+  const sessionRiskReadAllowedOperatorRoles = readOptionalRuntimeEnv(
+    env,
+    "CUSTOMER_SESSION_RISK_READ_ALLOWED_OPERATOR_ROLES",
+  );
+  const sessionRiskRevokeAllowedOperatorRoles = readOptionalRuntimeEnv(
+    env,
+    "CUSTOMER_SESSION_RISK_REVOKE_ALLOWED_OPERATOR_ROLES",
+  );
 
   return {
     emailOtpExpirySeconds: parsePositiveInteger(
@@ -2167,6 +2188,20 @@ export function loadCustomerMfaPolicyRuntimeConfig(
             "CUSTOMER_MFA_RECOVERY_APPROVER_ALLOWED_OPERATOR_ROLES",
           )
         : [...DEFAULT_CUSTOMER_MFA_RECOVERY_APPROVER_ALLOWED_OPERATOR_ROLES],
+    sessionRiskReadAllowedOperatorRoles:
+      sessionRiskReadAllowedOperatorRoles !== undefined
+        ? parseCommaSeparatedValues(
+            sessionRiskReadAllowedOperatorRoles,
+            "CUSTOMER_SESSION_RISK_READ_ALLOWED_OPERATOR_ROLES",
+          )
+        : [...DEFAULT_CUSTOMER_SESSION_RISK_READ_ALLOWED_OPERATOR_ROLES],
+    sessionRiskRevokeAllowedOperatorRoles:
+      sessionRiskRevokeAllowedOperatorRoles !== undefined
+        ? parseCommaSeparatedValues(
+            sessionRiskRevokeAllowedOperatorRoles,
+            "CUSTOMER_SESSION_RISK_REVOKE_ALLOWED_OPERATOR_ROLES",
+          )
+        : [...DEFAULT_CUSTOMER_SESSION_RISK_REVOKE_ALLOWED_OPERATOR_ROLES],
   };
 }
 

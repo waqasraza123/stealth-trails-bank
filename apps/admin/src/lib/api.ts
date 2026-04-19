@@ -12,6 +12,8 @@ import type {
   CustomerAccountOperationsTimeline,
   CustomerMfaRecoveryRequestList,
   CustomerMfaRecoveryRequestMutationResult,
+  CustomerSessionRiskList,
+  CustomerSessionRiskMutationResult,
   GovernedExecutionOverrideRequest,
   GovernedTreasuryExecutionRequest,
   GovernedExecutionWorkspace,
@@ -136,6 +138,31 @@ export async function listCustomerMfaRecoveryRequests(
     method: "GET",
     url: "/auth/internal/customer-mfa-recovery-requests",
     params
+  });
+}
+
+export async function listCustomerSessionRisks(
+  session: OperatorSession,
+  params: Record<string, string | number | undefined> = {}
+): Promise<CustomerSessionRiskList> {
+  return requestData(session, {
+    method: "GET",
+    url: "/auth/internal/customer-session-risks",
+    params
+  });
+}
+
+export async function revokeCustomerSessionRisk(
+  session: OperatorSession,
+  sessionId: string,
+  payload: {
+    note?: string;
+  }
+): Promise<CustomerSessionRiskMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/auth/internal/customer-session-risks/${sessionId}/revoke`,
+    data: payload
   });
 }
 

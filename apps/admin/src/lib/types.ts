@@ -1854,6 +1854,50 @@ export type CustomerMfaRecoveryRequestMutationResult = {
   stateReused: boolean;
 };
 
+export type CustomerSessionRisk = {
+  id: string;
+  clientPlatform: "web" | "mobile" | "unknown";
+  trusted: boolean;
+  challengeState: "not_started" | "pending" | "expired";
+  trustChallengeSentAt: string | null;
+  trustChallengeExpiresAt: string | null;
+  userAgent: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  revokedAt: string | null;
+  customer: {
+    customerId: string;
+    customerAccountId: string | null;
+    accountStatus: string | null;
+    supabaseUserId: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+  };
+};
+
+export type CustomerSessionRiskList = {
+  sessions: CustomerSessionRisk[];
+  limit: number;
+  totalCount: number;
+  summary: {
+    byChallengeState: Array<{
+      challengeState: CustomerSessionRisk["challengeState"];
+      count: number;
+    }>;
+    byPlatform: Array<{
+      clientPlatform: CustomerSessionRisk["clientPlatform"];
+      count: number;
+    }>;
+  };
+};
+
+export type CustomerSessionRiskMutationResult = {
+  session: CustomerSessionRisk;
+  stateReused: boolean;
+};
+
 export type CustomerBalance = {
   asset: {
     id: string;

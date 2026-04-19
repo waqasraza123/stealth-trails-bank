@@ -21,6 +21,8 @@ describe("AuthController", () => {
     revokeCustomerSession: jest.fn(),
     startEmailRecovery: jest.fn(),
     verifyEmailRecovery: jest.fn(),
+    listCustomerSessionRisks: jest.fn(),
+    revokeCustomerSessionRisk: jest.fn(),
     listCustomerMfaRecoveryRequests: jest.fn(),
     requestCustomerMfaRecovery: jest.fn(),
     approveCustomerMfaRecoveryRequest: jest.fn(),
@@ -327,6 +329,21 @@ describe("AuthController", () => {
   });
 
   it("passes internal operator customer MFA recovery endpoints through", async () => {
+    authService.listCustomerSessionRisks.mockResolvedValue({
+      sessions: [],
+      limit: 25,
+      totalCount: 0,
+      summary: {
+        byChallengeState: [],
+        byPlatform: [],
+      },
+    });
+    authService.revokeCustomerSessionRisk.mockResolvedValue({
+      session: {
+        id: "session_risk_1",
+      },
+      stateReused: false,
+    });
     authService.listCustomerMfaRecoveryRequests.mockResolvedValue({
       requests: [],
       limit: 25,
@@ -359,6 +376,31 @@ describe("AuthController", () => {
       },
       stateReused: false,
     });
+
+    await request(app.getHttpServer())
+      .get("/auth/internal/customer-session-risks")
+      .set("Authorization", "Bearer operator-token")
+      .expect(200);
+
+    expect(authService.listCustomerSessionRisks).toHaveBeenCalledWith(
+      {},
+      "operations_admin",
+    );
+
+    await request(app.getHttpServer())
+      .post("/auth/internal/customer-session-risks/session_risk_1/revoke")
+      .set("Authorization", "Bearer operator-token")
+      .send({
+        note: "Customer reported unfamiliar device activity.",
+      })
+      .expect(201);
+
+    expect(authService.revokeCustomerSessionRisk).toHaveBeenCalledWith(
+      "session_risk_1",
+      "ops_1",
+      "operations_admin",
+      "Customer reported unfamiliar device activity.",
+    );
 
     await request(app.getHttpServer())
       .get("/auth/internal/customer-mfa-recovery-requests")

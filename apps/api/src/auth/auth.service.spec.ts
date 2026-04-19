@@ -15,6 +15,17 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
       "risk_manager",
     ],
     recoveryApproverAllowedOperatorRoles: ["risk_manager", "compliance_lead"],
+    sessionRiskReadAllowedOperatorRoles: [
+      "operations_admin",
+      "senior_operator",
+      "risk_manager",
+      "compliance_lead",
+    ],
+    sessionRiskRevokeAllowedOperatorRoles: [
+      "operations_admin",
+      "risk_manager",
+      "compliance_lead",
+    ],
   }),
   loadJwtRuntimeConfig: () => ({
     jwtSecret: "test-secret",
@@ -1227,6 +1238,204 @@ describe("AuthService", () => {
     });
     expect(result.request.status).toBe("executed");
     expect(result.stateReused).toBe(false);
+  });
+
+  it("lists active untrusted customer session risks with challenge posture summary", async () => {
+    const { service, prismaService } = createService();
+
+    prismaService.customerAuthSession.findMany.mockResolvedValue([
+      {
+        id: "session_risk_1",
+        clientPlatform: "web",
+        trustedAt: null,
+        trustChallengeCodeHash: createOtpHash("123456"),
+        trustChallengeExpiresAt: new Date(Date.now() - 60_000),
+        trustChallengeSentAt: new Date(Date.now() - 120_000),
+        userAgent: "Mozilla/5.0",
+        ipAddress: "203.0.113.10",
+        createdAt: new Date("2026-04-20T09:55:00.000Z"),
+        lastSeenAt: new Date("2026-04-20T10:01:00.000Z"),
+        revokedAt: null,
+        customerId: "customer_1",
+        customer: {
+          id: "customer_1",
+          supabaseUserId: "supabase_1",
+          email: "ada@example.com",
+          firstName: "Ada",
+          lastName: "Lovelace",
+          accounts: [
+            {
+              id: "account_1",
+              status: "active",
+            },
+          ],
+        },
+      },
+    ]);
+    prismaService.customerAuthSession.count
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(0);
+
+    const result = await service.listCustomerSessionRisks(
+      {
+        limit: 10,
+      },
+      "operations_admin",
+    );
+
+    expect(prismaService.customerAuthSession.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          revokedAt: null,
+          trustedAt: null,
+        },
+        take: 10,
+      }),
+    );
+    expect(result).toEqual({
+      sessions: [
+        expect.objectContaining({
+          id: "session_risk_1",
+          clientPlatform: "web",
+          challengeState: "expired",
+          customer: expect.objectContaining({
+            email: "ada@example.com",
+            customerAccountId: "account_1",
+          }),
+        }),
+      ],
+      limit: 10,
+      totalCount: 3,
+      summary: {
+        byChallengeState: [
+          {
+            challengeState: "pending",
+            count: 1,
+          },
+          {
+            challengeState: "expired",
+            count: 1,
+          },
+          {
+            challengeState: "not_started",
+            count: 1,
+          },
+        ],
+        byPlatform: [
+          {
+            clientPlatform: "web",
+            count: 2,
+          },
+          {
+            clientPlatform: "mobile",
+            count: 1,
+          },
+          {
+            clientPlatform: "unknown",
+            count: 0,
+          },
+        ],
+      },
+    });
+  });
+
+  it("allows an authorized operator to revoke an active risky customer session", async () => {
+    const { service, prismaService, transaction } = createService();
+
+    prismaService.customerAuthSession.findUnique.mockResolvedValue({
+      id: "session_risk_1",
+      clientPlatform: "web",
+      trustedAt: null,
+      trustChallengeCodeHash: createOtpHash("123456"),
+      trustChallengeExpiresAt: new Date(Date.now() - 60_000),
+      trustChallengeSentAt: new Date(Date.now() - 120_000),
+      userAgent: "Mozilla/5.0",
+      ipAddress: "203.0.113.10",
+      createdAt: new Date("2026-04-20T09:55:00.000Z"),
+      lastSeenAt: new Date("2026-04-20T10:01:00.000Z"),
+      revokedAt: null,
+      customerId: "customer_1",
+      customer: {
+        id: "customer_1",
+        supabaseUserId: "supabase_1",
+        email: "ada@example.com",
+        firstName: "Ada",
+        lastName: "Lovelace",
+        accounts: [
+          {
+            id: "account_1",
+            status: "active",
+          },
+        ],
+      },
+    });
+    transaction.customerAuthSession.update.mockResolvedValue({
+      id: "session_risk_1",
+      clientPlatform: "web",
+      trustedAt: null,
+      trustChallengeCodeHash: createOtpHash("123456"),
+      trustChallengeExpiresAt: new Date(Date.now() - 60_000),
+      trustChallengeSentAt: new Date(Date.now() - 120_000),
+      userAgent: "Mozilla/5.0",
+      ipAddress: "203.0.113.10",
+      createdAt: new Date("2026-04-20T09:55:00.000Z"),
+      lastSeenAt: new Date("2026-04-20T10:01:00.000Z"),
+      revokedAt: new Date("2026-04-20T10:02:00.000Z"),
+      customerId: "customer_1",
+      customer: {
+        id: "customer_1",
+        supabaseUserId: "supabase_1",
+        email: "ada@example.com",
+        firstName: "Ada",
+        lastName: "Lovelace",
+        accounts: [
+          {
+            id: "account_1",
+            status: "active",
+          },
+        ],
+      },
+    });
+    transaction.auditEvent.create.mockResolvedValue(undefined);
+
+    const result = await service.revokeCustomerSessionRisk(
+      "session_risk_1",
+      "ops_1",
+      "risk_manager",
+      "Customer reported unfamiliar access.",
+    );
+
+    expect(transaction.customerAuthSession.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "session_risk_1" },
+        data: expect.objectContaining({
+          revokedAt: expect.any(Date),
+          revokedReason: "session_revoked",
+        }),
+      }),
+    );
+    expect(transaction.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          actorType: "operator",
+          actorId: "ops_1",
+          action: "customer_account.session_revoked",
+          targetType: "CustomerAuthSession",
+          targetId: "session_risk_1",
+        }),
+      }),
+    );
+    expect(result).toEqual({
+      session: expect.objectContaining({
+        id: "session_risk_1",
+        revokedAt: "2026-04-20T10:02:00.000Z",
+      }),
+      stateReused: false,
+    });
   });
 
   it("revokes all customer sessions and returns a fresh token", async () => {

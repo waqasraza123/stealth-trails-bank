@@ -183,6 +183,52 @@ type CustomerSessionProjection = {
   lastSeenAt: string;
 };
 
+type CustomerSessionRiskChallengeState = "not_started" | "pending" | "expired";
+
+type CustomerSessionRiskProjection = {
+  id: string;
+  clientPlatform: "web" | "mobile" | "unknown";
+  trusted: boolean;
+  challengeState: CustomerSessionRiskChallengeState;
+  trustChallengeSentAt: string | null;
+  trustChallengeExpiresAt: string | null;
+  userAgent: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  revokedAt: string | null;
+  customer: {
+    customerId: string;
+    customerAccountId: string | null;
+    accountStatus: AccountLifecycleStatus | null;
+    supabaseUserId: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+  };
+};
+
+type ListCustomerSessionRisksResult = {
+  sessions: CustomerSessionRiskProjection[];
+  limit: number;
+  totalCount: number;
+  summary: {
+    byChallengeState: Array<{
+      challengeState: CustomerSessionRiskChallengeState;
+      count: number;
+    }>;
+    byPlatform: Array<{
+      clientPlatform: "web" | "mobile" | "unknown";
+      count: number;
+    }>;
+  };
+};
+
+type CustomerSessionRiskMutationResult = {
+  session: CustomerSessionRiskProjection;
+  stateReused: boolean;
+};
+
 type CustomerSecurityActivityProjection = {
   id: string;
   kind:
@@ -294,6 +340,42 @@ type CustomerAuthSessionRecord = Prisma.CustomerAuthSessionGetPayload<{
   };
 }>;
 
+type CustomerSessionRiskRecord = Prisma.CustomerAuthSessionGetPayload<{
+  select: {
+    id: true;
+    clientPlatform: true;
+    trustedAt: true;
+    trustChallengeCodeHash: true;
+    trustChallengeExpiresAt: true;
+    trustChallengeSentAt: true;
+    userAgent: true;
+    ipAddress: true;
+    createdAt: true;
+    lastSeenAt: true;
+    revokedAt: true;
+    customerId: true;
+    customer: {
+      select: {
+        id: true;
+        supabaseUserId: true;
+        email: true;
+        firstName: true;
+        lastName: true;
+        accounts: {
+          select: {
+            id: true;
+            status: true;
+          };
+          orderBy: {
+            createdAt: "asc";
+          };
+          take: 1;
+        };
+      };
+    };
+  };
+}>;
+
 type CustomerSecurityAuditEventRecord = Prisma.AuditEventGetPayload<{
   select: {
     id: true;
@@ -394,6 +476,8 @@ export class AuthService {
   private readonly challengeStartCooldownMs: number;
   private readonly recoveryRequestAllowedOperatorRoles: readonly string[];
   private readonly recoveryApproverAllowedOperatorRoles: readonly string[];
+  private readonly sessionRiskReadAllowedOperatorRoles: readonly string[];
+  private readonly sessionRiskRevokeAllowedOperatorRoles: readonly string[];
 
   constructor(
     private readonly prismaService: PrismaService,
@@ -414,6 +498,10 @@ export class AuthService {
       customerMfaPolicy.recoveryRequestAllowedOperatorRoles;
     this.recoveryApproverAllowedOperatorRoles =
       customerMfaPolicy.recoveryApproverAllowedOperatorRoles;
+    this.sessionRiskReadAllowedOperatorRoles =
+      customerMfaPolicy.sessionRiskReadAllowedOperatorRoles;
+    this.sessionRiskRevokeAllowedOperatorRoles =
+      customerMfaPolicy.sessionRiskRevokeAllowedOperatorRoles;
   }
 
   private buildCustomerMfaStatus(input: {
@@ -806,6 +894,55 @@ export class AuthService {
       ipAddress: session.ipAddress,
       createdAt: session.createdAt.toISOString(),
       lastSeenAt: session.lastSeenAt.toISOString(),
+    };
+  }
+
+  private resolveCustomerSessionRiskChallengeState(input: {
+    trustedAt?: Date | null;
+    trustChallengeCodeHash?: string | null;
+    trustChallengeExpiresAt?: Date | null;
+  }): CustomerSessionRiskChallengeState {
+    if (input.trustedAt || !input.trustChallengeCodeHash) {
+      return "not_started";
+    }
+
+    if (
+      input.trustChallengeExpiresAt &&
+      input.trustChallengeExpiresAt.getTime() > Date.now()
+    ) {
+      return "pending";
+    }
+
+    return "expired";
+  }
+
+  private mapCustomerSessionRisk(
+    session: CustomerSessionRiskRecord,
+  ): CustomerSessionRiskProjection {
+    const customerAccount = session.customer.accounts[0] ?? null;
+
+    return {
+      id: session.id,
+      clientPlatform: session.clientPlatform,
+      trusted: Boolean(session.trustedAt),
+      challengeState: this.resolveCustomerSessionRiskChallengeState(session),
+      trustChallengeSentAt: session.trustChallengeSentAt?.toISOString() ?? null,
+      trustChallengeExpiresAt:
+        session.trustChallengeExpiresAt?.toISOString() ?? null,
+      userAgent: session.userAgent,
+      ipAddress: session.ipAddress,
+      createdAt: session.createdAt.toISOString(),
+      lastSeenAt: session.lastSeenAt.toISOString(),
+      revokedAt: session.revokedAt?.toISOString() ?? null,
+      customer: {
+        customerId: session.customer.id,
+        customerAccountId: customerAccount?.id ?? null,
+        accountStatus: customerAccount?.status ?? null,
+        supabaseUserId: session.customer.supabaseUserId,
+        email: session.customer.email,
+        firstName: session.customer.firstName ?? "",
+        lastName: session.customer.lastName ?? "",
+      },
     };
   }
 
@@ -2939,6 +3076,319 @@ export class AuthService {
         revokedSessionId: targetSession.id,
         activeSessionCount,
       },
+    };
+  }
+
+  async listCustomerSessionRisks(
+    query: {
+      limit?: number;
+      clientPlatform?: "web" | "mobile" | "unknown";
+      challengeState?: CustomerSessionRiskChallengeState;
+    },
+    operatorRole?: string | null,
+  ): Promise<ListCustomerSessionRisksResult> {
+    assertOperatorRoleAuthorized(
+      operatorRole,
+      this.sessionRiskReadAllowedOperatorRoles,
+      "You are not authorized to view customer session risk.",
+    );
+
+    const now = new Date();
+    const limit = Math.min(query.limit ?? 25, 100);
+    const where: Prisma.CustomerAuthSessionWhereInput = {
+      revokedAt: null,
+      trustedAt: null,
+      ...(query.clientPlatform
+        ? { clientPlatform: query.clientPlatform }
+        : {}),
+    };
+
+    if (query.challengeState === "pending") {
+      where.trustChallengeCodeHash = {
+        not: null,
+      };
+      where.trustChallengeExpiresAt = {
+        gt: now,
+      };
+    } else if (query.challengeState === "expired") {
+      where.trustChallengeCodeHash = {
+        not: null,
+      };
+      where.trustChallengeExpiresAt = {
+        lte: now,
+      };
+    } else if (query.challengeState === "not_started") {
+      where.OR = [
+        {
+          trustChallengeCodeHash: null,
+        },
+        {
+          trustChallengeExpiresAt: null,
+        },
+      ];
+    }
+
+    const [sessions, totalCount, pendingCount, expiredCount, webCount, mobileCount, unknownCount] =
+      await Promise.all([
+        this.prismaService.customerAuthSession.findMany({
+          where,
+          select: {
+            id: true,
+            clientPlatform: true,
+            trustedAt: true,
+            trustChallengeCodeHash: true,
+            trustChallengeExpiresAt: true,
+            trustChallengeSentAt: true,
+            userAgent: true,
+            ipAddress: true,
+            createdAt: true,
+            lastSeenAt: true,
+            revokedAt: true,
+            customerId: true,
+            customer: {
+              select: {
+                id: true,
+                supabaseUserId: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                accounts: {
+                  select: {
+                    id: true,
+                    status: true,
+                  },
+                  orderBy: {
+                    createdAt: "asc",
+                  },
+                  take: 1,
+                },
+              },
+            },
+          },
+          orderBy: [{ lastSeenAt: "desc" }, { createdAt: "desc" }],
+          take: limit,
+        }),
+        this.prismaService.customerAuthSession.count({
+          where,
+        }),
+        this.prismaService.customerAuthSession.count({
+          where: {
+            ...where,
+            trustChallengeCodeHash: {
+              not: null,
+            },
+            trustChallengeExpiresAt: {
+              gt: now,
+            },
+          },
+        }),
+        this.prismaService.customerAuthSession.count({
+          where: {
+            ...where,
+            trustChallengeCodeHash: {
+              not: null,
+            },
+            trustChallengeExpiresAt: {
+              lte: now,
+            },
+          },
+        }),
+        this.prismaService.customerAuthSession.count({
+          where: {
+            ...where,
+            clientPlatform: CustomerAuthSessionPlatform.web,
+          },
+        }),
+        this.prismaService.customerAuthSession.count({
+          where: {
+            ...where,
+            clientPlatform: CustomerAuthSessionPlatform.mobile,
+          },
+        }),
+        this.prismaService.customerAuthSession.count({
+          where: {
+            ...where,
+            clientPlatform: CustomerAuthSessionPlatform.unknown,
+          },
+        }),
+      ]);
+
+    return {
+      sessions: sessions.map((session) => this.mapCustomerSessionRisk(session)),
+      limit,
+      totalCount,
+      summary: {
+        byChallengeState: [
+          {
+            challengeState: "pending",
+            count: pendingCount,
+          },
+          {
+            challengeState: "expired",
+            count: expiredCount,
+          },
+          {
+            challengeState: "not_started",
+            count: Math.max(totalCount - pendingCount - expiredCount, 0),
+          },
+        ],
+        byPlatform: [
+          {
+            clientPlatform: "web",
+            count: webCount,
+          },
+          {
+            clientPlatform: "mobile",
+            count: mobileCount,
+          },
+          {
+            clientPlatform: "unknown",
+            count: unknownCount,
+          },
+        ],
+      },
+    };
+  }
+
+  async revokeCustomerSessionRisk(
+    sessionId: string,
+    operatorId: string,
+    operatorRole?: string | null,
+    note?: string | null,
+  ): Promise<CustomerSessionRiskMutationResult> {
+    const normalizedOperatorRole = assertOperatorRoleAuthorized(
+      operatorRole,
+      this.sessionRiskRevokeAllowedOperatorRoles,
+      "You are not authorized to revoke risky customer sessions.",
+    );
+
+    const targetSession = await this.prismaService.customerAuthSession.findUnique({
+      where: { id: sessionId },
+      select: {
+        id: true,
+        clientPlatform: true,
+        trustedAt: true,
+        trustChallengeCodeHash: true,
+        trustChallengeExpiresAt: true,
+        trustChallengeSentAt: true,
+        userAgent: true,
+        ipAddress: true,
+        createdAt: true,
+        lastSeenAt: true,
+        revokedAt: true,
+        customerId: true,
+        customer: {
+          select: {
+            id: true,
+            supabaseUserId: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            accounts: {
+              select: {
+                id: true,
+                status: true,
+              },
+              orderBy: {
+                createdAt: "asc",
+              },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+
+    if (!targetSession) {
+      throw new NotFoundException("Customer risky session was not found.");
+    }
+
+    if (targetSession.trustedAt) {
+      throw new BadRequestException(
+        "Only active untrusted sessions can be revoked from the session risk queue.",
+      );
+    }
+
+    if (targetSession.revokedAt) {
+      return {
+        session: this.mapCustomerSessionRisk(targetSession),
+        stateReused: true,
+      };
+    }
+
+    const revokedAt = new Date();
+    const normalizedNote = this.normalizeOptionalText(note);
+
+    const updatedSession = await this.prismaService.$transaction(
+      async (transaction) => {
+        const session = await transaction.customerAuthSession.update({
+          where: { id: sessionId },
+          data: {
+            revokedAt,
+            revokedReason: CustomerAuthSessionRevocationReason.session_revoked,
+          },
+          select: {
+            id: true,
+            clientPlatform: true,
+            trustedAt: true,
+            trustChallengeCodeHash: true,
+            trustChallengeExpiresAt: true,
+            trustChallengeSentAt: true,
+            userAgent: true,
+            ipAddress: true,
+            createdAt: true,
+            lastSeenAt: true,
+            revokedAt: true,
+            customerId: true,
+            customer: {
+              select: {
+                id: true,
+                supabaseUserId: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                accounts: {
+                  select: {
+                    id: true,
+                    status: true,
+                  },
+                  orderBy: {
+                    createdAt: "asc",
+                  },
+                  take: 1,
+                },
+              },
+            },
+          },
+        });
+
+        await transaction.auditEvent.create({
+          data: {
+            customerId: targetSession.customerId,
+            actorType: "operator",
+            actorId: operatorId,
+            action: "customer_account.session_revoked",
+            targetType: "CustomerAuthSession",
+            targetId: session.id,
+            metadata: {
+              revokedSessionId: session.id,
+              operatorAction: "customer_session_risk_revoke",
+              operatorRole: normalizedOperatorRole,
+              clientPlatform: session.clientPlatform,
+              ipAddress: session.ipAddress,
+              userAgent: session.userAgent,
+              note: normalizedNote,
+            } as PrismaJsonValue,
+          },
+        });
+
+        return session;
+      },
+    );
+
+    return {
+      session: this.mapCustomerSessionRisk(updatedSession),
+      stateReused: false,
     };
   }
 
