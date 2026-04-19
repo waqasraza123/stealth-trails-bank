@@ -120,6 +120,10 @@ function createApprovalRequest(
     approvedByOperatorRole: string | null;
     approvalNote: string | null;
     approvedAt: Date | null;
+    rejectedByOperatorId: string | null;
+    rejectedByOperatorRole: string | null;
+    rejectionNote: string | null;
+    rejectedAt: Date | null;
     executedByOperatorId: string | null;
     executedByOperatorRole: string | null;
     executedAt: Date | null;
@@ -146,6 +150,10 @@ function createApprovalRequest(
     approvedByOperatorRole: overrides.approvedByOperatorRole ?? null,
     approvalNote: overrides.approvalNote ?? null,
     approvedAt: overrides.approvedAt ?? null,
+    rejectedByOperatorId: overrides.rejectedByOperatorId ?? null,
+    rejectedByOperatorRole: overrides.rejectedByOperatorRole ?? null,
+    rejectionNote: overrides.rejectionNote ?? null,
+    rejectedAt: overrides.rejectedAt ?? null,
     executedByOperatorId: overrides.executedByOperatorId ?? null,
     executedByOperatorRole: overrides.executedByOperatorRole ?? null,
     executedAt: overrides.executedAt ?? null,
@@ -317,6 +325,84 @@ describe("WithdrawalSettlementReconciliationService", () => {
     );
   });
 
+  it("approves a pending withdrawal replay approval request", async () => {
+    const record = buildRecord({
+      status: TransactionIntentStatus.broadcast,
+      blockchainStatus: BlockchainTransactionStatus.confirmed,
+      hasLedgerJournal: false
+    });
+
+    const { service, prismaService, prismaTransaction } = createService([record]);
+
+    prismaService.withdrawalSettlementReplayApprovalRequest.findUnique.mockResolvedValue(
+      createApprovalRequest({
+        replayAction: WithdrawalSettlementReplayAction.confirm
+      })
+    );
+    prismaTransaction.withdrawalSettlementReplayApprovalRequest.update.mockResolvedValue(
+      createApprovalRequest({
+        replayAction: WithdrawalSettlementReplayAction.confirm,
+        status: WithdrawalSettlementReplayApprovalRequestStatus.approved,
+        approvedByOperatorId: "ops_approver",
+        approvedByOperatorRole: "operations_admin",
+        approvalNote: "Approved from queue.",
+        approvedAt: new Date("2026-04-01T11:05:00.000Z")
+      })
+    );
+    prismaTransaction.auditEvent.create.mockResolvedValue({ id: "audit_1" });
+
+    const result = await service.approveReplayApprovalRequest(
+      "approval_1",
+      "ops_approver",
+      "operations_admin",
+      "Approved from queue."
+    );
+
+    expect(result.stateReused).toBe(false);
+    expect(result.request.status).toBe(
+      WithdrawalSettlementReplayApprovalRequestStatus.approved
+    );
+  });
+
+  it("rejects a pending withdrawal replay approval request with audit evidence", async () => {
+    const record = buildRecord({
+      status: TransactionIntentStatus.broadcast,
+      blockchainStatus: BlockchainTransactionStatus.confirmed,
+      hasLedgerJournal: false
+    });
+
+    const { service, prismaService, prismaTransaction } = createService([record]);
+
+    prismaService.withdrawalSettlementReplayApprovalRequest.findUnique.mockResolvedValue(
+      createApprovalRequest({
+        replayAction: WithdrawalSettlementReplayAction.confirm
+      })
+    );
+    prismaTransaction.withdrawalSettlementReplayApprovalRequest.update.mockResolvedValue(
+      createApprovalRequest({
+        replayAction: WithdrawalSettlementReplayAction.confirm,
+        status: WithdrawalSettlementReplayApprovalRequestStatus.rejected,
+        rejectedByOperatorId: "ops_reviewer",
+        rejectedByOperatorRole: "operations_admin",
+        rejectionNote: "Rejected from queue.",
+        rejectedAt: new Date("2026-04-01T11:05:00.000Z")
+      })
+    );
+    prismaTransaction.auditEvent.create.mockResolvedValue({ id: "audit_1" });
+
+    const result = await service.rejectReplayApprovalRequest(
+      "approval_1",
+      "ops_reviewer",
+      "operations_admin",
+      "Rejected from queue."
+    );
+
+    expect(result.stateReused).toBe(false);
+    expect(result.request.status).toBe(
+      WithdrawalSettlementReplayApprovalRequestStatus.rejected
+    );
+  });
+
   it("replays confirm only with a governed approval request from a different operator", async () => {
     const record = buildRecord({
       status: TransactionIntentStatus.broadcast,
@@ -330,7 +416,12 @@ describe("WithdrawalSettlementReconciliationService", () => {
     prismaService.withdrawalSettlementReplayApprovalRequest.findUnique
       .mockResolvedValueOnce(
         createApprovalRequest({
-          replayAction: WithdrawalSettlementReplayAction.confirm
+          replayAction: WithdrawalSettlementReplayAction.confirm,
+          status: WithdrawalSettlementReplayApprovalRequestStatus.approved,
+          approvedByOperatorId: "ops_approver",
+          approvedByOperatorRole: "operations_admin",
+          approvedAt: new Date("2026-04-01T11:05:00.000Z"),
+          approvalNote: "Approved replay."
         })
       )
       .mockResolvedValueOnce(
@@ -346,16 +437,6 @@ describe("WithdrawalSettlementReconciliationService", () => {
           executedAt: new Date("2026-04-01T11:06:00.000Z")
         })
       );
-    prismaService.withdrawalSettlementReplayApprovalRequest.update.mockResolvedValue(
-      createApprovalRequest({
-        replayAction: WithdrawalSettlementReplayAction.confirm,
-        status: WithdrawalSettlementReplayApprovalRequestStatus.approved,
-        approvedByOperatorId: "ops_approver",
-        approvedByOperatorRole: "operations_admin",
-        approvedAt: new Date("2026-04-01T11:05:00.000Z"),
-        approvalNote: "Approved replay."
-      })
-    );
     withdrawalIntentsService.replayConfirmWithdrawalIntent.mockResolvedValue({
       confirmReused: false
     });
@@ -432,6 +513,7 @@ describe("WithdrawalSettlementReconciliationService", () => {
     prismaService.withdrawalSettlementReplayApprovalRequest.findUnique.mockResolvedValue(
       createApprovalRequest({
         replayAction: WithdrawalSettlementReplayAction.confirm,
+        status: WithdrawalSettlementReplayApprovalRequestStatus.approved,
         requestedByOperatorId: "ops_1"
       })
     );
@@ -441,5 +523,28 @@ describe("WithdrawalSettlementReconciliationService", () => {
         approvalRequestId: "approval_1"
       })
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("blocks executing a withdrawal replay before approval is granted", async () => {
+    const record = buildRecord({
+      status: TransactionIntentStatus.broadcast,
+      blockchainStatus: BlockchainTransactionStatus.confirmed,
+      hasLedgerJournal: false
+    });
+
+    const { service, prismaService } = createService([record]);
+
+    prismaService.withdrawalSettlementReplayApprovalRequest.findUnique.mockResolvedValue(
+      createApprovalRequest({
+        replayAction: WithdrawalSettlementReplayAction.confirm,
+        status: WithdrawalSettlementReplayApprovalRequestStatus.pending_approval
+      })
+    );
+
+    await expect(
+      service.replayConfirm("intent_1", "ops_2", "operations_admin", {
+        approvalRequestId: "approval_1"
+      })
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

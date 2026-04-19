@@ -134,10 +134,18 @@ function createService() {
     replaySettleConfirmedWithdrawalIntent: jest.fn()
   } as unknown as WithdrawalIntentsService;
   const depositSettlementReconciliationService = {
-    requestReplayApproval: jest.fn()
+    requestReplayApproval: jest.fn(),
+    listReplayApprovalRequests: jest.fn(),
+    approveReplayApprovalRequest: jest.fn(),
+    rejectReplayApprovalRequest: jest.fn(),
+    executeReplayApprovalRequest: jest.fn()
   } as unknown as DepositSettlementReconciliationService;
   const withdrawalSettlementReconciliationService = {
-    requestReplayApproval: jest.fn()
+    requestReplayApproval: jest.fn(),
+    listReplayApprovalRequests: jest.fn(),
+    approveReplayApprovalRequest: jest.fn(),
+    rejectReplayApprovalRequest: jest.fn(),
+    executeReplayApprovalRequest: jest.fn()
   } as unknown as WithdrawalSettlementReconciliationService;
   const reviewCasesService = {
     openOrReuseReviewCase: jest.fn()
@@ -418,6 +426,256 @@ describe("LedgerReconciliationService", () => {
         intentType: TransactionIntentType.deposit
       })
     ]);
+  });
+
+  it("aggregates replay approvals across deposit and withdrawal queues", async () => {
+    const {
+      service,
+      depositSettlementReconciliationService,
+      withdrawalSettlementReconciliationService
+    } = createService();
+
+    (
+      depositSettlementReconciliationService.listReplayApprovalRequests as jest.Mock
+    ).mockResolvedValue({
+      requests: [
+        {
+          request: {
+            id: "approval_deposit",
+            transactionIntentId: "intent_deposit",
+            chainId: 8453,
+            replayAction: "confirm",
+            status: "pending_approval",
+            requestedByOperatorId: "ops_1",
+            requestedByOperatorRole: "operations_admin",
+            requestNote: null,
+            requestedAt: "2026-04-06T01:00:00.000Z",
+            approvedByOperatorId: null,
+            approvedByOperatorRole: null,
+            approvalNote: null,
+            approvedAt: null,
+            rejectedByOperatorId: null,
+            rejectedByOperatorRole: null,
+            rejectionNote: null,
+            rejectedAt: null,
+            executedByOperatorId: null,
+            executedByOperatorRole: null,
+            executedAt: null
+          },
+          intent: {
+            id: "intent_deposit",
+            customerAccountId: "account_1",
+            chainId: 8453,
+            status: "broadcast",
+            requestedAmount: "5.00",
+            settledAmount: null,
+            createdAt: "2026-04-06T00:00:00.000Z",
+            updatedAt: "2026-04-06T00:05:00.000Z",
+            customer: {
+              customerId: "customer_1",
+              customerAccountId: "account_1",
+              supabaseUserId: "supabase_1",
+              email: "deposit@example.com",
+              firstName: "A",
+              lastName: "B"
+            },
+            asset: {
+              id: "asset_1",
+              symbol: "ETH",
+              displayName: "Ether",
+              decimals: 18,
+              chainId: 8453
+            }
+          }
+        }
+      ],
+      limit: 25,
+      totalCount: 1,
+      summary: {
+        byStatus: [
+          {
+            status: "pending_approval",
+            count: 1
+          }
+        ]
+      }
+    });
+    (
+      withdrawalSettlementReconciliationService.listReplayApprovalRequests as jest.Mock
+    ).mockResolvedValue({
+      requests: [
+        {
+          request: {
+            id: "approval_withdrawal",
+            transactionIntentId: "intent_withdrawal",
+            chainId: 8453,
+            replayAction: "settle",
+            status: "approved",
+            requestedByOperatorId: "ops_2",
+            requestedByOperatorRole: "operations_admin",
+            requestNote: null,
+            requestedAt: "2026-04-06T02:00:00.000Z",
+            approvedByOperatorId: "ops_3",
+            approvedByOperatorRole: "operations_admin",
+            approvalNote: "Approved.",
+            approvedAt: "2026-04-06T02:05:00.000Z",
+            rejectedByOperatorId: null,
+            rejectedByOperatorRole: null,
+            rejectionNote: null,
+            rejectedAt: null,
+            executedByOperatorId: null,
+            executedByOperatorRole: null,
+            executedAt: null
+          },
+          intent: {
+            id: "intent_withdrawal",
+            customerAccountId: "account_2",
+            chainId: 8453,
+            status: "confirmed",
+            requestedAmount: "7.00",
+            settledAmount: null,
+            createdAt: "2026-04-06T00:00:00.000Z",
+            updatedAt: "2026-04-06T00:05:00.000Z",
+            customer: {
+              customerId: "customer_2",
+              customerAccountId: "account_2",
+              supabaseUserId: "supabase_2",
+              email: "withdrawal@example.com",
+              firstName: "C",
+              lastName: "D"
+            },
+            asset: {
+              id: "asset_1",
+              symbol: "ETH",
+              displayName: "Ether",
+              decimals: 18,
+              chainId: 8453
+            }
+          }
+        }
+      ],
+      limit: 25,
+      totalCount: 1,
+      summary: {
+        byStatus: [
+          {
+            status: "approved",
+            count: 1
+          }
+        ]
+      }
+    });
+
+    const result = await service.listReplayApprovals({
+      limit: 25
+    });
+
+    expect(result.totalCount).toBe(2);
+    expect(result.requests[0]?.request.id).toBe("approval_withdrawal");
+    expect(result.requests[0]?.request.intentType).toBe(
+      TransactionIntentType.withdrawal
+    );
+  });
+
+  it("routes replay approval decisions through withdrawal governance controls", async () => {
+    const { service, withdrawalSettlementReconciliationService } = createService();
+
+    (
+      withdrawalSettlementReconciliationService.approveReplayApprovalRequest as jest.Mock
+    ).mockResolvedValue({
+      request: {
+        id: "approval_1",
+        transactionIntentId: "intent_1",
+        chainId: 8453,
+        replayAction: "confirm",
+        status: "approved",
+        requestedByOperatorId: "ops_requester",
+        requestedByOperatorRole: "operations_admin",
+        requestNote: null,
+        requestedAt: "2026-04-06T01:00:00.000Z",
+        approvedByOperatorId: "ops_2",
+        approvedByOperatorRole: "operations_admin",
+        approvalNote: "Approved.",
+        approvedAt: "2026-04-06T01:05:00.000Z",
+        rejectedByOperatorId: null,
+        rejectedByOperatorRole: null,
+        rejectionNote: null,
+        rejectedAt: null,
+        executedByOperatorId: null,
+        executedByOperatorRole: null,
+        executedAt: null
+      },
+      stateReused: false
+    });
+
+    const result = await service.reviewReplayApproval(
+      "approval_1",
+      "ops_2",
+      "operations_admin",
+      {
+        intentType: "withdrawal",
+        decision: "approve",
+        note: "Approved."
+      }
+    );
+
+    expect(
+      withdrawalSettlementReconciliationService.approveReplayApprovalRequest
+    ).toHaveBeenCalledWith(
+      "approval_1",
+      "ops_2",
+      "operations_admin",
+      "Approved."
+    );
+    expect(result.request.intentType).toBe(TransactionIntentType.withdrawal);
+  });
+
+  it("routes replay approval execution through deposit governance controls", async () => {
+    const { service, depositSettlementReconciliationService } = createService();
+
+    (
+      depositSettlementReconciliationService.executeReplayApprovalRequest as jest.Mock
+    ).mockResolvedValue({
+      confirmReused: false,
+      approvalRequest: {
+        id: "approval_1",
+        transactionIntentId: "intent_1",
+        chainId: 8453,
+        replayAction: "confirm",
+        status: "executed",
+        requestedByOperatorId: "ops_requester",
+        requestedByOperatorRole: "operations_admin",
+        requestNote: null,
+        requestedAt: "2026-04-06T01:00:00.000Z",
+        approvedByOperatorId: "ops_2",
+        approvedByOperatorRole: "operations_admin",
+        approvalNote: "Approved.",
+        approvedAt: "2026-04-06T01:05:00.000Z",
+        rejectedByOperatorId: null,
+        rejectedByOperatorRole: null,
+        rejectionNote: null,
+        rejectedAt: null,
+        executedByOperatorId: "ops_2",
+        executedByOperatorRole: "operations_admin",
+        executedAt: "2026-04-06T01:06:00.000Z"
+      }
+    });
+
+    const result = await service.executeReplayApproval(
+      "approval_1",
+      "ops_2",
+      "operations_admin",
+      {
+        intentType: "deposit",
+        note: "Execute."
+      }
+    );
+
+    expect(
+      depositSettlementReconciliationService.executeReplayApprovalRequest
+    ).toHaveBeenCalledWith("approval_1", "ops_2", "operations_admin", "Execute.");
+    expect(result.request.intentType).toBe(TransactionIntentType.deposit);
+    expect(result.executionReused).toBe(false);
   });
 
   it("repairs a customer balance mismatch and verifies that the scan resolves it", async () => {

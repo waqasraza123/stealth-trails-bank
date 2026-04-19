@@ -1727,7 +1727,7 @@ export type LedgerReconciliationReplayApprovalRequest = {
   chainId: number;
   intentType: "deposit" | "withdrawal";
   replayAction: "confirm" | "settle";
-  status: "pending_approval" | "approved" | "executed";
+  status: "pending_approval" | "approved" | "executed" | "rejected";
   requestedByOperatorId: string;
   requestedByOperatorRole: string | null;
   requestNote: string | null;
@@ -1736,9 +1736,58 @@ export type LedgerReconciliationReplayApprovalRequest = {
   approvedByOperatorRole: string | null;
   approvalNote: string | null;
   approvedAt: string | null;
+  rejectedByOperatorId: string | null;
+  rejectedByOperatorRole: string | null;
+  rejectionNote: string | null;
+  rejectedAt: string | null;
   executedByOperatorId: string | null;
   executedByOperatorRole: string | null;
   executedAt: string | null;
+};
+
+export type LedgerReplayApprovalQueueItem = {
+  request: LedgerReconciliationReplayApprovalRequest;
+  intent: {
+    id: string;
+    customerAccountId: string | null;
+    chainId: number;
+    status: string;
+    requestedAmount: string;
+    settledAmount: string | null;
+    createdAt: string;
+    updatedAt: string;
+    customer: {
+      customerId: string;
+      customerAccountId: string;
+      supabaseUserId: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+    };
+    asset: {
+      id: string;
+      symbol: string;
+      displayName: string;
+      decimals: number;
+      chainId: number;
+    };
+  };
+};
+
+export type LedgerReplayApprovalQueue = {
+  requests: LedgerReplayApprovalQueueItem[];
+  limit: number;
+  totalCount: number;
+  summary: {
+    byStatus: Array<{
+      status: LedgerReconciliationReplayApprovalRequest["status"];
+      count: number;
+    }>;
+    byIntentType: Array<{
+      intentType: "deposit" | "withdrawal";
+      count: number;
+    }>;
+  };
 };
 
 export type LedgerReconciliationReplayApprovalMutationResult =
@@ -1746,6 +1795,16 @@ export type LedgerReconciliationReplayApprovalMutationResult =
     request: LedgerReconciliationReplayApprovalRequest;
     stateReused: boolean;
   };
+
+export type LedgerReplayApprovalDecisionResult = {
+  request: LedgerReconciliationReplayApprovalRequest;
+  stateReused: boolean;
+};
+
+export type LedgerReplayApprovalExecutionResult = {
+  request: LedgerReconciliationReplayApprovalRequest;
+  executionReused: boolean;
+};
 
 export type CustomerBalance = {
   asset: {

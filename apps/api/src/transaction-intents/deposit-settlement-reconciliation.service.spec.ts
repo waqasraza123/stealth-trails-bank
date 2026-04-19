@@ -126,6 +126,10 @@ function createApprovalRequest(
     approvedByOperatorRole: string | null;
     approvalNote: string | null;
     approvedAt: Date | null;
+    rejectedByOperatorId: string | null;
+    rejectedByOperatorRole: string | null;
+    rejectionNote: string | null;
+    rejectedAt: Date | null;
     executedByOperatorId: string | null;
     executedByOperatorRole: string | null;
     executedAt: Date | null;
@@ -152,6 +156,10 @@ function createApprovalRequest(
     approvedByOperatorRole: overrides.approvedByOperatorRole ?? null,
     approvalNote: overrides.approvalNote ?? null,
     approvedAt: overrides.approvedAt ?? null,
+    rejectedByOperatorId: overrides.rejectedByOperatorId ?? null,
+    rejectedByOperatorRole: overrides.rejectedByOperatorRole ?? null,
+    rejectionNote: overrides.rejectionNote ?? null,
+    rejectedAt: overrides.rejectedAt ?? null,
     executedByOperatorId: overrides.executedByOperatorId ?? null,
     executedByOperatorRole: overrides.executedByOperatorRole ?? null,
     executedAt: overrides.executedAt ?? null,
@@ -343,6 +351,72 @@ describe("DepositSettlementReconciliationService", () => {
     );
   });
 
+  it("approves a pending deposit replay approval request", async () => {
+    const { service, prismaService, prismaTransaction } = createService();
+
+    prismaService.depositSettlementReplayApprovalRequest.findUnique.mockResolvedValue(
+      createApprovalRequest({
+        replayAction: DepositSettlementReplayAction.confirm
+      })
+    );
+    prismaTransaction.depositSettlementReplayApprovalRequest.update.mockResolvedValue(
+      createApprovalRequest({
+        replayAction: DepositSettlementReplayAction.confirm,
+        status: DepositSettlementReplayApprovalRequestStatus.approved,
+        approvedByOperatorId: "ops_approver",
+        approvedByOperatorRole: "operations_admin",
+        approvalNote: "Approved from queue.",
+        approvedAt: new Date("2026-04-01T11:05:00.000Z")
+      })
+    );
+    prismaTransaction.auditEvent.create.mockResolvedValue({ id: "audit_1" });
+
+    const result = await service.approveReplayApprovalRequest(
+      "approval_1",
+      "ops_approver",
+      "operations_admin",
+      "Approved from queue."
+    );
+
+    expect(result.stateReused).toBe(false);
+    expect(result.request.status).toBe(
+      DepositSettlementReplayApprovalRequestStatus.approved
+    );
+  });
+
+  it("rejects a pending deposit replay approval request with audit evidence", async () => {
+    const { service, prismaService, prismaTransaction } = createService();
+
+    prismaService.depositSettlementReplayApprovalRequest.findUnique.mockResolvedValue(
+      createApprovalRequest({
+        replayAction: DepositSettlementReplayAction.confirm
+      })
+    );
+    prismaTransaction.depositSettlementReplayApprovalRequest.update.mockResolvedValue(
+      createApprovalRequest({
+        replayAction: DepositSettlementReplayAction.confirm,
+        status: DepositSettlementReplayApprovalRequestStatus.rejected,
+        rejectedByOperatorId: "ops_reviewer",
+        rejectedByOperatorRole: "operations_admin",
+        rejectionNote: "Rejected from queue.",
+        rejectedAt: new Date("2026-04-01T11:05:00.000Z")
+      })
+    );
+    prismaTransaction.auditEvent.create.mockResolvedValue({ id: "audit_1" });
+
+    const result = await service.rejectReplayApprovalRequest(
+      "approval_1",
+      "ops_reviewer",
+      "operations_admin",
+      "Rejected from queue."
+    );
+
+    expect(result.stateReused).toBe(false);
+    expect(result.request.status).toBe(
+      DepositSettlementReplayApprovalRequestStatus.rejected
+    );
+  });
+
   it("replays confirm only with a governed approval request from a different operator", async () => {
     const { service, prismaService, transactionIntentsService, prismaTransaction } =
       createService();
@@ -359,7 +433,12 @@ describe("DepositSettlementReconciliationService", () => {
     prismaService.depositSettlementReplayApprovalRequest.findUnique
       .mockResolvedValueOnce(
         createApprovalRequest({
-          replayAction: DepositSettlementReplayAction.confirm
+          replayAction: DepositSettlementReplayAction.confirm,
+          status: DepositSettlementReplayApprovalRequestStatus.approved,
+          approvedByOperatorId: "ops_approver",
+          approvedByOperatorRole: "operations_admin",
+          approvedAt: new Date("2026-04-01T11:05:00.000Z"),
+          approvalNote: "Approved replay."
         })
       )
       .mockResolvedValueOnce(
@@ -375,16 +454,6 @@ describe("DepositSettlementReconciliationService", () => {
           executedAt: new Date("2026-04-01T11:05:00.000Z")
         })
       );
-    prismaService.depositSettlementReplayApprovalRequest.update.mockResolvedValue(
-      createApprovalRequest({
-        replayAction: DepositSettlementReplayAction.confirm,
-        status: DepositSettlementReplayApprovalRequestStatus.approved,
-        approvedByOperatorId: "ops_approver",
-        approvedByOperatorRole: "operations_admin",
-        approvedAt: new Date("2026-04-01T11:05:00.000Z"),
-        approvalNote: "Approved replay."
-      })
-    );
     transactionIntentsService.replayConfirmDepositIntent.mockResolvedValue({
       confirmReused: false
     });
@@ -471,6 +540,7 @@ describe("DepositSettlementReconciliationService", () => {
     prismaService.depositSettlementReplayApprovalRequest.findUnique.mockResolvedValue(
       createApprovalRequest({
         replayAction: DepositSettlementReplayAction.confirm,
+        status: DepositSettlementReplayApprovalRequestStatus.approved,
         requestedByOperatorId: "ops_1"
       })
     );
@@ -480,6 +550,32 @@ describe("DepositSettlementReconciliationService", () => {
         approvalRequestId: "approval_1"
       })
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("blocks executing a deposit replay before approval is granted", async () => {
+    const { service, prismaService } = createService();
+
+    prismaService.transactionIntent.findFirst.mockResolvedValue(
+      createRecord({
+        status: TransactionIntentStatus.broadcast,
+        blockchainStatus: BlockchainTransactionStatus.confirmed,
+        hasLedgerJournal: false,
+        hasSettlementProof: false,
+        settledAmount: null
+      })
+    );
+    prismaService.depositSettlementReplayApprovalRequest.findUnique.mockResolvedValue(
+      createApprovalRequest({
+        replayAction: DepositSettlementReplayAction.confirm,
+        status: DepositSettlementReplayApprovalRequestStatus.pending_approval
+      })
+    );
+
+    await expect(
+      service.replayConfirm("intent_1", "ops_2", "operations_admin", {
+        approvalRequestId: "approval_1"
+      })
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it("flags settled deposits with missing proof anchors as manual-review-required", async () => {

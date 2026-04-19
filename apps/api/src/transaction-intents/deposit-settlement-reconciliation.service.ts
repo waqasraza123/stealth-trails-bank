@@ -204,6 +204,10 @@ type DepositSettlementReplayApprovalRequestProjection = {
   approvedByOperatorRole: string | null;
   approvalNote: string | null;
   approvedAt: string | null;
+  rejectedByOperatorId: string | null;
+  rejectedByOperatorRole: string | null;
+  rejectionNote: string | null;
+  rejectedAt: string | null;
   executedByOperatorId: string | null;
   executedByOperatorRole: string | null;
   executedAt: string | null;
@@ -213,6 +217,88 @@ type DepositSettlementReplayApprovalRequestMutationResult = {
   request: DepositSettlementReplayApprovalRequestProjection;
   stateReused: boolean;
 };
+
+type ListDepositSettlementReplayApprovalRequestsResult = {
+  requests: DepositSettlementReplayApprovalQueueItem[];
+  limit: number;
+  totalCount: number;
+  summary: {
+    byStatus: Array<{
+      status: DepositSettlementReplayApprovalRequestStatus;
+      count: number;
+    }>;
+  };
+};
+
+type DepositSettlementReplayApprovalQueueItem = {
+  request: DepositSettlementReplayApprovalRequestProjection;
+  intent: {
+    id: string;
+    customerAccountId: string | null;
+    chainId: number;
+    status: TransactionIntentStatus;
+    requestedAmount: string;
+    settledAmount: string | null;
+    createdAt: string;
+    updatedAt: string;
+    customer: {
+      customerId: string;
+      customerAccountId: string;
+      supabaseUserId: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+    };
+    asset: {
+      id: string;
+      symbol: string;
+      displayName: string;
+      decimals: number;
+      chainId: number;
+    };
+  };
+};
+
+type DepositSettlementReplayApprovalQueueRecord =
+  Prisma.DepositSettlementReplayApprovalRequestGetPayload<{
+    include: {
+      transactionIntent: {
+        select: {
+          id: true;
+          customerAccountId: true;
+          chainId: true;
+          status: true;
+          requestedAmount: true;
+          settledAmount: true;
+          createdAt: true;
+          updatedAt: true;
+          asset: {
+            select: {
+              id: true;
+              symbol: true;
+              displayName: true;
+              decimals: true;
+              chainId: true;
+            };
+          };
+          customerAccount: {
+            select: {
+              id: true;
+              customer: {
+                select: {
+                  id: true;
+                  supabaseUserId: true;
+                  email: true;
+                  firstName: true;
+                  lastName: true;
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+  }>;
 
 @Injectable()
 export class DepositSettlementReconciliationService {
@@ -266,9 +352,54 @@ export class DepositSettlementReconciliationService {
       approvedByOperatorRole: request.approvedByOperatorRole ?? null,
       approvalNote: request.approvalNote ?? null,
       approvedAt: request.approvedAt?.toISOString() ?? null,
+      rejectedByOperatorId: request.rejectedByOperatorId ?? null,
+      rejectedByOperatorRole: request.rejectedByOperatorRole ?? null,
+      rejectionNote: request.rejectionNote ?? null,
+      rejectedAt: request.rejectedAt?.toISOString() ?? null,
       executedByOperatorId: request.executedByOperatorId ?? null,
       executedByOperatorRole: request.executedByOperatorRole ?? null,
       executedAt: request.executedAt?.toISOString() ?? null
+    };
+  }
+
+  private mapReplayApprovalQueueItem(
+    request: DepositSettlementReplayApprovalQueueRecord
+  ): DepositSettlementReplayApprovalQueueItem {
+    if (!request.transactionIntent.customerAccount) {
+      throw new NotFoundException("Customer account projection not found.");
+    }
+
+    return {
+      request: this.mapReplayApprovalRequest(request),
+      intent: {
+        id: request.transactionIntent.id,
+        customerAccountId: request.transactionIntent.customerAccountId,
+        chainId: request.transactionIntent.chainId,
+        status: request.transactionIntent.status,
+        requestedAmount: request.transactionIntent.requestedAmount.toString(),
+        settledAmount:
+          request.transactionIntent.settledAmount?.toString() ?? null,
+        createdAt: request.transactionIntent.createdAt.toISOString(),
+        updatedAt: request.transactionIntent.updatedAt.toISOString(),
+        customer: {
+          customerId: request.transactionIntent.customerAccount.customer.id,
+          customerAccountId: request.transactionIntent.customerAccount.id,
+          supabaseUserId:
+            request.transactionIntent.customerAccount.customer.supabaseUserId,
+          email: request.transactionIntent.customerAccount.customer.email,
+          firstName:
+            request.transactionIntent.customerAccount.customer.firstName ?? "",
+          lastName:
+            request.transactionIntent.customerAccount.customer.lastName ?? ""
+        },
+        asset: {
+          id: request.transactionIntent.asset.id,
+          symbol: request.transactionIntent.asset.symbol,
+          displayName: request.transactionIntent.asset.displayName,
+          decimals: request.transactionIntent.asset.decimals,
+          chainId: request.transactionIntent.asset.chainId
+        }
+      }
     };
   }
 
@@ -595,6 +726,317 @@ export class DepositSettlementReconciliationService {
     };
   }
 
+  async listReplayApprovalRequests(query: {
+    limit?: number;
+    status?: DepositSettlementReplayApprovalRequestStatus;
+  }): Promise<ListDepositSettlementReplayApprovalRequestsResult> {
+    const limit = query.limit ?? 25;
+    const where: Prisma.DepositSettlementReplayApprovalRequestWhereInput = {
+      ...(query.status ? { status: query.status } : {})
+    };
+
+    const [requests, totalCount, byStatus] = await Promise.all([
+      this.prismaService.depositSettlementReplayApprovalRequest.findMany({
+        where,
+        orderBy: {
+          requestedAt: "desc"
+        },
+        take: limit,
+        include: {
+          transactionIntent: {
+            select: {
+              id: true,
+              customerAccountId: true,
+              chainId: true,
+              status: true,
+              requestedAmount: true,
+              settledAmount: true,
+              createdAt: true,
+              updatedAt: true,
+              asset: {
+                select: {
+                  id: true,
+                  symbol: true,
+                  displayName: true,
+                  decimals: true,
+                  chainId: true
+                }
+              },
+              customerAccount: {
+                select: {
+                  id: true,
+                  customer: {
+                    select: {
+                      id: true,
+                      supabaseUserId: true,
+                      email: true,
+                      firstName: true,
+                      lastName: true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }),
+      this.prismaService.depositSettlementReplayApprovalRequest.count({
+        where
+      }),
+      this.prismaService.depositSettlementReplayApprovalRequest.groupBy({
+        by: ["status"],
+        where,
+        _count: {
+          _all: true
+        }
+      })
+    ]);
+
+    return {
+      requests: requests.map((request) => this.mapReplayApprovalQueueItem(request)),
+      limit,
+      totalCount,
+      summary: {
+        byStatus: byStatus.map((entry) => ({
+          status: entry.status,
+          count: entry._count._all
+        }))
+      }
+    };
+  }
+
+  async approveReplayApprovalRequest(
+    requestId: string,
+    operatorId: string,
+    operatorRole: string | null,
+    note?: string | null
+  ): Promise<DepositSettlementReplayApprovalRequestMutationResult> {
+    const normalizedOperatorRole = this.assertCanOperateCustody(operatorRole);
+    const approvalRequest = await this.findReplayApprovalRequestById(requestId);
+
+    if (!approvalRequest) {
+      throw new NotFoundException("Deposit replay approval request was not found.");
+    }
+
+    if (
+      approvalRequest.status ===
+      DepositSettlementReplayApprovalRequestStatus.approved
+    ) {
+      return {
+        request: this.mapReplayApprovalRequest(approvalRequest),
+        stateReused: true
+      };
+    }
+
+    if (
+      approvalRequest.status !==
+      DepositSettlementReplayApprovalRequestStatus.pending_approval
+    ) {
+      throw new ConflictException(
+        "Only pending deposit replay approval requests can be approved."
+      );
+    }
+
+    if (approvalRequest.requestedByOperatorId === operatorId) {
+      throw new ForbiddenException(
+        "Deposit replay approval requires a different approver than the requester."
+      );
+    }
+
+    const normalizedApprovalNote = note?.trim() || null;
+    const updatedRequest = await this.prismaService.$transaction(
+      async (transaction) => {
+        const nextRequest =
+          await transaction.depositSettlementReplayApprovalRequest.update({
+            where: {
+              id: approvalRequest.id
+            },
+            data: {
+              status: DepositSettlementReplayApprovalRequestStatus.approved,
+              approvedByOperatorId: operatorId,
+              approvedByOperatorRole: normalizedOperatorRole,
+              approvalNote: normalizedApprovalNote ?? undefined,
+              approvedAt: new Date(),
+              rejectedByOperatorId: null,
+              rejectedByOperatorRole: null,
+              rejectionNote: null,
+              rejectedAt: null
+            },
+            include: {
+              transactionIntent: {
+                select: {
+                  id: true,
+                  chainId: true
+                }
+              }
+            }
+          });
+
+        await transaction.auditEvent.create({
+          data: {
+            actorType: "operator",
+            actorId: operatorId,
+            action: "transaction_intent.deposit.replay_approval_approved",
+            targetType: "DepositSettlementReplayApprovalRequest",
+            targetId: nextRequest.id,
+            metadata: {
+              transactionIntentId: approvalRequest.transactionIntentId,
+              replayAction: approvalRequest.replayAction,
+              requestedByOperatorId: approvalRequest.requestedByOperatorId,
+              requestedByOperatorRole: approvalRequest.requestedByOperatorRole,
+              approvedByOperatorId: operatorId,
+              approvedByOperatorRole: normalizedOperatorRole,
+              approvalNote: normalizedApprovalNote,
+              chainId: approvalRequest.chainId
+            }
+          }
+        });
+
+        return nextRequest;
+      }
+    );
+
+    return {
+      request: this.mapReplayApprovalRequest(updatedRequest),
+      stateReused: false
+    };
+  }
+
+  async rejectReplayApprovalRequest(
+    requestId: string,
+    operatorId: string,
+    operatorRole: string | null,
+    note: string
+  ): Promise<DepositSettlementReplayApprovalRequestMutationResult> {
+    const normalizedOperatorRole = this.assertCanOperateCustody(operatorRole);
+    const approvalRequest = await this.findReplayApprovalRequestById(requestId);
+
+    if (!approvalRequest) {
+      throw new NotFoundException("Deposit replay approval request was not found.");
+    }
+
+    if (
+      approvalRequest.status ===
+      DepositSettlementReplayApprovalRequestStatus.rejected
+    ) {
+      return {
+        request: this.mapReplayApprovalRequest(approvalRequest),
+        stateReused: true
+      };
+    }
+
+    if (
+      approvalRequest.status !==
+      DepositSettlementReplayApprovalRequestStatus.pending_approval
+    ) {
+      throw new ConflictException(
+        "Only pending deposit replay approval requests can be rejected."
+      );
+    }
+
+    if (approvalRequest.requestedByOperatorId === operatorId) {
+      throw new ForbiddenException(
+        "Deposit replay approval requires a different reviewer than the requester."
+      );
+    }
+
+    const normalizedRejectionNote = note.trim();
+
+    if (!normalizedRejectionNote) {
+      throw new ConflictException(
+        "A rejection note is required to reject a deposit replay approval request."
+      );
+    }
+
+    const updatedRequest = await this.prismaService.$transaction(
+      async (transaction) => {
+        const nextRequest =
+          await transaction.depositSettlementReplayApprovalRequest.update({
+            where: {
+              id: approvalRequest.id
+            },
+            data: {
+              status: DepositSettlementReplayApprovalRequestStatus.rejected,
+              rejectedByOperatorId: operatorId,
+              rejectedByOperatorRole: normalizedOperatorRole,
+              rejectionNote: normalizedRejectionNote,
+              rejectedAt: new Date()
+            },
+            include: {
+              transactionIntent: {
+                select: {
+                  id: true,
+                  chainId: true
+                }
+              }
+            }
+          });
+
+        await transaction.auditEvent.create({
+          data: {
+            actorType: "operator",
+            actorId: operatorId,
+            action: "transaction_intent.deposit.replay_approval_rejected",
+            targetType: "DepositSettlementReplayApprovalRequest",
+            targetId: nextRequest.id,
+            metadata: {
+              transactionIntentId: approvalRequest.transactionIntentId,
+              replayAction: approvalRequest.replayAction,
+              requestedByOperatorId: approvalRequest.requestedByOperatorId,
+              requestedByOperatorRole: approvalRequest.requestedByOperatorRole,
+              rejectedByOperatorId: operatorId,
+              rejectedByOperatorRole: normalizedOperatorRole,
+              rejectionNote: normalizedRejectionNote,
+              chainId: approvalRequest.chainId
+            }
+          }
+        });
+
+        return nextRequest;
+      }
+    );
+
+    return {
+      request: this.mapReplayApprovalRequest(updatedRequest),
+      stateReused: false
+    };
+  }
+
+  async executeReplayApprovalRequest(
+    requestId: string,
+    operatorId: string,
+    operatorRole: string | null,
+    note?: string | null
+  ) {
+    const approvalRequest = await this.findReplayApprovalRequestById(requestId);
+
+    if (!approvalRequest) {
+      throw new NotFoundException("Deposit replay approval request was not found.");
+    }
+
+    if (approvalRequest.replayAction === DepositSettlementReplayAction.confirm) {
+      return this.replayConfirm(
+        approvalRequest.transactionIntentId,
+        operatorId,
+        operatorRole,
+        {
+          approvalRequestId: approvalRequest.id,
+          note: note?.trim() || undefined
+        }
+      );
+    }
+
+    return this.replaySettle(
+      approvalRequest.transactionIntentId,
+      operatorId,
+      operatorRole,
+      {
+        approvalRequestId: approvalRequest.id,
+        note: note?.trim() || undefined
+      }
+    );
+  }
+
   async requestReplayApproval(
     intentId: string,
     operatorId: string,
@@ -733,11 +1175,10 @@ export class DepositSettlementReconciliationService {
 
     if (
       approvalRequest.status !==
-        DepositSettlementReplayApprovalRequestStatus.pending_approval &&
-      approvalRequest.status !== DepositSettlementReplayApprovalRequestStatus.approved
+      DepositSettlementReplayApprovalRequestStatus.approved
     ) {
       throw new ConflictException(
-        "Deposit replay approval request is not executable."
+        "Deposit replay approval request must be approved before confirm replay can execute."
       );
     }
 
@@ -749,26 +1190,8 @@ export class DepositSettlementReconciliationService {
 
     if (approvalRequest.requestedByOperatorId === operatorId) {
       throw new ForbiddenException(
-        "Deposit replay approval requires a different approver than the requester."
+        "Deposit replay approval requires a different operator than the requester."
       );
-    }
-
-    if (
-      approvalRequest.status ===
-      DepositSettlementReplayApprovalRequestStatus.pending_approval
-    ) {
-      await this.prismaService.depositSettlementReplayApprovalRequest.update({
-        where: {
-          id: approvalRequest.id
-        },
-        data: {
-          status: DepositSettlementReplayApprovalRequestStatus.approved,
-          approvedByOperatorId: operatorId,
-          approvedByOperatorRole: normalizedOperatorRole,
-          approvalNote: normalizedApprovalNote ?? undefined,
-          approvedAt: new Date()
-        }
-      });
     }
 
     const result = await this.transactionIntentsService.replayConfirmDepositIntent(
@@ -797,8 +1220,7 @@ export class DepositSettlementReconciliationService {
                 approvalRequest.approvedByOperatorId ?? operatorId,
               approvedByOperatorRole:
                 approvalRequest.approvedByOperatorRole ?? normalizedOperatorRole,
-              approvalNote:
-                approvalRequest.approvalNote ?? normalizedApprovalNote ?? undefined,
+              approvalNote: approvalRequest.approvalNote ?? undefined,
               approvedAt: approvalRequest.approvedAt ?? now,
               executedByOperatorId: operatorId,
               executedByOperatorRole: normalizedOperatorRole,
@@ -834,8 +1256,8 @@ export class DepositSettlementReconciliationService {
               executedByOperatorId: operatorId,
               executedByOperatorRole: normalizedOperatorRole,
               requestNote: approvalRequest.requestNote ?? null,
-              approvalNote:
-                normalizedApprovalNote ?? approvalRequest.approvalNote ?? null,
+              approvalNote: approvalRequest.approvalNote ?? null,
+              executionNote: normalizedApprovalNote,
               chainId: item.intent.chainId
             }
           }
@@ -881,11 +1303,10 @@ export class DepositSettlementReconciliationService {
 
     if (
       approvalRequest.status !==
-        DepositSettlementReplayApprovalRequestStatus.pending_approval &&
-      approvalRequest.status !== DepositSettlementReplayApprovalRequestStatus.approved
+      DepositSettlementReplayApprovalRequestStatus.approved
     ) {
       throw new ConflictException(
-        "Deposit replay approval request is not executable."
+        "Deposit replay approval request must be approved before settle replay can execute."
       );
     }
 
@@ -897,26 +1318,8 @@ export class DepositSettlementReconciliationService {
 
     if (approvalRequest.requestedByOperatorId === operatorId) {
       throw new ForbiddenException(
-        "Deposit replay approval requires a different approver than the requester."
+        "Deposit replay approval requires a different operator than the requester."
       );
-    }
-
-    if (
-      approvalRequest.status ===
-      DepositSettlementReplayApprovalRequestStatus.pending_approval
-    ) {
-      await this.prismaService.depositSettlementReplayApprovalRequest.update({
-        where: {
-          id: approvalRequest.id
-        },
-        data: {
-          status: DepositSettlementReplayApprovalRequestStatus.approved,
-          approvedByOperatorId: operatorId,
-          approvedByOperatorRole: normalizedOperatorRole,
-          approvalNote: normalizedApprovalNote ?? undefined,
-          approvedAt: new Date()
-        }
-      });
     }
 
     const result =
@@ -946,8 +1349,7 @@ export class DepositSettlementReconciliationService {
                 approvalRequest.approvedByOperatorId ?? operatorId,
               approvedByOperatorRole:
                 approvalRequest.approvedByOperatorRole ?? normalizedOperatorRole,
-              approvalNote:
-                approvalRequest.approvalNote ?? normalizedApprovalNote ?? undefined,
+              approvalNote: approvalRequest.approvalNote ?? undefined,
               approvedAt: approvalRequest.approvedAt ?? now,
               executedByOperatorId: operatorId,
               executedByOperatorRole: normalizedOperatorRole,
@@ -983,8 +1385,8 @@ export class DepositSettlementReconciliationService {
               executedByOperatorId: operatorId,
               executedByOperatorRole: normalizedOperatorRole,
               requestNote: approvalRequest.requestNote ?? null,
-              approvalNote:
-                normalizedApprovalNote ?? approvalRequest.approvalNote ?? null,
+              approvalNote: approvalRequest.approvalNote ?? null,
+              executionNote: normalizedApprovalNote,
               chainId: item.intent.chainId
             }
           }

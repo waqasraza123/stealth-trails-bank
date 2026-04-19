@@ -11,10 +11,13 @@ import {
 } from "@nestjs/common";
 import { InternalOperatorApiKeyGuard } from "../auth/guards/internal-operator-api-key.guard";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
+import { ExecuteLedgerReplayApprovalDto } from "./dto/execute-ledger-replay-approval.dto";
 import { GetLedgerReconciliationWorkspaceDto } from "./dto/get-ledger-reconciliation-workspace.dto";
+import { ListLedgerReplayApprovalsDto } from "./dto/list-ledger-replay-approvals.dto";
 import { ListLedgerReconciliationRunsDto } from "./dto/list-ledger-reconciliation-runs.dto";
 import { ListLedgerReconciliationMismatchesDto } from "./dto/list-ledger-reconciliation-mismatches.dto";
 import { RequestLedgerReconciliationReplayApprovalDto } from "./dto/request-ledger-reconciliation-replay-approval.dto";
+import { ReviewLedgerReplayApprovalDto } from "./dto/review-ledger-replay-approval.dto";
 import { ScanLedgerReconciliationDto } from "./dto/scan-ledger-reconciliation.dto";
 import { UpdateLedgerReconciliationMismatchDto } from "./dto/update-ledger-reconciliation-mismatch.dto";
 import { LedgerReconciliationService } from "./ledger-reconciliation.service";
@@ -121,6 +124,28 @@ export class LedgerReconciliationController {
     };
   }
 
+  @Get("replay-approvals")
+  async listReplayApprovals(
+    @Query(
+      new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
+    query: ListLedgerReplayApprovalsDto
+  ): Promise<CustomJsonResponse> {
+    const result = await this.ledgerReconciliationService.listReplayApprovals(
+      query
+    );
+
+    return {
+      status: "success",
+      message: "Ledger replay approvals retrieved successfully.",
+      data: result
+    };
+  }
+
   @Post("mismatches/:mismatchId/request-replay-approval")
   async requestReplayApproval(
     @Param("mismatchId") mismatchId: string,
@@ -146,6 +171,61 @@ export class LedgerReconciliationController {
       message: result.stateReused
         ? "Ledger reconciliation replay approval request reused successfully."
         : "Ledger reconciliation replay approval request created successfully.",
+      data: result
+    };
+  }
+
+  @Post("replay-approvals/:approvalId/review")
+  async reviewReplayApproval(
+    @Param("approvalId") approvalId: string,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
+    dto: ReviewLedgerReplayApprovalDto,
+    @Request() request: InternalOperatorRequest
+  ): Promise<CustomJsonResponse> {
+    const result = await this.ledgerReconciliationService.reviewReplayApproval(
+      approvalId,
+      request.internalOperator.operatorId,
+      request.internalOperator.operatorRole ?? null,
+      dto
+    );
+
+    return {
+      status: "success",
+      message:
+        dto.decision === "approve"
+          ? "Ledger replay approval approved successfully."
+          : "Ledger replay approval rejected successfully.",
+      data: result
+    };
+  }
+
+  @Post("replay-approvals/:approvalId/execute")
+  async executeReplayApproval(
+    @Param("approvalId") approvalId: string,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
+    dto: ExecuteLedgerReplayApprovalDto,
+    @Request() request: InternalOperatorRequest
+  ): Promise<CustomJsonResponse> {
+    const result = await this.ledgerReconciliationService.executeReplayApproval(
+      approvalId,
+      request.internalOperator.operatorId,
+      request.internalOperator.operatorRole ?? null,
+      dto
+    );
+
+    return {
+      status: "success",
+      message: "Ledger replay approval executed successfully.",
       data: result
     };
   }

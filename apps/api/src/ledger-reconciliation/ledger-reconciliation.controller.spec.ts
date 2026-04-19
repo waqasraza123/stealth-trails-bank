@@ -19,7 +19,10 @@ describe("LedgerReconciliationController", () => {
   const ledgerReconciliationService = {
     listScanRuns: jest.fn(),
     listMismatches: jest.fn(),
+    listReplayApprovals: jest.fn(),
     requestReplayApprovalForMismatch: jest.fn(),
+    reviewReplayApproval: jest.fn(),
+    executeReplayApproval: jest.fn(),
     replayConfirmMismatch: jest.fn(),
     replaySettleMismatch: jest.fn()
   };
@@ -261,6 +264,107 @@ describe("LedgerReconciliationController", () => {
     });
   });
 
+  it("lists replay approvals through the queue endpoint", async () => {
+    ledgerReconciliationService.listReplayApprovals.mockResolvedValue({
+      requests: [],
+      limit: 20,
+      totalCount: 0,
+      summary: {
+        byStatus: [],
+        byIntentType: []
+      }
+    });
+
+    const response = await request(app.getHttpServer())
+      .get("/ledger/internal/reconciliation/replay-approvals")
+      .set("x-operator-api-key", "test-operator-key")
+      .query({
+        limit: "20",
+        status: "pending_approval",
+        intentType: "deposit"
+      })
+      .expect(200);
+
+    expect(ledgerReconciliationService.listReplayApprovals).toHaveBeenCalledWith({
+      limit: 20,
+      status: "pending_approval",
+      intentType: "deposit"
+    });
+    expect(response.body.message).toBe(
+      "Ledger replay approvals retrieved successfully."
+    );
+  });
+
+  it("passes replay approval review actions through", async () => {
+    ledgerReconciliationService.reviewReplayApproval.mockResolvedValue({
+      request: {
+        id: "approval_1",
+        status: "approved"
+      },
+      stateReused: false
+    });
+
+    const response = await request(app.getHttpServer())
+      .post("/ledger/internal/reconciliation/replay-approvals/approval_1/review")
+      .set("x-operator-api-key", "test-operator-key")
+      .set("x-operator-id", "ops_2")
+      .set("x-operator-role", "operations_admin")
+      .send({
+        intentType: "deposit",
+        decision: "approve",
+        note: "Approved from queue."
+      })
+      .expect(201);
+
+    expect(ledgerReconciliationService.reviewReplayApproval).toHaveBeenCalledWith(
+      "approval_1",
+      "ops_2",
+      "operations_admin",
+      {
+        intentType: "deposit",
+        decision: "approve",
+        note: "Approved from queue."
+      }
+    );
+    expect(response.body.message).toBe(
+      "Ledger replay approval approved successfully."
+    );
+  });
+
+  it("passes replay approval execution actions through", async () => {
+    ledgerReconciliationService.executeReplayApproval.mockResolvedValue({
+      request: {
+        id: "approval_1",
+        status: "executed"
+      },
+      executionReused: false
+    });
+
+    const response = await request(app.getHttpServer())
+      .post("/ledger/internal/reconciliation/replay-approvals/approval_1/execute")
+      .set("x-operator-api-key", "test-operator-key")
+      .set("x-operator-id", "ops_2")
+      .set("x-operator-role", "operations_admin")
+      .send({
+        intentType: "deposit",
+        note: "Execute from queue."
+      })
+      .expect(201);
+
+    expect(ledgerReconciliationService.executeReplayApproval).toHaveBeenCalledWith(
+      "approval_1",
+      "ops_2",
+      "operations_admin",
+      {
+        intentType: "deposit",
+        note: "Execute from queue."
+      }
+    );
+    expect(response.body.message).toBe(
+      "Ledger replay approval executed successfully."
+    );
+  });
+
   it("rejects malformed replay-confirm payloads", async () => {
     await request(app.getHttpServer())
       .post("/ledger/internal/reconciliation/mismatches/mismatch_1/replay-confirm")
@@ -290,5 +394,18 @@ describe("LedgerReconciliationController", () => {
     expect(
       ledgerReconciliationService.requestReplayApprovalForMismatch
     ).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed replay approval review payloads", async () => {
+    await request(app.getHttpServer())
+      .post("/ledger/internal/reconciliation/replay-approvals/approval_1/review")
+      .set("x-operator-api-key", "test-operator-key")
+      .send({
+        intentType: "deposit",
+        decision: "invalid"
+      })
+      .expect(400);
+
+    expect(ledgerReconciliationService.reviewReplayApproval).not.toHaveBeenCalled();
   });
 });

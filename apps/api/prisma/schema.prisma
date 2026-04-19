@@ -247,6 +247,10 @@ model DepositSettlementReplayApprovalRequest {
   approvedByOperatorRole  String?
   approvalNote            String?
   approvedAt              DateTime?
+  rejectedByOperatorId    String?
+  rejectedByOperatorRole  String?
+  rejectionNote           String?
+  rejectedAt              DateTime?
   executedByOperatorId    String?
   executedByOperatorRole  String?
   executedAt              DateTime?
@@ -257,6 +261,7 @@ model DepositSettlementReplayApprovalRequest {
   @@index([status, requestedAt])
   @@index([requestedByOperatorId, requestedAt])
   @@index([approvedByOperatorId, approvedAt])
+  @@index([rejectedByOperatorId, rejectedAt])
   @@index([executedByOperatorId, executedAt])
 }
 
@@ -275,6 +280,10 @@ model WithdrawalSettlementReplayApprovalRequest {
   approvedByOperatorRole  String?
   approvalNote            String?
   approvedAt              DateTime?
+  rejectedByOperatorId    String?
+  rejectedByOperatorRole  String?
+  rejectionNote           String?
+  rejectedAt              DateTime?
   executedByOperatorId    String?
   executedByOperatorRole  String?
   executedAt              DateTime?
@@ -285,6 +294,7 @@ model WithdrawalSettlementReplayApprovalRequest {
   @@index([status, requestedAt])
   @@index([requestedByOperatorId, requestedAt])
   @@index([approvedByOperatorId, approvedAt])
+  @@index([rejectedByOperatorId, rejectedAt])
   @@index([executedByOperatorId, executedAt])
 }
 

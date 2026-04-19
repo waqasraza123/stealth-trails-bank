@@ -39,10 +39,13 @@ import { RequestDepositSettlementReplayApprovalDto } from "../transaction-intent
 import { RequestWithdrawalSettlementReplayApprovalDto } from "../transaction-intents/dto/request-withdrawal-settlement-replay-approval.dto";
 import { WithdrawalSettlementReconciliationService } from "../transaction-intents/withdrawal-settlement-reconciliation.service";
 import { WithdrawalIntentsService } from "../transaction-intents/withdrawal-intents.service";
+import { ExecuteLedgerReplayApprovalDto } from "./dto/execute-ledger-replay-approval.dto";
 import { GetLedgerReconciliationWorkspaceDto } from "./dto/get-ledger-reconciliation-workspace.dto";
+import { ListLedgerReplayApprovalsDto } from "./dto/list-ledger-replay-approvals.dto";
 import { ListLedgerReconciliationRunsDto } from "./dto/list-ledger-reconciliation-runs.dto";
 import { ListLedgerReconciliationMismatchesDto } from "./dto/list-ledger-reconciliation-mismatches.dto";
 import { RequestLedgerReconciliationReplayApprovalDto } from "./dto/request-ledger-reconciliation-replay-approval.dto";
+import { ReviewLedgerReplayApprovalDto } from "./dto/review-ledger-replay-approval.dto";
 import { ScanLedgerReconciliationDto } from "./dto/scan-ledger-reconciliation.dto";
 
 const mismatchInclude = {
@@ -434,6 +437,10 @@ type ReplayApprovalRequestProjection = {
   approvedByOperatorRole: string | null;
   approvalNote: string | null;
   approvedAt: string | null;
+  rejectedByOperatorId: string | null;
+  rejectedByOperatorRole: string | null;
+  rejectionNote: string | null;
+  rejectedAt: string | null;
   executedByOperatorId: string | null;
   executedByOperatorRole: string | null;
   executedAt: string | null;
@@ -442,6 +449,65 @@ type ReplayApprovalRequestProjection = {
 type ReplayApprovalRequestActionResult = ActionResult & {
   request: ReplayApprovalRequestProjection;
   stateReused: boolean;
+};
+
+type ReplayApprovalQueueItem = {
+  request: ReplayApprovalRequestProjection;
+  intent: {
+    id: string;
+    customerAccountId: string | null;
+    chainId: number;
+    status: TransactionIntentStatus;
+    requestedAmount: string;
+    settledAmount: string | null;
+    createdAt: string;
+    updatedAt: string;
+    customer: {
+      customerId: string;
+      customerAccountId: string;
+      supabaseUserId: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+    };
+    asset: {
+      id: string;
+      symbol: string;
+      displayName: string;
+      decimals: number;
+      chainId: number;
+    };
+  };
+};
+
+type ReplayApprovalIntentType = "deposit" | "withdrawal";
+
+type ListReplayApprovalQueueResult = {
+  requests: ReplayApprovalQueueItem[];
+  limit: number;
+  totalCount: number;
+  summary: {
+    byStatus: Array<{
+      status:
+        | DepositSettlementReplayApprovalRequestStatus
+        | WithdrawalSettlementReplayApprovalRequestStatus;
+      count: number;
+    }>;
+    byIntentType: Array<{
+      intentType: ReplayApprovalIntentType;
+      count: number;
+    }>;
+  };
+};
+
+type ReplayApprovalDecisionResult = {
+  request: ReplayApprovalRequestProjection;
+  stateReused: boolean;
+};
+
+type ReplayApprovalExecutionResult = {
+  request: ReplayApprovalRequestProjection;
+  executionReused: boolean;
 };
 
 type ScanRunRecord = Prisma.LedgerReconciliationScanRunGetPayload<{}>;
@@ -624,6 +690,10 @@ export class LedgerReconciliationService {
       approvedByOperatorRole: string | null;
       approvalNote: string | null;
       approvedAt: Date | null;
+      rejectedByOperatorId: string | null;
+      rejectedByOperatorRole: string | null;
+      rejectionNote: string | null;
+      rejectedAt: Date | null;
       executedByOperatorId: string | null;
       executedByOperatorRole: string | null;
       executedAt: Date | null;
@@ -644,6 +714,10 @@ export class LedgerReconciliationService {
       approvedByOperatorRole: request.approvedByOperatorRole,
       approvalNote: request.approvalNote,
       approvedAt: request.approvedAt?.toISOString() ?? null,
+      rejectedByOperatorId: request.rejectedByOperatorId ?? null,
+      rejectedByOperatorRole: request.rejectedByOperatorRole ?? null,
+      rejectionNote: request.rejectionNote ?? null,
+      rejectedAt: request.rejectedAt?.toISOString() ?? null,
       executedByOperatorId: request.executedByOperatorId,
       executedByOperatorRole: request.executedByOperatorRole,
       executedAt: request.executedAt?.toISOString() ?? null
@@ -665,6 +739,10 @@ export class LedgerReconciliationService {
       approvedByOperatorRole: string | null;
       approvalNote: string | null;
       approvedAt: Date | null;
+      rejectedByOperatorId: string | null;
+      rejectedByOperatorRole: string | null;
+      rejectionNote: string | null;
+      rejectedAt: Date | null;
       executedByOperatorId: string | null;
       executedByOperatorRole: string | null;
       executedAt: Date | null;
@@ -685,9 +763,73 @@ export class LedgerReconciliationService {
       approvedByOperatorRole: request.approvedByOperatorRole,
       approvalNote: request.approvalNote,
       approvedAt: request.approvedAt?.toISOString() ?? null,
+      rejectedByOperatorId: request.rejectedByOperatorId ?? null,
+      rejectedByOperatorRole: request.rejectedByOperatorRole ?? null,
+      rejectionNote: request.rejectionNote ?? null,
+      rejectedAt: request.rejectedAt?.toISOString() ?? null,
       executedByOperatorId: request.executedByOperatorId,
       executedByOperatorRole: request.executedByOperatorRole,
       executedAt: request.executedAt?.toISOString() ?? null
+    };
+  }
+
+  private mapQueueIntentProjection(
+    intent: {
+      id: string;
+      customerAccountId: string | null;
+      chainId: number;
+      status: TransactionIntentStatus;
+      requestedAmount: Prisma.Decimal;
+      settledAmount: Prisma.Decimal | null;
+      createdAt: Date;
+      updatedAt: Date;
+      asset: {
+        id: string;
+        symbol: string;
+        displayName: string;
+        decimals: number;
+        chainId: number;
+      };
+      customerAccount: {
+        id: string;
+        customer: {
+          id: string;
+          supabaseUserId: string;
+          email: string;
+          firstName: string | null;
+          lastName: string | null;
+        };
+      } | null;
+    }
+  ): ReplayApprovalQueueItem["intent"] {
+    if (!intent.customerAccount) {
+      throw new NotFoundException("Customer account projection not found.");
+    }
+
+    return {
+      id: intent.id,
+      customerAccountId: intent.customerAccountId,
+      chainId: intent.chainId,
+      status: intent.status,
+      requestedAmount: intent.requestedAmount.toString(),
+      settledAmount: intent.settledAmount?.toString() ?? null,
+      createdAt: intent.createdAt.toISOString(),
+      updatedAt: intent.updatedAt.toISOString(),
+      customer: {
+        customerId: intent.customerAccount.customer.id,
+        customerAccountId: intent.customerAccount.id,
+        supabaseUserId: intent.customerAccount.customer.supabaseUserId,
+        email: intent.customerAccount.customer.email,
+        firstName: intent.customerAccount.customer.firstName ?? "",
+        lastName: intent.customerAccount.customer.lastName ?? ""
+      },
+      asset: {
+        id: intent.asset.id,
+        symbol: intent.asset.symbol,
+        displayName: intent.asset.displayName,
+        decimals: intent.asset.decimals,
+        chainId: intent.asset.chainId
+      }
     };
   }
 
@@ -2008,6 +2150,256 @@ export class LedgerReconciliationService {
       runs: runs.map((run) => this.mapScanRunProjection(run)),
       limit,
       totalCount
+    };
+  }
+
+  async listReplayApprovals(
+    query: ListLedgerReplayApprovalsDto
+  ): Promise<ListReplayApprovalQueueResult> {
+    const limit = query.limit ?? 25;
+
+    if (query.intentType === "deposit") {
+      const result =
+        await this.depositSettlementReconciliationService.listReplayApprovalRequests(
+          {
+            limit,
+            status: query.status as DepositSettlementReplayApprovalRequestStatus | undefined
+          }
+        );
+
+      return {
+        requests: result.requests.map((item) => ({
+          request: {
+            ...item.request,
+            intentType: TransactionIntentType.deposit
+          },
+          intent: item.intent
+        })),
+        limit: result.limit,
+        totalCount: result.totalCount,
+        summary: {
+          byStatus: result.summary.byStatus,
+          byIntentType: [
+            {
+              intentType: TransactionIntentType.deposit,
+              count: result.totalCount
+            }
+          ]
+        }
+      };
+    }
+
+    if (query.intentType === "withdrawal") {
+      const result =
+        await this.withdrawalSettlementReconciliationService.listReplayApprovalRequests(
+          {
+            limit,
+            status: query.status as
+              | WithdrawalSettlementReplayApprovalRequestStatus
+              | undefined
+          }
+        );
+
+      return {
+        requests: result.requests.map((item) => ({
+          request: {
+            ...item.request,
+            intentType: TransactionIntentType.withdrawal
+          },
+          intent: item.intent
+        })),
+        limit: result.limit,
+        totalCount: result.totalCount,
+        summary: {
+          byStatus: result.summary.byStatus,
+          byIntentType: [
+            {
+              intentType: TransactionIntentType.withdrawal,
+              count: result.totalCount
+            }
+          ]
+        }
+      };
+    }
+
+    const [depositRequests, withdrawalRequests] = await Promise.all([
+      this.depositSettlementReconciliationService.listReplayApprovalRequests({
+        limit,
+        status: query.status as DepositSettlementReplayApprovalRequestStatus | undefined
+      }),
+      this.withdrawalSettlementReconciliationService.listReplayApprovalRequests({
+        limit,
+        status: query.status as
+          | WithdrawalSettlementReplayApprovalRequestStatus
+          | undefined
+      })
+    ]);
+
+    const combinedRequests = [
+      ...depositRequests.requests.map((item) => ({
+        request: {
+          ...item.request,
+          intentType: TransactionIntentType.deposit
+        },
+        intent: item.intent
+      })),
+      ...withdrawalRequests.requests.map((item) => ({
+        request: {
+          ...item.request,
+          intentType: TransactionIntentType.withdrawal
+        },
+        intent: item.intent
+      }))
+    ]
+      .sort(
+        (left, right) =>
+          new Date(right.request.requestedAt).getTime() -
+          new Date(left.request.requestedAt).getTime()
+      )
+      .slice(0, limit);
+
+    const byStatusMap = new Map<
+      DepositSettlementReplayApprovalRequestStatus |
+        WithdrawalSettlementReplayApprovalRequestStatus,
+      number
+    >();
+
+    for (const entry of depositRequests.summary.byStatus) {
+      byStatusMap.set(
+        entry.status,
+        (byStatusMap.get(entry.status) ?? 0) + entry.count
+      );
+    }
+
+    for (const entry of withdrawalRequests.summary.byStatus) {
+      byStatusMap.set(
+        entry.status,
+        (byStatusMap.get(entry.status) ?? 0) + entry.count
+      );
+    }
+
+    return {
+      requests: combinedRequests,
+      limit,
+      totalCount: depositRequests.totalCount + withdrawalRequests.totalCount,
+      summary: {
+        byStatus: [...byStatusMap.entries()].map(([status, count]) => ({
+          status,
+          count
+        })),
+        byIntentType: [
+          {
+            intentType: TransactionIntentType.deposit,
+            count: depositRequests.totalCount
+          },
+          {
+            intentType: TransactionIntentType.withdrawal,
+            count: withdrawalRequests.totalCount
+          }
+        ]
+      }
+    };
+  }
+
+  async reviewReplayApproval(
+    approvalId: string,
+    operatorId: string,
+    operatorRole: string | null,
+    dto: ReviewLedgerReplayApprovalDto
+  ): Promise<ReplayApprovalDecisionResult> {
+    if (dto.intentType === "deposit") {
+      const result =
+        dto.decision === "approve"
+          ? await this.depositSettlementReconciliationService.approveReplayApprovalRequest(
+              approvalId,
+              operatorId,
+              operatorRole,
+              dto.note?.trim() || null
+            )
+          : await this.depositSettlementReconciliationService.rejectReplayApprovalRequest(
+              approvalId,
+              operatorId,
+              operatorRole,
+              dto.note?.trim() ?? ""
+            );
+
+      return {
+        request: {
+          ...result.request,
+          intentType: TransactionIntentType.deposit
+        },
+        stateReused: result.stateReused
+      };
+    }
+
+    const result =
+      dto.decision === "approve"
+        ? await this.withdrawalSettlementReconciliationService.approveReplayApprovalRequest(
+            approvalId,
+            operatorId,
+            operatorRole,
+            dto.note?.trim() || null
+          )
+        : await this.withdrawalSettlementReconciliationService.rejectReplayApprovalRequest(
+            approvalId,
+            operatorId,
+            operatorRole,
+            dto.note?.trim() ?? ""
+          );
+
+    return {
+      request: {
+        ...result.request,
+        intentType: TransactionIntentType.withdrawal
+      },
+      stateReused: result.stateReused
+    };
+  }
+
+  async executeReplayApproval(
+    approvalId: string,
+    operatorId: string,
+    operatorRole: string | null,
+    dto: ExecuteLedgerReplayApprovalDto
+  ): Promise<ReplayApprovalExecutionResult> {
+    if (dto.intentType === "deposit") {
+      const result =
+        await this.depositSettlementReconciliationService.executeReplayApprovalRequest(
+          approvalId,
+          operatorId,
+          operatorRole,
+          dto.note?.trim() || null
+        );
+
+      return {
+        request: {
+          ...result.approvalRequest,
+          intentType: TransactionIntentType.deposit
+        },
+        executionReused:
+          "confirmReused" in result
+            ? result.confirmReused
+            : result.settlementReused
+      };
+    }
+
+    const result =
+      await this.withdrawalSettlementReconciliationService.executeReplayApprovalRequest(
+        approvalId,
+        operatorId,
+        operatorRole,
+        dto.note?.trim() || null
+      );
+
+    return {
+      request: {
+        ...result.approvalRequest,
+        intentType: TransactionIntentType.withdrawal
+      },
+      executionReused:
+        "confirmReused" in result
+          ? result.confirmReused
+          : result.settlementReused
     };
   }
 

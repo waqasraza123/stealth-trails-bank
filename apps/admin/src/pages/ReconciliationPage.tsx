@@ -3,14 +3,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import {
   dismissLedgerReconciliationMismatch,
+  executeLedgerReplayApproval,
   getLedgerReconciliationWorkspace,
+  listLedgerReplayApprovals,
   listLedgerReconciliationMismatches,
   listLedgerReconciliationRuns,
   openLedgerReconciliationReviewCase,
   repairLedgerCustomerBalance,
   requestLedgerReconciliationReplayApproval,
   replayConfirmMismatch,
-  replaySettleMismatch
+  replaySettleMismatch,
+  reviewLedgerReplayApproval
 } from "@/lib/api";
 import { formatDateTime, readApiErrorMessage, shortenValue, toTitleCase, trimToUndefined } from "@/lib/format";
 import {
@@ -33,10 +36,36 @@ export function ReconciliationPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedMismatchId = searchParams.get("mismatch");
+  const selectedApprovalId = searchParams.get("approval");
   const [actionNote, setActionNote] = useState("");
   const [governedConfirm, setGovernedConfirm] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  function updateSelection(next: {
+    mismatchId?: string | null;
+    approvalId?: string | null;
+  }) {
+    const params = new URLSearchParams(searchParams);
+
+    if (next.mismatchId !== undefined) {
+      if (next.mismatchId) {
+        params.set("mismatch", next.mismatchId);
+      } else {
+        params.delete("mismatch");
+      }
+    }
+
+    if (next.approvalId !== undefined) {
+      if (next.approvalId) {
+        params.set("approval", next.approvalId);
+      } else {
+        params.delete("approval");
+      }
+    }
+
+    setSearchParams(params);
+  }
 
   const mismatchesQuery = useQuery({
     queryKey: ["ledger-mismatches", session?.baseUrl],
@@ -50,6 +79,12 @@ export function ReconciliationPage() {
     enabled: Boolean(session)
   });
 
+  const replayApprovalsQuery = useQuery({
+    queryKey: ["ledger-replay-approvals", session?.baseUrl],
+    queryFn: () => listLedgerReplayApprovals(session!, { limit: 20 }),
+    enabled: Boolean(session)
+  });
+
   const workspaceQuery = useQuery({
     queryKey: ["ledger-workspace", session?.baseUrl, selectedMismatchId],
     queryFn: () => getLedgerReconciliationWorkspace(session!, selectedMismatchId!, 10),
@@ -59,19 +94,29 @@ export function ReconciliationPage() {
   useEffect(() => {
     const firstId = mismatchesQuery.data?.mismatches[0]?.id;
     if (firstId && !selectedMismatchId) {
-      setSearchParams({ mismatch: firstId });
+      updateSelection({ mismatchId: firstId });
     }
-  }, [mismatchesQuery.data, selectedMismatchId, setSearchParams]);
+  }, [mismatchesQuery.data, selectedMismatchId]);
+
+  useEffect(() => {
+    const firstId = replayApprovalsQuery.data?.requests[0]?.request.id;
+    if (firstId && !selectedApprovalId) {
+      updateSelection({ approvalId: firstId });
+    }
+  }, [replayApprovalsQuery.data, selectedApprovalId]);
 
   useEffect(() => {
     setFlash(null);
     setActionError(null);
-  }, [selectedMismatchId]);
+  }, [selectedMismatchId, selectedApprovalId]);
 
   async function refreshWorkspace() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["ledger-mismatches", session?.baseUrl] }),
       queryClient.invalidateQueries({ queryKey: ["ledger-runs", session?.baseUrl] }),
+      queryClient.invalidateQueries({
+        queryKey: ["ledger-replay-approvals", session?.baseUrl]
+      }),
       queryClient.invalidateQueries({
         queryKey: ["ledger-workspace", session?.baseUrl, selectedMismatchId]
       })
@@ -129,6 +174,44 @@ export function ReconciliationPage() {
         : `Settle replay approval requested (${shortenValue(result.request.id)}).`,
     "Failed to request settle replay approval."
   );
+  const approveReplayApprovalMutation = buildMutation(
+    () =>
+      reviewLedgerReplayApproval(session!, selectedReplayApproval!.request.id, {
+        intentType: selectedReplayApproval!.request.intentType,
+        decision: "approve",
+        note: trimToUndefined(actionNote)
+      }),
+    (result) =>
+      result.stateReused
+        ? `Replay approval already approved (${shortenValue(result.request.id)}).`
+        : `Replay approval approved (${shortenValue(result.request.id)}).`,
+    "Failed to approve the replay request."
+  );
+  const rejectReplayApprovalMutation = buildMutation(
+    () =>
+      reviewLedgerReplayApproval(session!, selectedReplayApproval!.request.id, {
+        intentType: selectedReplayApproval!.request.intentType,
+        decision: "reject",
+        note: trimToUndefined(actionNote)
+      }),
+    (result) =>
+      result.stateReused
+        ? `Replay approval already rejected (${shortenValue(result.request.id)}).`
+        : `Replay approval rejected (${shortenValue(result.request.id)}).`,
+    "Failed to reject the replay request."
+  );
+  const executeReplayApprovalMutation = buildMutation(
+    () =>
+      executeLedgerReplayApproval(session!, selectedReplayApproval!.request.id, {
+        intentType: selectedReplayApproval!.request.intentType,
+        note: trimToUndefined(actionNote)
+      }),
+    (result) =>
+      result.executionReused
+        ? `Replay execution reused (${shortenValue(result.request.id)}).`
+        : `Replay execution completed (${shortenValue(result.request.id)}).`,
+    "Failed to execute the replay request."
+  );
   const replayConfirmMutation = buildMutation(
     () =>
       replayConfirmMismatch(
@@ -171,7 +254,11 @@ export function ReconciliationPage() {
     return fallback;
   }
 
-  if (mismatchesQuery.isLoading || runsQuery.isLoading) {
+  if (
+    mismatchesQuery.isLoading ||
+    runsQuery.isLoading ||
+    replayApprovalsQuery.isLoading
+  ) {
     return (
       <LoadingState
         title="Loading reconciliation workspaces"
@@ -180,7 +267,11 @@ export function ReconciliationPage() {
     );
   }
 
-  if (mismatchesQuery.isError || runsQuery.isError) {
+  if (
+    mismatchesQuery.isError ||
+    runsQuery.isError ||
+    replayApprovalsQuery.isError
+  ) {
     return (
       <ErrorState
         title="Reconciliation data unavailable"
@@ -190,6 +281,10 @@ export function ReconciliationPage() {
   }
 
   const workspace = workspaceQuery.data;
+  const selectedReplayApproval =
+    replayApprovalsQuery.data?.requests.find(
+      (request) => request.request.id === selectedApprovalId
+    ) ?? null;
   const replayApprovalRequests = workspace?.replayApprovalRequests ?? [];
   const confirmReplayApprovalRequest =
     replayApprovalRequests.find((request) => request.replayAction === "confirm") ??
@@ -224,9 +319,28 @@ export function ReconciliationPage() {
     );
   }
 
+  function canReviewQueueApproval() {
+    return Boolean(
+      selectedReplayApproval &&
+        selectedReplayApproval.request.status === "pending_approval" &&
+        selectedReplayApproval.request.requestedByOperatorId !== session?.operatorId
+    );
+  }
+
+  function canExecuteQueueApproval() {
+    return Boolean(
+      selectedReplayApproval &&
+        selectedReplayApproval.request.status === "approved" &&
+        selectedReplayApproval.request.requestedByOperatorId !== session?.operatorId
+    );
+  }
+
   const mutationPending =
     requestConfirmApprovalMutation.isPending ||
     requestSettleApprovalMutation.isPending ||
+    approveReplayApprovalMutation.isPending ||
+    rejectReplayApprovalMutation.isPending ||
+    executeReplayApprovalMutation.isPending ||
     replayConfirmMutation.isPending ||
     replaySettleMutation.isPending ||
     openReviewCaseMutation.isPending ||
@@ -251,7 +365,7 @@ export function ReconciliationPage() {
                       className={`admin-list-row selectable ${
                         selectedMismatchId === mismatch.id ? "selected" : ""
                       }`}
-                      onClick={() => setSearchParams({ mismatch: mismatch.id })}
+                      onClick={() => updateSelection({ mismatchId: mismatch.id })}
                     >
                       <strong>{mismatch.summary}</strong>
                       <span>{toTitleCase(mismatch.scope)}</span>
@@ -262,6 +376,42 @@ export function ReconciliationPage() {
                       />
                     </button>
                   ))}
+                </div>
+              </ListCard>
+
+              <ListCard title="Replay approval inbox">
+                <div className="admin-list">
+                  {replayApprovalsQuery.data!.requests.length > 0 ? (
+                    replayApprovalsQuery.data!.requests.map((entry) => (
+                      <button
+                        key={entry.request.id}
+                        type="button"
+                        className={`admin-list-row selectable ${
+                          selectedApprovalId === entry.request.id ? "selected" : ""
+                        }`}
+                        onClick={() =>
+                          updateSelection({ approvalId: entry.request.id })
+                        }
+                      >
+                        <strong>
+                          {toTitleCase(entry.request.intentType)} {toTitleCase(entry.request.replayAction)} replay
+                        </strong>
+                        <span>{entry.intent.customer.email}</span>
+                        <span>{entry.intent.asset.symbol}</span>
+                        <AdminStatusBadge
+                          label={toTitleCase(
+                            entry.request.status.replaceAll("_", " ")
+                          )}
+                          tone={mapStatusToTone(entry.request.status)}
+                        />
+                      </button>
+                    ))
+                  ) : (
+                    <div className="admin-list-row">
+                      <strong>No open replay approvals</strong>
+                      <span>Pending and approved replay requests will appear here.</span>
+                    </div>
+                  )}
                 </div>
               </ListCard>
 
@@ -377,6 +527,82 @@ export function ReconciliationPage() {
                       description="The current operator requested the settle replay approval, so a different authorized operator must execute the replay."
                     />
                   ) : null}
+                </ListCard>
+
+                <ListCard title="Selected replay approval">
+                  {selectedReplayApproval ? (
+                    <>
+                      <DetailList
+                        items={[
+                          {
+                            label: "Approval reference",
+                            value: selectedReplayApproval.request.id,
+                            mono: true
+                          },
+                          {
+                            label: "Intent",
+                            value: `${toTitleCase(selectedReplayApproval.request.intentType)} ${shortenValue(
+                              selectedReplayApproval.intent.id
+                            )}`
+                          },
+                          {
+                            label: "Customer",
+                            value: selectedReplayApproval.intent.customer.email
+                          },
+                          {
+                            label: "Action",
+                            value: `${toTitleCase(
+                              selectedReplayApproval.request.replayAction
+                            )} replay`
+                          },
+                          {
+                            label: "Status",
+                            value: (
+                              <AdminStatusBadge
+                                label={toTitleCase(
+                                  selectedReplayApproval.request.status.replaceAll(
+                                    "_",
+                                    " "
+                                  )
+                                )}
+                                tone={mapStatusToTone(
+                                  selectedReplayApproval.request.status
+                                )}
+                              />
+                            )
+                          },
+                          {
+                            label: "Requested by",
+                            value: `${selectedReplayApproval.request.requestedByOperatorId} · ${formatDateTime(
+                              selectedReplayApproval.request.requestedAt
+                            )}`
+                          },
+                          {
+                            label: "Approval note",
+                            value:
+                              selectedReplayApproval.request.approvalNote ??
+                              "No approval note"
+                          },
+                          {
+                            label: "Rejection note",
+                            value:
+                              selectedReplayApproval.request.rejectionNote ??
+                              "No rejection note"
+                          }
+                        ]}
+                      />
+                      <InlineNotice
+                        tone="warning"
+                        title="Queue execution posture"
+                        description="Approvals and rejections require a second operator. Execution is unlocked only after approval and still cannot be performed by the original requester."
+                      />
+                    </>
+                  ) : (
+                    <EmptyState
+                      title="No replay approval selected"
+                      description="Choose a replay approval request to review or execute it from the queue."
+                    />
+                  )}
                 </ListCard>
 
                 <TimelinePanel
@@ -507,6 +733,51 @@ export function ReconciliationPage() {
                       onClick={() => dismissMismatchMutation.mutate()}
                     >
                       {dismissMismatchMutation.isPending ? "Dismissing..." : "Dismiss mismatch"}
+                    </button>
+                  </div>
+
+                  <div className="admin-field">
+                    <span>Replay approval inbox actions</span>
+                    <p className="admin-field-help">
+                      Use the selected queue item for second-operator approval, rejection, or replay execution.
+                    </p>
+                  </div>
+
+                  <div className="admin-action-buttons">
+                    <button
+                      type="button"
+                      className="admin-secondary-button"
+                      disabled={!governedConfirm || mutationPending || !canReviewQueueApproval()}
+                      onClick={() => approveReplayApprovalMutation.mutate()}
+                    >
+                      {approveReplayApprovalMutation.isPending
+                        ? "Approving..."
+                        : "Approve queue request"}
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-danger-button"
+                      disabled={
+                        !governedConfirm ||
+                        mutationPending ||
+                        !canReviewQueueApproval() ||
+                        !trimToUndefined(actionNote)
+                      }
+                      onClick={() => rejectReplayApprovalMutation.mutate()}
+                    >
+                      {rejectReplayApprovalMutation.isPending
+                        ? "Rejecting..."
+                        : "Reject queue request"}
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-primary-button"
+                      disabled={!governedConfirm || mutationPending || !canExecuteQueueApproval()}
+                      onClick={() => executeReplayApprovalMutation.mutate()}
+                    >
+                      {executeReplayApprovalMutation.isPending
+                        ? "Executing..."
+                        : "Execute approved replay"}
                     </button>
                   </div>
                 </>

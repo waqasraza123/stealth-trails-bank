@@ -19,6 +19,9 @@ import type {
   IncidentPackageSnapshot,
   LedgerReconciliationMismatchList,
   LedgerReconciliationMutationResult,
+  LedgerReplayApprovalDecisionResult,
+  LedgerReplayApprovalExecutionResult,
+  LedgerReplayApprovalQueue,
   LedgerReconciliationReplayApprovalMutationResult,
   LedgerReconciliationScanRunList,
   LedgerReconciliationWorkspace,
@@ -637,6 +640,17 @@ export async function getLedgerReconciliationWorkspace(
   });
 }
 
+export async function listLedgerReplayApprovals(
+  session: OperatorSession,
+  params: Record<string, string | number | undefined> = {}
+): Promise<LedgerReplayApprovalQueue> {
+  return requestData(session, {
+    method: "GET",
+    url: "/ledger/internal/reconciliation/replay-approvals",
+    params
+  });
+}
+
 export async function replayConfirmMismatch(
   session: OperatorSession,
   mismatchId: string,
@@ -682,6 +696,37 @@ export async function requestLedgerReconciliationReplayApproval(
       replayAction,
       ...(note ? { note } : {})
     }
+  });
+}
+
+export async function reviewLedgerReplayApproval(
+  session: OperatorSession,
+  approvalId: string,
+  payload: {
+    intentType: "deposit" | "withdrawal";
+    decision: "approve" | "reject";
+    note?: string;
+  }
+): Promise<LedgerReplayApprovalDecisionResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/ledger/internal/reconciliation/replay-approvals/${approvalId}/review`,
+    data: payload
+  });
+}
+
+export async function executeLedgerReplayApproval(
+  session: OperatorSession,
+  approvalId: string,
+  payload: {
+    intentType: "deposit" | "withdrawal";
+    note?: string;
+  }
+): Promise<LedgerReplayApprovalExecutionResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/ledger/internal/reconciliation/replay-approvals/${approvalId}/execute`,
+    data: payload
   });
 }
 
