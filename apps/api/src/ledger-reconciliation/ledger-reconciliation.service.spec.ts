@@ -19,7 +19,9 @@ import {
 } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReviewCasesService } from "../review-cases/review-cases.service";
+import { DepositSettlementReconciliationService } from "../transaction-intents/deposit-settlement-reconciliation.service";
 import { TransactionIntentsService } from "../transaction-intents/transaction-intents.service";
+import { WithdrawalSettlementReconciliationService } from "../transaction-intents/withdrawal-settlement-reconciliation.service";
 import { WithdrawalIntentsService } from "../transaction-intents/withdrawal-intents.service";
 import { LedgerReconciliationService } from "./ledger-reconciliation.service";
 
@@ -104,6 +106,12 @@ function createService() {
     transactionIntent: {
       findMany: jest.fn()
     },
+    depositSettlementReplayApprovalRequest: {
+      findMany: jest.fn()
+    },
+    withdrawalSettlementReplayApprovalRequest: {
+      findMany: jest.fn()
+    },
     auditEvent: {
       create: jest.fn(),
       findMany: jest.fn()
@@ -125,6 +133,12 @@ function createService() {
     replayConfirmWithdrawalIntent: jest.fn(),
     replaySettleConfirmedWithdrawalIntent: jest.fn()
   } as unknown as WithdrawalIntentsService;
+  const depositSettlementReconciliationService = {
+    requestReplayApproval: jest.fn()
+  } as unknown as DepositSettlementReconciliationService;
+  const withdrawalSettlementReconciliationService = {
+    requestReplayApproval: jest.fn()
+  } as unknown as WithdrawalSettlementReconciliationService;
   const reviewCasesService = {
     openOrReuseReviewCase: jest.fn()
   } as unknown as ReviewCasesService;
@@ -133,11 +147,15 @@ function createService() {
     prismaService,
     transactionIntentsService,
     withdrawalIntentsService,
+    depositSettlementReconciliationService,
+    withdrawalSettlementReconciliationService,
     reviewCasesService,
     service: new LedgerReconciliationService(
       prismaService,
       transactionIntentsService,
       withdrawalIntentsService,
+      depositSettlementReconciliationService,
+      withdrawalSettlementReconciliationService,
       reviewCasesService
     )
   };
@@ -272,6 +290,134 @@ describe("LedgerReconciliationService", () => {
       })
     );
     expect(result.mismatch.linkedReviewCase?.reviewCaseId).toBe("review_case_2");
+  });
+
+  it("routes governed replay approval requests through deposit reconciliation controls", async () => {
+    const { service, depositSettlementReconciliationService } = createService();
+
+    const mismatch = buildMismatchRecord({
+      scope: LedgerReconciliationMismatchScope.transaction_intent,
+      transactionIntentId: "intent_1",
+      transactionIntent: {
+        transactionIntentId: "intent_1",
+        intentType: TransactionIntentType.deposit,
+        status: TransactionIntentStatus.broadcast,
+        policyDecision: PolicyDecision.approved,
+        requestedAmount: "5.00",
+        settledAmount: null,
+        createdAt: new Date("2026-04-06T00:00:00.000Z"),
+        updatedAt: new Date("2026-04-06T00:05:00.000Z")
+      }
+    });
+
+    jest.spyOn(service as any, "findMismatchById").mockResolvedValue(mismatch);
+    (
+      depositSettlementReconciliationService.requestReplayApproval as jest.Mock
+    ).mockResolvedValue({
+      request: {
+        id: "approval_1",
+        transactionIntentId: "intent_1",
+        chainId: 8453,
+        replayAction: "confirm",
+        status: "pending_approval",
+        requestedByOperatorId: "ops_1",
+        requestedByOperatorRole: "operations_admin",
+        requestNote: "Replay confirm requires approval.",
+        requestedAt: "2026-04-06T01:00:00.000Z",
+        approvedByOperatorId: null,
+        approvedByOperatorRole: null,
+        approvalNote: null,
+        approvedAt: null,
+        executedByOperatorId: null,
+        executedByOperatorRole: null,
+        executedAt: null
+      },
+      stateReused: false
+    });
+
+    const result = await service.requestReplayApprovalForMismatch(
+      "mismatch_1",
+      "ops_1",
+      "operations_admin",
+      {
+        replayAction: "confirm",
+        note: "Replay confirm requires approval."
+      }
+    );
+
+    expect(
+      depositSettlementReconciliationService.requestReplayApproval
+    ).toHaveBeenCalledWith("intent_1", "ops_1", "operations_admin", {
+      replayAction: "confirm",
+      note: "Replay confirm requires approval."
+    });
+    expect(result.request.id).toBe("approval_1");
+    expect(result.request.intentType).toBe(TransactionIntentType.deposit);
+    expect(result.stateReused).toBe(false);
+  });
+
+  it("includes active replay approval requests in the mismatch workspace", async () => {
+    const { service, prismaService } = createService();
+
+    const mismatch = buildMismatchRecord({
+      scope: LedgerReconciliationMismatchScope.transaction_intent,
+      transactionIntentId: "intent_1",
+      transactionIntent: {
+        transactionIntentId: "intent_1",
+        intentType: TransactionIntentType.deposit,
+        status: TransactionIntentStatus.broadcast,
+        policyDecision: PolicyDecision.approved,
+        requestedAmount: "5.00",
+        settledAmount: null,
+        createdAt: new Date("2026-04-06T00:00:00.000Z"),
+        updatedAt: new Date("2026-04-06T00:05:00.000Z")
+      }
+    });
+
+    jest.spyOn(service as any, "findMismatchById").mockResolvedValue(mismatch);
+    jest.spyOn(service as any, "buildTransactionIntentCandidates").mockResolvedValue([
+      {
+        latestSnapshot: {
+          reconciliationState: "ready_for_confirm_replay"
+        }
+      }
+    ]);
+    (
+      prismaService.depositSettlementReplayApprovalRequest.findMany as jest.Mock
+    ).mockResolvedValue([
+      {
+        id: "approval_1",
+        transactionIntentId: "intent_1",
+        chainId: 8453,
+        replayAction: "confirm",
+        status: "pending_approval",
+        requestedByOperatorId: "ops_requester",
+        requestedByOperatorRole: "operations_admin",
+        requestNote: "Need confirm replay.",
+        requestedAt: new Date("2026-04-06T01:00:00.000Z"),
+        approvedByOperatorId: null,
+        approvedByOperatorRole: null,
+        approvalNote: null,
+        approvedAt: null,
+        executedByOperatorId: null,
+        executedByOperatorRole: null,
+        executedAt: null
+      }
+    ]);
+    (prismaService.auditEvent.findMany as jest.Mock).mockResolvedValue([]);
+
+    const result = await service.getMismatchWorkspace("mismatch_1", {
+      recentAuditLimit: 10
+    });
+
+    expect(result.replayApprovalRequests).toEqual([
+      expect.objectContaining({
+        id: "approval_1",
+        replayAction: "confirm",
+        status: "pending_approval",
+        intentType: TransactionIntentType.deposit
+      })
+    ]);
   });
 
   it("repairs a customer balance mismatch and verifies that the scan resolves it", async () => {

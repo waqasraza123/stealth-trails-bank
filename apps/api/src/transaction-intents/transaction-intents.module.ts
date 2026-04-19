@@ -46,6 +46,11 @@ import { WithdrawalSettlementReconciliationService } from "./withdrawal-settleme
     InternalOperatorApiKeyGuard,
     InternalWorkerApiKeyGuard
   ],
-  exports: [TransactionIntentsService, WithdrawalIntentsService]
+  exports: [
+    TransactionIntentsService,
+    WithdrawalIntentsService,
+    DepositSettlementReconciliationService,
+    WithdrawalSettlementReconciliationService
+  ]
 })
 export class TransactionIntentsModule {}

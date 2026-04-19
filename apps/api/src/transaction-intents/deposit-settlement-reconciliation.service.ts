@@ -617,7 +617,12 @@ export class DepositSettlementReconciliationService {
         where: {
           transactionIntentId: intentId,
           replayAction: dto.replayAction,
-          status: DepositSettlementReplayApprovalRequestStatus.pending_approval
+          status: {
+            in: [
+              DepositSettlementReplayApprovalRequestStatus.pending_approval,
+              DepositSettlementReplayApprovalRequestStatus.approved
+            ]
+          }
         },
         include: {
           transactionIntent: {
@@ -635,7 +640,7 @@ export class DepositSettlementReconciliationService {
     if (existingPendingRequest) {
       if (existingPendingRequest.requestedByOperatorId !== operatorId) {
         throw new ConflictException(
-          "A pending governed replay approval already exists for this deposit intent and replay action."
+          "A governed replay approval already exists for this deposit intent and replay action."
         );
       }
 

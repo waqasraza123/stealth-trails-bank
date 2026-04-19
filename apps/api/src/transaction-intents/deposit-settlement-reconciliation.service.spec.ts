@@ -304,6 +304,45 @@ describe("DepositSettlementReconciliationService", () => {
     });
   });
 
+  it("reuses an approved deposit replay approval request for the same requester", async () => {
+    const { service, prismaService } = createService();
+
+    prismaService.transactionIntent.findFirst.mockResolvedValue(
+      createRecord({
+        status: TransactionIntentStatus.broadcast,
+        blockchainStatus: BlockchainTransactionStatus.confirmed,
+        hasLedgerJournal: false,
+        hasSettlementProof: false,
+        settledAmount: null
+      })
+    );
+
+    prismaService.depositSettlementReplayApprovalRequest.findFirst.mockResolvedValue(
+      createApprovalRequest({
+        replayAction: DepositSettlementReplayAction.confirm,
+        status: DepositSettlementReplayApprovalRequestStatus.approved,
+        requestedByOperatorId: "ops_1",
+        approvedByOperatorId: "ops_2",
+        approvedByOperatorRole: "operations_admin",
+        approvedAt: new Date("2026-04-01T11:05:00.000Z")
+      })
+    );
+
+    const result = await service.requestReplayApproval(
+      "intent_1",
+      "ops_1",
+      "operations_admin",
+      {
+        replayAction: "confirm"
+      }
+    );
+
+    expect(result.stateReused).toBe(true);
+    expect(result.request.status).toBe(
+      DepositSettlementReplayApprovalRequestStatus.approved
+    );
+  });
+
   it("replays confirm only with a governed approval request from a different operator", async () => {
     const { service, prismaService, transactionIntentsService, prismaTransaction } =
       createService();

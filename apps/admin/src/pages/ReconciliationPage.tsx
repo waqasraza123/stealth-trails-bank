@@ -8,6 +8,7 @@ import {
   listLedgerReconciliationRuns,
   openLedgerReconciliationReviewCase,
   repairLedgerCustomerBalance,
+  requestLedgerReconciliationReplayApproval,
   replayConfirmMismatch,
   replaySettleMismatch
 } from "@/lib/api";
@@ -62,6 +63,11 @@ export function ReconciliationPage() {
     }
   }, [mismatchesQuery.data, selectedMismatchId, setSearchParams]);
 
+  useEffect(() => {
+    setFlash(null);
+    setActionError(null);
+  }, [selectedMismatchId]);
+
   async function refreshWorkspace() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["ledger-mismatches", session?.baseUrl] }),
@@ -72,11 +78,19 @@ export function ReconciliationPage() {
     ]);
   }
 
-  function buildMutation<T>(mutationFn: () => Promise<T>, successMessage: string, failureMessage: string) {
+  function buildMutation<T>(
+    mutationFn: () => Promise<T>,
+    successMessage: string | ((result: T) => string),
+    failureMessage: string
+  ) {
     return useMutation({
       mutationFn,
-      onSuccess: async () => {
-        setFlash(successMessage);
+      onSuccess: async (result) => {
+        setFlash(
+          typeof successMessage === "function"
+            ? successMessage(result)
+            : successMessage
+        );
         setActionError(null);
         setGovernedConfirm(false);
         await refreshWorkspace();
@@ -87,14 +101,54 @@ export function ReconciliationPage() {
     });
   }
 
+  const requestConfirmApprovalMutation = buildMutation(
+    () =>
+      requestLedgerReconciliationReplayApproval(
+        session!,
+        selectedMismatchId!,
+        "confirm",
+        trimToUndefined(actionNote)
+      ),
+    (result) =>
+      result.stateReused
+        ? `Confirm replay approval request reused (${shortenValue(result.request.id)}).`
+        : `Confirm replay approval requested (${shortenValue(result.request.id)}).`,
+    "Failed to request confirm replay approval."
+  );
+  const requestSettleApprovalMutation = buildMutation(
+    () =>
+      requestLedgerReconciliationReplayApproval(
+        session!,
+        selectedMismatchId!,
+        "settle",
+        trimToUndefined(actionNote)
+      ),
+    (result) =>
+      result.stateReused
+        ? `Settle replay approval request reused (${shortenValue(result.request.id)}).`
+        : `Settle replay approval requested (${shortenValue(result.request.id)}).`,
+    "Failed to request settle replay approval."
+  );
   const replayConfirmMutation = buildMutation(
-    () => replayConfirmMismatch(session!, selectedMismatchId!, trimToUndefined(actionNote)),
-    "Replay confirm requested.",
+    () =>
+      replayConfirmMismatch(
+        session!,
+        selectedMismatchId!,
+        confirmReplayApprovalRequest!.id,
+        trimToUndefined(actionNote)
+      ),
+    "Replay confirm completed.",
     "Failed to replay confirm the mismatch."
   );
   const replaySettleMutation = buildMutation(
-    () => replaySettleMismatch(session!, selectedMismatchId!, trimToUndefined(actionNote)),
-    "Replay settle requested.",
+    () =>
+      replaySettleMismatch(
+        session!,
+        selectedMismatchId!,
+        settleReplayApprovalRequest!.id,
+        trimToUndefined(actionNote)
+      ),
+    "Replay settle completed.",
     "Failed to replay settle the mismatch."
   );
   const openReviewCaseMutation = buildMutation(
@@ -136,7 +190,43 @@ export function ReconciliationPage() {
   }
 
   const workspace = workspaceQuery.data;
+  const replayApprovalRequests = workspace?.replayApprovalRequests ?? [];
+  const confirmReplayApprovalRequest =
+    replayApprovalRequests.find((request) => request.replayAction === "confirm") ??
+    null;
+  const settleReplayApprovalRequest =
+    replayApprovalRequests.find((request) => request.replayAction === "settle") ??
+    null;
+
+  function formatReplayApprovalSummary(
+    request:
+      | (typeof replayApprovalRequests)[number]
+      | null
+  ) {
+    if (!request) {
+      return "No open governed replay approval request.";
+    }
+
+    const status = toTitleCase(request.status.replaceAll("_", " "));
+    const requestedAt = formatDateTime(request.requestedAt);
+    const approvedBy = request.approvedByOperatorId
+      ? ` Approved by ${request.approvedByOperatorId}.`
+      : "";
+
+    return `${status} request ${shortenValue(request.id)} submitted ${requestedAt} by ${request.requestedByOperatorId}.${approvedBy}`;
+  }
+
+  function canExecuteReplayApproval(
+    request: (typeof replayApprovalRequests)[number] | null
+  ) {
+    return Boolean(
+      request && request.requestedByOperatorId !== session?.operatorId
+    );
+  }
+
   const mutationPending =
+    requestConfirmApprovalMutation.isPending ||
+    requestSettleApprovalMutation.isPending ||
     replayConfirmMutation.isPending ||
     replaySettleMutation.isPending ||
     openReviewCaseMutation.isPending ||
@@ -253,6 +343,42 @@ export function ReconciliationPage() {
                   />
                 </ListCard>
 
+                <ListCard title="Governed replay approvals">
+                  <DetailList
+                    items={[
+                      {
+                        label: "Confirm replay",
+                        value: formatReplayApprovalSummary(confirmReplayApprovalRequest)
+                      },
+                      {
+                        label: "Settle replay",
+                        value: formatReplayApprovalSummary(settleReplayApprovalRequest)
+                      }
+                    ]}
+                  />
+                  <InlineNotice
+                    tone="warning"
+                    title="Dual-control replay"
+                    description="Replay execution requires a governed approval request from one operator and replay execution by a different authorized operator."
+                  />
+                  {confirmReplayApprovalRequest?.requestedByOperatorId ===
+                  session?.operatorId ? (
+                    <InlineNotice
+                      tone="warning"
+                      title="Confirm replay awaiting second operator"
+                      description="The current operator requested the confirm replay approval, so a different authorized operator must execute the replay."
+                    />
+                  ) : null}
+                  {settleReplayApprovalRequest?.requestedByOperatorId ===
+                  session?.operatorId ? (
+                    <InlineNotice
+                      tone="warning"
+                      title="Settle replay awaiting second operator"
+                      description="The current operator requested the settle replay approval, so a different authorized operator must execute the replay."
+                    />
+                  ) : null}
+                </ListCard>
+
                 <TimelinePanel
                   title="Audit evidence"
                   description="Recent audit history attached to the selected mismatch."
@@ -309,7 +435,39 @@ export function ReconciliationPage() {
                     <button
                       type="button"
                       className="admin-secondary-button"
-                      disabled={!governedConfirm || mutationPending}
+                      disabled={
+                        !governedConfirm ||
+                        mutationPending ||
+                        Boolean(confirmReplayApprovalRequest)
+                      }
+                      onClick={() => requestConfirmApprovalMutation.mutate()}
+                    >
+                      {requestConfirmApprovalMutation.isPending
+                        ? "Requesting..."
+                        : "Request confirm approval"}
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-secondary-button"
+                      disabled={
+                        !governedConfirm ||
+                        mutationPending ||
+                        Boolean(settleReplayApprovalRequest)
+                      }
+                      onClick={() => requestSettleApprovalMutation.mutate()}
+                    >
+                      {requestSettleApprovalMutation.isPending
+                        ? "Requesting..."
+                        : "Request settle approval"}
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-secondary-button"
+                      disabled={
+                        !governedConfirm ||
+                        mutationPending ||
+                        !canExecuteReplayApproval(confirmReplayApprovalRequest)
+                      }
                       onClick={() => replayConfirmMutation.mutate()}
                     >
                       {replayConfirmMutation.isPending ? "Submitting..." : "Replay confirm"}
@@ -317,7 +475,11 @@ export function ReconciliationPage() {
                     <button
                       type="button"
                       className="admin-secondary-button"
-                      disabled={!governedConfirm || mutationPending}
+                      disabled={
+                        !governedConfirm ||
+                        mutationPending ||
+                        !canExecuteReplayApproval(settleReplayApprovalRequest)
+                      }
                       onClick={() => replaySettleMutation.mutate()}
                     >
                       {replaySettleMutation.isPending ? "Submitting..." : "Replay settle"}

@@ -19,6 +19,7 @@ describe("LedgerReconciliationController", () => {
   const ledgerReconciliationService = {
     listScanRuns: jest.fn(),
     listMismatches: jest.fn(),
+    requestReplayApprovalForMismatch: jest.fn(),
     replayConfirmMismatch: jest.fn(),
     replaySettleMismatch: jest.fn()
   };
@@ -209,6 +210,57 @@ describe("LedgerReconciliationController", () => {
     });
   });
 
+  it("passes governed replay-approval requests through", async () => {
+    ledgerReconciliationService.requestReplayApprovalForMismatch.mockResolvedValue({
+      mismatch: {
+        id: "mismatch_1"
+      },
+      request: {
+        id: "approval_1"
+      },
+      stateReused: false
+    });
+
+    const response = await request(app.getHttpServer())
+      .post(
+        "/ledger/internal/reconciliation/mismatches/mismatch_1/request-replay-approval"
+      )
+      .set("x-operator-api-key", "test-operator-key")
+      .set("x-operator-id", "ops_1")
+      .set("x-operator-role", "operations_admin")
+      .send({
+        replayAction: "confirm",
+        note: "Need governed replay approval."
+      })
+      .expect(201);
+
+    expect(
+      ledgerReconciliationService.requestReplayApprovalForMismatch
+    ).toHaveBeenCalledWith(
+      "mismatch_1",
+      "ops_1",
+      "operations_admin",
+      {
+        replayAction: "confirm",
+        note: "Need governed replay approval."
+      }
+    );
+    expect(response.body).toEqual({
+      status: "success",
+      message:
+        "Ledger reconciliation replay approval request created successfully.",
+      data: {
+        mismatch: {
+          id: "mismatch_1"
+        },
+        request: {
+          id: "approval_1"
+        },
+        stateReused: false
+      }
+    });
+  });
+
   it("rejects malformed replay-confirm payloads", async () => {
     await request(app.getHttpServer())
       .post("/ledger/internal/reconciliation/mismatches/mismatch_1/replay-confirm")
@@ -221,5 +273,22 @@ describe("LedgerReconciliationController", () => {
       .expect(400);
 
     expect(ledgerReconciliationService.replayConfirmMismatch).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed replay-approval payloads", async () => {
+    await request(app.getHttpServer())
+      .post(
+        "/ledger/internal/reconciliation/mismatches/mismatch_1/request-replay-approval"
+      )
+      .set("x-operator-api-key", "test-operator-key")
+      .set("x-operator-id", "ops_1")
+      .send({
+        replayAction: "invalid"
+      })
+      .expect(400);
+
+    expect(
+      ledgerReconciliationService.requestReplayApprovalForMismatch
+    ).not.toHaveBeenCalled();
   });
 });

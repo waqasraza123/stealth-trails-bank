@@ -282,6 +282,41 @@ describe("WithdrawalSettlementReconciliationService", () => {
     );
   });
 
+  it("reuses an approved withdrawal replay approval request for the same requester", async () => {
+    const record = buildRecord({
+      status: TransactionIntentStatus.broadcast,
+      blockchainStatus: BlockchainTransactionStatus.confirmed,
+      hasLedgerJournal: false
+    });
+
+    const { service, prismaService } = createService([record]);
+
+    prismaService.withdrawalSettlementReplayApprovalRequest.findFirst.mockResolvedValue(
+      createApprovalRequest({
+        replayAction: WithdrawalSettlementReplayAction.confirm,
+        status: WithdrawalSettlementReplayApprovalRequestStatus.approved,
+        requestedByOperatorId: "ops_1",
+        approvedByOperatorId: "ops_2",
+        approvedByOperatorRole: "operations_admin",
+        approvedAt: new Date("2026-04-01T11:05:00.000Z")
+      })
+    );
+
+    const result = await service.requestReplayApproval(
+      "intent_1",
+      "ops_1",
+      "operations_admin",
+      {
+        replayAction: "confirm"
+      }
+    );
+
+    expect(result.stateReused).toBe(true);
+    expect(result.request.status).toBe(
+      WithdrawalSettlementReplayApprovalRequestStatus.approved
+    );
+  });
+
   it("replays confirm only with a governed approval request from a different operator", async () => {
     const record = buildRecord({
       status: TransactionIntentStatus.broadcast,

@@ -554,8 +554,12 @@ export class WithdrawalSettlementReconciliationService {
         where: {
           transactionIntentId: intentId,
           replayAction: dto.replayAction,
-          status:
-            WithdrawalSettlementReplayApprovalRequestStatus.pending_approval
+          status: {
+            in: [
+              WithdrawalSettlementReplayApprovalRequestStatus.pending_approval,
+              WithdrawalSettlementReplayApprovalRequestStatus.approved
+            ]
+          }
         },
         include: {
           transactionIntent: {
@@ -573,7 +577,7 @@ export class WithdrawalSettlementReconciliationService {
     if (existingPendingRequest) {
       if (existingPendingRequest.requestedByOperatorId !== operatorId) {
         throw new ConflictException(
-          "A pending governed replay approval already exists for this withdrawal intent and replay action."
+          "A governed replay approval already exists for this withdrawal intent and replay action."
         );
       }
 

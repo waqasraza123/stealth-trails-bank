@@ -19,6 +19,7 @@ import type {
   IncidentPackageSnapshot,
   LedgerReconciliationMismatchList,
   LedgerReconciliationMutationResult,
+  LedgerReconciliationReplayApprovalMutationResult,
   LedgerReconciliationScanRunList,
   LedgerReconciliationWorkspace,
   LaunchClosureManifest,
@@ -639,24 +640,48 @@ export async function getLedgerReconciliationWorkspace(
 export async function replayConfirmMismatch(
   session: OperatorSession,
   mismatchId: string,
+  approvalRequestId: string,
   note?: string
 ): Promise<LedgerReconciliationMutationResult> {
   return requestData(session, {
     method: "POST",
     url: `/ledger/internal/reconciliation/mismatches/${mismatchId}/replay-confirm`,
-    data: note ? { note } : {}
+    data: {
+      approvalRequestId,
+      ...(note ? { note } : {})
+    }
   });
 }
 
 export async function replaySettleMismatch(
   session: OperatorSession,
   mismatchId: string,
+  approvalRequestId: string,
   note?: string
 ): Promise<LedgerReconciliationMutationResult> {
   return requestData(session, {
     method: "POST",
     url: `/ledger/internal/reconciliation/mismatches/${mismatchId}/replay-settle`,
-    data: note ? { note } : {}
+    data: {
+      approvalRequestId,
+      ...(note ? { note } : {})
+    }
+  });
+}
+
+export async function requestLedgerReconciliationReplayApproval(
+  session: OperatorSession,
+  mismatchId: string,
+  replayAction: "confirm" | "settle",
+  note?: string
+): Promise<LedgerReconciliationReplayApprovalMutationResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/ledger/internal/reconciliation/mismatches/${mismatchId}/request-replay-approval`,
+    data: {
+      replayAction,
+      ...(note ? { note } : {})
+    }
   });
 }
 

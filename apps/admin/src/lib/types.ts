@@ -1713,12 +1713,39 @@ export type ReleaseLaunchClosurePackList = {
 export type LedgerReconciliationWorkspace = {
   mismatch: LedgerReconciliationMismatch;
   currentSnapshot: JsonValue;
+  replayApprovalRequests: LedgerReconciliationReplayApprovalRequest[];
   recentAuditEvents: AuditTimelineEntry[];
 };
 
 export type LedgerReconciliationMutationResult = {
   mismatch: LedgerReconciliationMismatch;
 };
+
+export type LedgerReconciliationReplayApprovalRequest = {
+  id: string;
+  transactionIntentId: string;
+  chainId: number;
+  intentType: "deposit" | "withdrawal";
+  replayAction: "confirm" | "settle";
+  status: "pending_approval" | "approved" | "executed";
+  requestedByOperatorId: string;
+  requestedByOperatorRole: string | null;
+  requestNote: string | null;
+  requestedAt: string;
+  approvedByOperatorId: string | null;
+  approvedByOperatorRole: string | null;
+  approvalNote: string | null;
+  approvedAt: string | null;
+  executedByOperatorId: string | null;
+  executedByOperatorRole: string | null;
+  executedAt: string | null;
+};
+
+export type LedgerReconciliationReplayApprovalMutationResult =
+  LedgerReconciliationMutationResult & {
+    request: LedgerReconciliationReplayApprovalRequest;
+    stateReused: boolean;
+  };
 
 export type CustomerBalance = {
   asset: {

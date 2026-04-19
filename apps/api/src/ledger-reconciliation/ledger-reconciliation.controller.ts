@@ -14,6 +14,7 @@ import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { GetLedgerReconciliationWorkspaceDto } from "./dto/get-ledger-reconciliation-workspace.dto";
 import { ListLedgerReconciliationRunsDto } from "./dto/list-ledger-reconciliation-runs.dto";
 import { ListLedgerReconciliationMismatchesDto } from "./dto/list-ledger-reconciliation-mismatches.dto";
+import { RequestLedgerReconciliationReplayApprovalDto } from "./dto/request-ledger-reconciliation-replay-approval.dto";
 import { ScanLedgerReconciliationDto } from "./dto/scan-ledger-reconciliation.dto";
 import { UpdateLedgerReconciliationMismatchDto } from "./dto/update-ledger-reconciliation-mismatch.dto";
 import { LedgerReconciliationService } from "./ledger-reconciliation.service";
@@ -116,6 +117,35 @@ export class LedgerReconciliationController {
     return {
       status: "success",
       message: "Ledger reconciliation mismatch workspace retrieved successfully.",
+      data: result
+    };
+  }
+
+  @Post("mismatches/:mismatchId/request-replay-approval")
+  async requestReplayApproval(
+    @Param("mismatchId") mismatchId: string,
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
+    dto: RequestLedgerReconciliationReplayApprovalDto,
+    @Request() request: InternalOperatorRequest
+  ): Promise<CustomJsonResponse> {
+    const result =
+      await this.ledgerReconciliationService.requestReplayApprovalForMismatch(
+        mismatchId,
+        request.internalOperator.operatorId,
+        request.internalOperator.operatorRole ?? null,
+        dto
+      );
+
+    return {
+      status: "success",
+      message: result.stateReused
+        ? "Ledger reconciliation replay approval request reused successfully."
+        : "Ledger reconciliation replay approval request created successfully.",
       data: result
     };
   }

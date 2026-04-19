@@ -7,6 +7,8 @@ import {
 import { loadProductChainRuntimeConfig } from "@stealth-trails-bank/config/api";
 import {
   BlockchainTransactionStatus,
+  DepositSettlementReplayApprovalRequestStatus,
+  DepositSettlementReplayAction,
   LedgerAccountType,
   LedgerJournalType,
   LedgerPostingDirection,
@@ -22,18 +24,25 @@ import {
   ReviewCaseType,
   ReviewCaseEventType,
   TransactionIntentStatus,
-  TransactionIntentType
+  TransactionIntentType,
+  WithdrawalSettlementReplayApprovalRequestStatus,
+  WithdrawalSettlementReplayAction
 } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import type { PrismaJsonValue } from "../prisma/prisma-json";
 import { ReviewCasesService } from "../review-cases/review-cases.service";
 import { classifyDepositSettlementReconciliation } from "../transaction-intents/domain/deposit-settlement-reconciliation";
 import { classifyWithdrawalSettlementReconciliation } from "../transaction-intents/domain/withdrawal-settlement-reconciliation";
+import { DepositSettlementReconciliationService } from "../transaction-intents/deposit-settlement-reconciliation.service";
 import { TransactionIntentsService } from "../transaction-intents/transaction-intents.service";
+import { RequestDepositSettlementReplayApprovalDto } from "../transaction-intents/dto/request-deposit-settlement-replay-approval.dto";
+import { RequestWithdrawalSettlementReplayApprovalDto } from "../transaction-intents/dto/request-withdrawal-settlement-replay-approval.dto";
+import { WithdrawalSettlementReconciliationService } from "../transaction-intents/withdrawal-settlement-reconciliation.service";
 import { WithdrawalIntentsService } from "../transaction-intents/withdrawal-intents.service";
 import { GetLedgerReconciliationWorkspaceDto } from "./dto/get-ledger-reconciliation-workspace.dto";
 import { ListLedgerReconciliationRunsDto } from "./dto/list-ledger-reconciliation-runs.dto";
 import { ListLedgerReconciliationMismatchesDto } from "./dto/list-ledger-reconciliation-mismatches.dto";
+import { RequestLedgerReconciliationReplayApprovalDto } from "./dto/request-ledger-reconciliation-replay-approval.dto";
 import { ScanLedgerReconciliationDto } from "./dto/scan-ledger-reconciliation.dto";
 
 const mismatchInclude = {
@@ -391,6 +400,7 @@ type ListLedgerReconciliationMismatchesResult = {
 type LedgerReconciliationWorkspaceResult = {
   mismatch: MismatchProjection;
   currentSnapshot: Prisma.JsonValue | null;
+  replayApprovalRequests: ReplayApprovalRequestProjection[];
   recentAuditEvents: Array<{
     id: string;
     actorType: string;
@@ -405,6 +415,33 @@ type LedgerReconciliationWorkspaceResult = {
 
 type ActionResult = {
   mismatch: MismatchProjection;
+};
+
+type ReplayApprovalRequestProjection = {
+  id: string;
+  transactionIntentId: string;
+  chainId: number;
+  intentType: TransactionIntentType;
+  replayAction: "confirm" | "settle";
+  status:
+    | DepositSettlementReplayApprovalRequestStatus
+    | WithdrawalSettlementReplayApprovalRequestStatus;
+  requestedByOperatorId: string;
+  requestedByOperatorRole: string | null;
+  requestNote: string | null;
+  requestedAt: string;
+  approvedByOperatorId: string | null;
+  approvedByOperatorRole: string | null;
+  approvalNote: string | null;
+  approvedAt: string | null;
+  executedByOperatorId: string | null;
+  executedByOperatorRole: string | null;
+  executedAt: string | null;
+};
+
+type ReplayApprovalRequestActionResult = ActionResult & {
+  request: ReplayApprovalRequestProjection;
+  stateReused: boolean;
 };
 
 type ScanRunRecord = Prisma.LedgerReconciliationScanRunGetPayload<{}>;
@@ -474,6 +511,8 @@ export class LedgerReconciliationService {
     private readonly prismaService: PrismaService,
     private readonly transactionIntentsService: TransactionIntentsService,
     private readonly withdrawalIntentsService: WithdrawalIntentsService,
+    private readonly depositSettlementReconciliationService: DepositSettlementReconciliationService,
+    private readonly withdrawalSettlementReconciliationService: WithdrawalSettlementReconciliationService,
     private readonly reviewCasesService: ReviewCasesService
   ) {
     this.productChainId = loadProductChainRuntimeConfig().productChainId;
@@ -568,6 +607,150 @@ export class LedgerReconciliationService {
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString()
     };
+  }
+
+  private mapDepositReplayApprovalRequest(
+    request: {
+      id: string;
+      transactionIntentId: string;
+      chainId: number;
+      replayAction: DepositSettlementReplayAction;
+      status: DepositSettlementReplayApprovalRequestStatus;
+      requestedByOperatorId: string;
+      requestedByOperatorRole: string | null;
+      requestNote: string | null;
+      requestedAt: Date;
+      approvedByOperatorId: string | null;
+      approvedByOperatorRole: string | null;
+      approvalNote: string | null;
+      approvedAt: Date | null;
+      executedByOperatorId: string | null;
+      executedByOperatorRole: string | null;
+      executedAt: Date | null;
+    }
+  ): ReplayApprovalRequestProjection {
+    return {
+      id: request.id,
+      transactionIntentId: request.transactionIntentId,
+      chainId: request.chainId,
+      intentType: TransactionIntentType.deposit,
+      replayAction: request.replayAction,
+      status: request.status,
+      requestedByOperatorId: request.requestedByOperatorId,
+      requestedByOperatorRole: request.requestedByOperatorRole,
+      requestNote: request.requestNote,
+      requestedAt: request.requestedAt.toISOString(),
+      approvedByOperatorId: request.approvedByOperatorId,
+      approvedByOperatorRole: request.approvedByOperatorRole,
+      approvalNote: request.approvalNote,
+      approvedAt: request.approvedAt?.toISOString() ?? null,
+      executedByOperatorId: request.executedByOperatorId,
+      executedByOperatorRole: request.executedByOperatorRole,
+      executedAt: request.executedAt?.toISOString() ?? null
+    };
+  }
+
+  private mapWithdrawalReplayApprovalRequest(
+    request: {
+      id: string;
+      transactionIntentId: string;
+      chainId: number;
+      replayAction: WithdrawalSettlementReplayAction;
+      status: WithdrawalSettlementReplayApprovalRequestStatus;
+      requestedByOperatorId: string;
+      requestedByOperatorRole: string | null;
+      requestNote: string | null;
+      requestedAt: Date;
+      approvedByOperatorId: string | null;
+      approvedByOperatorRole: string | null;
+      approvalNote: string | null;
+      approvedAt: Date | null;
+      executedByOperatorId: string | null;
+      executedByOperatorRole: string | null;
+      executedAt: Date | null;
+    }
+  ): ReplayApprovalRequestProjection {
+    return {
+      id: request.id,
+      transactionIntentId: request.transactionIntentId,
+      chainId: request.chainId,
+      intentType: TransactionIntentType.withdrawal,
+      replayAction: request.replayAction,
+      status: request.status,
+      requestedByOperatorId: request.requestedByOperatorId,
+      requestedByOperatorRole: request.requestedByOperatorRole,
+      requestNote: request.requestNote,
+      requestedAt: request.requestedAt.toISOString(),
+      approvedByOperatorId: request.approvedByOperatorId,
+      approvedByOperatorRole: request.approvedByOperatorRole,
+      approvalNote: request.approvalNote,
+      approvedAt: request.approvedAt?.toISOString() ?? null,
+      executedByOperatorId: request.executedByOperatorId,
+      executedByOperatorRole: request.executedByOperatorRole,
+      executedAt: request.executedAt?.toISOString() ?? null
+    };
+  }
+
+  private async listReplayApprovalRequestsForMismatch(
+    mismatch: MismatchRecord
+  ): Promise<ReplayApprovalRequestProjection[]> {
+    if (
+      mismatch.scope !== LedgerReconciliationMismatchScope.transaction_intent ||
+      !mismatch.transactionIntentId ||
+      !mismatch.transactionIntent
+    ) {
+      return [];
+    }
+
+    if (mismatch.transactionIntent.intentType === TransactionIntentType.deposit) {
+      const requests =
+        await this.prismaService.depositSettlementReplayApprovalRequest.findMany({
+          where: {
+            transactionIntentId: mismatch.transactionIntentId,
+            status: {
+              in: [
+                DepositSettlementReplayApprovalRequestStatus.pending_approval,
+                DepositSettlementReplayApprovalRequestStatus.approved
+              ]
+            }
+          },
+          orderBy: {
+            requestedAt: "desc"
+          }
+        });
+
+      return requests.map((request) =>
+        this.mapDepositReplayApprovalRequest(request)
+      );
+    }
+
+    if (
+      mismatch.transactionIntent.intentType === TransactionIntentType.withdrawal
+    ) {
+      const requests =
+        await this.prismaService.withdrawalSettlementReplayApprovalRequest.findMany(
+          {
+            where: {
+              transactionIntentId: mismatch.transactionIntentId,
+              status: {
+                in: [
+                  WithdrawalSettlementReplayApprovalRequestStatus.pending_approval,
+                  WithdrawalSettlementReplayApprovalRequestStatus.approved
+                ]
+              }
+            },
+            orderBy: {
+              requestedAt: "desc"
+            }
+          }
+        );
+
+      return requests.map((request) =>
+        this.mapWithdrawalReplayApprovalRequest(request)
+      );
+    }
+
+    return [];
   }
 
   private mapScanRunProjection(record: ScanRunRecord): ScanRunProjection {
@@ -1852,40 +2035,44 @@ export class LedgerReconciliationService {
           ?.latestSnapshot ?? null;
     }
 
-    const recentAuditEvents = await this.prismaService.auditEvent.findMany({
-      where: {
-        OR: [
-          {
-            targetType: "LedgerReconciliationMismatch",
-            targetId: mismatch.id
-          },
-          ...(mismatch.transactionIntentId
-            ? [
-                {
-                  targetType: "TransactionIntent",
-                  targetId: mismatch.transactionIntentId
-                } satisfies Prisma.AuditEventWhereInput
-              ]
-            : []),
-          ...(mismatch.linkedReviewCaseId
-            ? [
-                {
-                  targetType: "ReviewCase",
-                  targetId: mismatch.linkedReviewCaseId
-                } satisfies Prisma.AuditEventWhereInput
-              ]
-            : [])
-        ]
-      },
-      orderBy: {
-        createdAt: "desc"
-      },
-      take: recentAuditLimit
-    });
+    const [replayApprovalRequests, recentAuditEvents] = await Promise.all([
+      this.listReplayApprovalRequestsForMismatch(mismatch),
+      this.prismaService.auditEvent.findMany({
+        where: {
+          OR: [
+            {
+              targetType: "LedgerReconciliationMismatch",
+              targetId: mismatch.id
+            },
+            ...(mismatch.transactionIntentId
+              ? [
+                  {
+                    targetType: "TransactionIntent",
+                    targetId: mismatch.transactionIntentId
+                  } satisfies Prisma.AuditEventWhereInput
+                ]
+              : []),
+            ...(mismatch.linkedReviewCaseId
+              ? [
+                  {
+                    targetType: "ReviewCase",
+                    targetId: mismatch.linkedReviewCaseId
+                  } satisfies Prisma.AuditEventWhereInput
+                ]
+              : [])
+          ]
+        },
+        orderBy: {
+          createdAt: "desc"
+        },
+        take: recentAuditLimit
+      })
+    ]);
 
     return {
       mismatch: this.mapMismatchProjection(mismatch),
       currentSnapshot,
+      replayApprovalRequests,
       recentAuditEvents: recentAuditEvents.map((event) => ({
         id: event.id,
         actorType: event.actorType,
@@ -1897,6 +2084,69 @@ export class LedgerReconciliationService {
         createdAt: event.createdAt.toISOString()
       }))
     };
+  }
+
+  async requestReplayApprovalForMismatch(
+    mismatchId: string,
+    operatorId: string,
+    operatorRole: string | null,
+    dto: RequestLedgerReconciliationReplayApprovalDto
+  ): Promise<ReplayApprovalRequestActionResult> {
+    const mismatch = await this.findMismatchById(mismatchId);
+
+    if (
+      mismatch.scope !== LedgerReconciliationMismatchScope.transaction_intent ||
+      !mismatch.transactionIntentId ||
+      !mismatch.transactionIntent
+    ) {
+      throw new ConflictException(
+        "Only transaction-intent mismatches can request governed replay approval."
+      );
+    }
+
+    if (mismatch.transactionIntent.intentType === TransactionIntentType.deposit) {
+      const result =
+        await this.depositSettlementReconciliationService.requestReplayApproval(
+          mismatch.transactionIntentId,
+          operatorId,
+          operatorRole,
+          dto satisfies RequestDepositSettlementReplayApprovalDto
+        );
+
+      return {
+        mismatch: this.mapMismatchProjection(mismatch),
+        request: {
+          ...result.request,
+          intentType: TransactionIntentType.deposit
+        },
+        stateReused: result.stateReused
+      };
+    }
+
+    if (
+      mismatch.transactionIntent.intentType === TransactionIntentType.withdrawal
+    ) {
+      const result =
+        await this.withdrawalSettlementReconciliationService.requestReplayApproval(
+          mismatch.transactionIntentId,
+          operatorId,
+          operatorRole,
+          dto satisfies RequestWithdrawalSettlementReplayApprovalDto
+        );
+
+      return {
+        mismatch: this.mapMismatchProjection(mismatch),
+        request: {
+          ...result.request,
+          intentType: TransactionIntentType.withdrawal
+        },
+        stateReused: result.stateReused
+      };
+    }
+
+    throw new ConflictException(
+      "Governed replay approval is unsupported for this transaction intent type."
+    );
   }
 
   async replayConfirmMismatch(
