@@ -10,6 +10,7 @@ import { OptionChips } from "../components/ui/OptionChips";
 import { SectionCard } from "../components/ui/SectionCard";
 import { StatusChip } from "../components/ui/StatusChip";
 import { TimelineList } from "../components/ui/TimelineList";
+import { AnimatedSection } from "../components/ui/AnimatedSection";
 import { useTransactionHistoryQuery } from "../hooks/use-customer-queries";
 import { useLocale } from "../i18n/use-locale";
 import { useT } from "../i18n/use-t";
@@ -74,85 +75,94 @@ export function TransactionsScreen() {
       subtitle={t("transactions.description")}
       trailing={<LanguageToggle />}
     >
-      <SectionCard className="gap-4">
-        <TextInput
-          accessibilityLabel={t("transactions.searchPlaceholder")}
-          className="rounded-2xl border border-border bg-white px-4 py-3 text-base text-ink"
-          onChangeText={setSearch}
-          placeholder={t("transactions.searchPlaceholder")}
-          placeholderTextColor="#72808d"
-          value={search}
-        />
-        {typeOptions.length > 0 ? (
-          <OptionChips
-            onChange={(value) => setTypeFilter(value === typeFilter ? "" : value)}
-            options={[{ label: t("transactions.allTypes"), value: "" }, ...typeOptions]}
-            value={typeFilter}
+      <AnimatedSection delayOrder={1} variant="up">
+        <SectionCard className="gap-4">
+          <TextInput
+            accessibilityLabel={t("transactions.searchPlaceholder")}
+            className="rounded-2xl border border-border bg-white px-4 py-3 text-base text-ink"
+            onChangeText={setSearch}
+            placeholder={t("transactions.searchPlaceholder")}
+            placeholderTextColor="#72808d"
+            value={search}
           />
-        ) : null}
-        {statusOptions.length > 0 ? (
-          <OptionChips
-            onChange={(value) => setStatusFilter(value === statusFilter ? "" : value)}
-            options={[
-              { label: t("transactions.allStatuses"), value: "" },
-              ...statusOptions
-            ]}
-            value={statusFilter}
-          />
-        ) : null}
-      </SectionCard>
+          {typeOptions.length > 0 ? (
+            <OptionChips
+              onChange={(value) => setTypeFilter(value === typeFilter ? "" : value)}
+              options={[{ label: t("transactions.allTypes"), value: "" }, ...typeOptions]}
+              value={typeFilter}
+            />
+          ) : null}
+          {statusOptions.length > 0 ? (
+            <OptionChips
+              onChange={(value) =>
+                setStatusFilter(value === statusFilter ? "" : value)
+              }
+              options={[
+                { label: t("transactions.allStatuses"), value: "" },
+                ...statusOptions
+              ]}
+              value={statusFilter}
+            />
+          ) : null}
+        </SectionCard>
+      </AnimatedSection>
 
       {historyQuery.isError ? (
-        <InlineNotice
-          message={
-            historyQuery.error instanceof Error
-              ? historyQuery.error.message
-              : t("common.notAvailable")
-          }
-          tone="critical"
-        />
+        <AnimatedSection delayOrder={2}>
+          <InlineNotice
+            message={
+              historyQuery.error instanceof Error
+                ? historyQuery.error.message
+                : t("common.notAvailable")
+            }
+            tone="critical"
+          />
+        </AnimatedSection>
       ) : null}
 
-      <SectionCard className="gap-3">
-        {filteredIntents.length === 0 ? (
-          <AppText className="text-sm text-slate">{t("transactions.empty")}</AppText>
-        ) : (
-          filteredIntents.map((intent) => (
-            <Pressable
-              key={intent.id}
-              className="gap-3 rounded-2xl border border-border bg-white px-4 py-4"
-              onPress={() => setSelectedIntent(intent)}
-            >
-              <View className="flex-row items-start justify-between gap-3">
-                <View className="flex-1 gap-1">
-                  <AppText className="text-sm text-ink" weight="semibold">
-                    {normalizeIntentTypeLabel(intent.intentType, locale)}
-                  </AppText>
-                  <AppText className="text-base text-ink" weight="bold">
-                    {formatIntentAmount(
-                      intent.settledAmount ?? intent.requestedAmount,
-                      intent.asset.symbol,
-                      intent.intentType,
-                      locale
-                    )}
-                  </AppText>
-                  <AppText className="text-xs text-slate">
-                    {formatDateLabel(intent.createdAt, locale)}
-                  </AppText>
-                  <LtrValue
-                    className="text-xs text-slate"
-                    value={resolveIntentAddress(intent)}
-                  />
-                </View>
-                <StatusChip
-                  label={formatIntentStatusLabel(intent.status, locale)}
-                  tone={getIntentStatusTone(intent.status)}
-                />
-              </View>
-            </Pressable>
-          ))
-        )}
-      </SectionCard>
+      <AnimatedSection delayOrder={3}>
+        <SectionCard className="gap-3">
+          {filteredIntents.length === 0 ? (
+            <AppText className="text-sm text-slate">{t("transactions.empty")}</AppText>
+          ) : (
+            filteredIntents.map((intent, index) => (
+              <AnimatedSection key={intent.id} delayOrder={index + 1}>
+                <Pressable
+                  className="gap-3 rounded-2xl border border-border bg-white px-4 py-4"
+                  onPress={() => setSelectedIntent(intent)}
+                >
+                  <View className="flex-row items-start justify-between gap-3">
+                    <View className="flex-1 gap-1">
+                      <AppText className="text-sm text-ink" weight="semibold">
+                        {normalizeIntentTypeLabel(intent.intentType, locale)}
+                      </AppText>
+                      <AppText className="text-base text-ink" weight="bold">
+                        {formatIntentAmount(
+                          intent.settledAmount ?? intent.requestedAmount,
+                          intent.asset.symbol,
+                          intent.intentType,
+                          locale
+                        )}
+                      </AppText>
+                      <AppText className="text-xs text-slate">
+                        {formatDateLabel(intent.createdAt, locale)}
+                      </AppText>
+                      <LtrValue
+                        className="text-xs text-slate"
+                        value={resolveIntentAddress(intent)}
+                      />
+                    </View>
+                    <StatusChip
+                      label={formatIntentStatusLabel(intent.status, locale)}
+                      tone={getIntentStatusTone(intent.status)}
+                    />
+                  </View>
+                </Pressable>
+              </AnimatedSection>
+            ))
+          )}
+        </SectionCard>
+      </AnimatedSection>
 
       <Modal
         animationType="slide"

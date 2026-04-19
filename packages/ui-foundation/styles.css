@@ -45,6 +45,30 @@
     linear-gradient(180deg, #f9f7f2 0%, #edf1f5 48%, #e7edf4 100%);
 }
 
+.stb-ambient-orb {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(10px);
+  mix-blend-mode: screen;
+  opacity: 0.72;
+  will-change: transform;
+  animation: stb-orb-drift 18s ease-in-out infinite;
+}
+
+.stb-ambient-orb--emerald {
+  background: radial-gradient(circle, rgba(114, 233, 212, 0.28), rgba(17, 128, 106, 0));
+}
+
+.stb-ambient-orb--indigo {
+  background: radial-gradient(circle, rgba(123, 147, 255, 0.26), rgba(91, 115, 217, 0));
+  animation-delay: -4s;
+}
+
+.stb-ambient-orb--gold {
+  background: radial-gradient(circle, rgba(246, 204, 106, 0.22), rgba(246, 204, 106, 0));
+  animation-delay: -9s;
+}
+
 .stb-surface {
   position: relative;
   overflow: hidden;
@@ -229,6 +253,11 @@
   color: var(--stb-ink);
 }
 
+.stb-pressable-shell {
+  transform-origin: center;
+  will-change: transform;
+}
+
 .stb-section-kicker {
   font-size: 0.72rem;
   font-weight: 700;
@@ -390,6 +419,16 @@
   100% {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes stb-orb-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0) scale(1.05);
   }
 }
 

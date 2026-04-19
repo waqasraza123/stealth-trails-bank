@@ -9,6 +9,7 @@ import {
   Wallet
 } from "lucide-react";
 import { Layout } from "@/components/Layout";
+import { MotionSurface, ScreenTransition } from "@/components/motion/primitives";
 import { StatusBadge } from "@/components/customer/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -61,9 +62,10 @@ const Index = () => {
 
   return (
     <Layout>
-      <div className="stb-page-stack">
+      <ScreenTransition className="stb-page-stack">
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
-          <Card className="stb-surface stb-reveal overflow-hidden rounded-[2rem] border-0">
+          <MotionSurface className="stb-pressable-shell">
+            <Card className="stb-surface stb-reveal overflow-hidden rounded-[2rem] border-0">
             <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_320px]">
               <div className="space-y-5">
                 <div className="space-y-3">
@@ -219,9 +221,11 @@ const Index = () => {
                 </Button>
               </div>
             </div>
-          </Card>
+            </Card>
+          </MotionSurface>
 
-          <Card className="stb-surface stb-reveal rounded-[2rem] border-0 p-6" data-delay="1">
+          <MotionSurface className="stb-pressable-shell">
+            <Card className="stb-surface stb-reveal rounded-[2rem] border-0 p-6" data-delay="1">
             <div className="space-y-5">
               <div>
                 <p className="stb-section-kicker">
@@ -265,7 +269,8 @@ const Index = () => {
                 </Button>
               </div>
             </div>
-          </Card>
+            </Card>
+          </MotionSurface>
         </section>
 
         {balancesQuery.isError ? (
@@ -429,7 +434,7 @@ const Index = () => {
             </div>
           </Card>
         </section>
-      </div>
+      </ScreenTransition>
     </Layout>
   );
 };

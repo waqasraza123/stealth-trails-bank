@@ -1,5 +1,10 @@
 import { ReactNode } from "react";
 import type { TimelineEvent } from "@stealth-trails-bank/ui-foundation";
+import {
+  AdminReveal,
+  AdminStagger,
+  AdminStaggerItem
+} from "@/components/motion/primitives";
 import { formatDateTime } from "@/lib/format";
 
 type Tone = "neutral" | "positive" | "warning" | "critical" | "technical";
@@ -16,7 +21,7 @@ export function SectionPanel({
   action?: ReactNode;
 }) {
   return (
-    <section className="admin-panel">
+    <AdminReveal className="admin-panel">
       <div className="admin-panel-header">
         <div>
           <h2>{title}</h2>
@@ -25,7 +30,7 @@ export function SectionPanel({
         {action}
       </div>
       {children}
-    </section>
+    </AdminReveal>
   );
 }
 
@@ -39,11 +44,11 @@ export function MetricCard({
   detail: string;
 }) {
   return (
-    <div className="admin-metric-card">
+    <AdminReveal className="admin-metric-card">
       <span>{label}</span>
       <strong>{value}</strong>
       <p>{detail}</p>
-    </div>
+    </AdminReveal>
   );
 }
 
@@ -69,10 +74,10 @@ export function ListCard({
   children: ReactNode;
 }) {
   return (
-    <div className="admin-list-card">
+    <AdminReveal className="admin-list-card">
       <h3>{title}</h3>
       {children}
-    </div>
+    </AdminReveal>
   );
 }
 
@@ -184,38 +189,39 @@ export function TimelinePanel({
       {events.length === 0 ? (
         <EmptyState title={emptyState.title} description={emptyState.description} />
       ) : (
-        <div className="admin-timeline" role="list">
+        <AdminStagger className="admin-timeline" role="list">
           {events.map((event) => (
-            <div
-              key={event.id}
-              className="admin-timeline-item"
-              data-tone={event.tone ?? "neutral"}
-              role="listitem"
-            >
-              <div className="admin-timeline-row">
-                <div>
-                  <strong>{event.label}</strong>
-                  {event.description ? <p>{event.description}</p> : null}
+            <AdminStaggerItem key={event.id}>
+              <div
+                className="admin-timeline-item"
+                data-tone={event.tone ?? "neutral"}
+                role="listitem"
+              >
+                <div className="admin-timeline-row">
+                  <div>
+                    <strong>{event.label}</strong>
+                    {event.description ? <p>{event.description}</p> : null}
+                  </div>
+                  {event.timestamp ? (
+                    <span className="admin-timeline-time">
+                      {formatDateTime(event.timestamp)}
+                    </span>
+                  ) : null}
                 </div>
-                {event.timestamp ? (
-                  <span className="admin-timeline-time">
-                    {formatDateTime(event.timestamp)}
-                  </span>
+                {event.metadata?.length ? (
+                  <div className="admin-timeline-metadata">
+                    {event.metadata.map((item) => (
+                      <span key={`${event.id}-${item.label}`} className="admin-meta-chip">
+                        <span>{item.label}</span>
+                        <strong className="admin-ref">{item.value}</strong>
+                      </span>
+                    ))}
+                  </div>
                 ) : null}
               </div>
-              {event.metadata?.length ? (
-                <div className="admin-timeline-metadata">
-                  {event.metadata.map((item) => (
-                    <span key={`${event.id}-${item.label}`} className="admin-meta-chip">
-                      <span>{item.label}</span>
-                      <strong className="admin-ref">{item.value}</strong>
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            </AdminStaggerItem>
           ))}
-        </div>
+        </AdminStagger>
       )}
     </div>
   );
@@ -249,12 +255,12 @@ export function ActionRail({
   children: ReactNode;
 }) {
   return (
-    <div className="admin-action-rail">
+    <AdminReveal className="admin-action-rail">
       <div>
         <h3>{title}</h3>
         <p className="admin-copy">{description}</p>
       </div>
       {children}
-    </div>
+    </AdminReveal>
   );
 }

@@ -318,3 +318,5 @@ export function buildIntentTimeline(input: {
 
   return events;
 }
+
+export * from "./motion";

@@ -1,6 +1,12 @@
 import { NavLink } from "react-router-dom";
 import { Search, ShieldCheck } from "lucide-react";
 import { ReactNode } from "react";
+import {
+  AdminReveal,
+  AdminStage,
+  AdminStagger,
+  AdminStaggerItem
+} from "@/components/motion/primitives";
 
 type ConsoleShellProps = {
   navItems: Array<{ label: string; path: string }>;
@@ -33,33 +39,36 @@ export function ConsoleShell({
 }: ConsoleShellProps) {
   return (
     <div className="admin-shell-bg">
-      <div className="admin-shell">
-        <aside className="admin-sidebar">
+      <div className="admin-shell relative">
+        <div className="admin-ambient-orb admin-ambient-orb--emerald left-[-3rem] top-[8rem] h-40 w-40" />
+        <div className="admin-ambient-orb admin-ambient-orb--indigo right-[10rem] top-[3rem] h-44 w-44" />
+        <AdminReveal className="admin-sidebar">
           <div className="admin-brand">
             <p className="admin-kicker">Stealth Trails Bank</p>
             <h1>{heading}</h1>
             <p className="admin-copy">{description}</p>
           </div>
 
-          <nav className="admin-nav">
+          <AdminStagger className="admin-nav" delay={0.08}>
             {navItems.map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className={({ isActive }) =>
-                  isActive ? "admin-nav-link active" : "admin-nav-link"
-                }
-              >
-                {item.label}
-              </NavLink>
+              <AdminStaggerItem key={item.path}>
+                <NavLink
+                  to={item.path}
+                  className={({ isActive }) =>
+                    isActive ? "admin-nav-link active" : "admin-nav-link"
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              </AdminStaggerItem>
             ))}
-          </nav>
+          </AdminStagger>
 
           <div className="admin-sidebar-card">{sidebar}</div>
-        </aside>
+        </AdminReveal>
 
-        <main className="admin-main">
-          <header className="admin-hero">
+        <AdminStage className="admin-main">
+          <header className="admin-hero relative overflow-hidden">
             <div className="admin-hero-copy">
               <div className="admin-ribbon">
                 <ShieldCheck className="h-4 w-4" />
@@ -103,7 +112,7 @@ export function ConsoleShell({
           </header>
 
           <div className="admin-content">{children}</div>
-        </main>
+        </AdminStage>
       </div>
     </div>
   );

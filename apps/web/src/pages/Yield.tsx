@@ -6,6 +6,7 @@ import {
   Wallet
 } from "lucide-react";
 import { Layout } from "@/components/Layout";
+import { MotionSurface, ScreenTransition } from "@/components/motion/primitives";
 import { StatusBadge } from "@/components/customer/StatusBadge";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -149,9 +150,10 @@ const Yield = () => {
 
   return (
     <Layout>
-      <div className="space-y-6">
+      <ScreenTransition className="space-y-6">
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_380px]">
-          <Card className="stb-surface rounded-[2rem] border-0 p-6">
+          <MotionSurface className="stb-pressable-shell">
+            <Card className="stb-surface rounded-[2rem] border-0 p-6">
             <div className="space-y-4">
               <div>
                 <p className="stb-section-kicker">
@@ -233,9 +235,11 @@ const Yield = () => {
                 </div>
               ) : null}
             </div>
-          </Card>
+            </Card>
+          </MotionSurface>
 
-          <Card className="stb-surface rounded-[2rem] border-0 p-6">
+          <MotionSurface className="stb-pressable-shell">
+            <Card className="stb-surface rounded-[2rem] border-0 p-6">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
               <Sparkles className="h-4 w-4 text-indigo-700" />
               {locale === "ar" ? "وضع المنتج" : "Product posture"}
@@ -252,7 +256,8 @@ const Yield = () => {
                   : "Some capabilities may remain gated by backend execution posture."}
               </p>
             </div>
-          </Card>
+            </Card>
+          </MotionSurface>
         </section>
 
         {stakingQuery.isError ? (
@@ -465,7 +470,7 @@ const Yield = () => {
             </Card>
           ) : null}
         </section>
-      </div>
+      </ScreenTransition>
     </Layout>
   );
 };

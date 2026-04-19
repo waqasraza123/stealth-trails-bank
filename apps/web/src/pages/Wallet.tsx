@@ -1,4 +1,5 @@
 import { Layout } from "@/components/Layout";
+import { MotionSurface, ScreenTransition } from "@/components/motion/primitives";
 import { Card } from "@/components/ui/card";
 import { Link } from "react-router-dom";
 import { useT } from "@/i18n/use-t";
@@ -25,9 +26,10 @@ const Wallet = () => {
 
   return (
     <Layout>
-      <div className="stb-page-stack">
+      <ScreenTransition className="stb-page-stack">
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <Card className="stb-surface stb-reveal rounded-[2rem] border-0 p-6">
+          <MotionSurface className="stb-pressable-shell">
+            <Card className="stb-surface stb-reveal rounded-[2rem] border-0 p-6">
             <div className="space-y-4">
               <div>
                 <p className="stb-section-kicker">
@@ -153,9 +155,11 @@ const Wallet = () => {
                 </div>
               ) : null}
             </div>
-          </Card>
+            </Card>
+          </MotionSurface>
 
-          <Card className="stb-surface stb-reveal rounded-[2rem] border-0 p-6" data-delay="1">
+          <MotionSurface className="stb-pressable-shell">
+            <Card className="stb-surface stb-reveal rounded-[2rem] border-0 p-6" data-delay="1">
             <h2 className="text-xl font-semibold text-slate-950">
               {locale === "ar" ? "ما الذي سيحدث بعد ذلك" : "What happens next"}
             </h2>
@@ -164,7 +168,8 @@ const Wallet = () => {
               <p>{t("wallet.noteTwo")}</p>
               <p>{t("wallet.noteThree")}</p>
             </div>
-          </Card>
+            </Card>
+          </MotionSurface>
         </section>
 
         <div className="grid gap-6 xl:grid-cols-2">
@@ -202,7 +207,7 @@ const Wallet = () => {
             }
           />
         </div>
-      </div>
+      </ScreenTransition>
     </Layout>
   );
 };

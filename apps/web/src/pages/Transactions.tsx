@@ -1,6 +1,11 @@
 import { useMemo, useState } from "react";
 import { Filter, Search } from "lucide-react";
 import { Layout } from "@/components/Layout";
+import {
+  FilterReveal,
+  MotionSurface,
+  ScreenTransition
+} from "@/components/motion/primitives";
 import { TimelineList } from "@/components/customer/TimelineList";
 import { StatusBadge } from "@/components/customer/StatusBadge";
 import { Card } from "@/components/ui/card";
@@ -121,8 +126,9 @@ const Transactions = () => {
 
   return (
     <Layout>
-      <div className="stb-page-stack">
-        <Card className="stb-surface stb-reveal rounded-[2rem] border-0 p-6">
+      <ScreenTransition className="stb-page-stack">
+        <MotionSurface className="stb-pressable-shell">
+          <Card className="stb-surface stb-reveal rounded-[2rem] border-0 p-6">
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_440px] xl:items-end">
             <div>
               <p className="stb-section-kicker">{t("transactions.title")}</p>
@@ -135,7 +141,7 @@ const Transactions = () => {
                   : "Review the current state, verify references, and open the full timeline for any request when needed."}
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px_180px]">
+            <FilterReveal className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px_180px]">
               <label className="relative block">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -175,11 +181,13 @@ const Transactions = () => {
                   </option>
                 ))}
               </select>
-            </div>
+            </FilterReveal>
           </div>
-        </Card>
+          </Card>
+        </MotionSurface>
 
-        <Card className="stb-surface stb-reveal rounded-[2rem] border-0 p-3 sm:p-4" data-delay="1">
+        <MotionSurface className="stb-pressable-shell">
+          <Card className="stb-surface stb-reveal rounded-[2rem] border-0 p-3 sm:p-4" data-delay="1">
           <div className="overflow-x-auto">
             <div className="stb-premium-table">
               <table className="w-full min-w-[760px]">
@@ -264,7 +272,8 @@ const Transactions = () => {
               </table>
             </div>
           </div>
-        </Card>
+          </Card>
+        </MotionSurface>
 
         {filteredTransactions.length > 0 ? (
           <p className="text-right text-sm text-slate-500">
@@ -340,7 +349,7 @@ const Transactions = () => {
             ) : null}
           </SheetContent>
         </Sheet>
-      </div>
+      </ScreenTransition>
     </Layout>
   );
 };

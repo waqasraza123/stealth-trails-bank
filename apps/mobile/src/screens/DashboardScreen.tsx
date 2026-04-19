@@ -8,6 +8,7 @@ import { InlineNotice } from "../components/ui/InlineNotice";
 import { LanguageToggle } from "../components/ui/LanguageToggle";
 import { SectionCard } from "../components/ui/SectionCard";
 import { StatusChip } from "../components/ui/StatusChip";
+import { AnimatedSection } from "../components/ui/AnimatedSection";
 import { useBalancesQuery, useTransactionHistoryQuery } from "../hooks/use-customer-queries";
 import { useLocale } from "../i18n/use-locale";
 import { useT } from "../i18n/use-t";
@@ -50,125 +51,134 @@ export function DashboardScreen() {
       trailing={<LanguageToggle />}
     >
       {balancesQuery.isError ? (
-        <InlineNotice
-          message={
-            balancesQuery.error instanceof Error
-              ? balancesQuery.error.message
-              : t("common.notAvailable")
-          }
-          tone="critical"
-        />
-      ) : null}
-
-      <SectionCard className="gap-4 bg-ink">
-        <AppText className="text-sm text-sea" weight="semibold">
-          {t("dashboard.managedWallet")}
-        </AppText>
-        <AppText className="text-2xl text-white" weight="bold">
-          {formatShortAddress(user?.ethereumAddress, t("wallet.noWallet"))}
-        </AppText>
-        <AppButton
-          label={t("navigation.loans")}
-          onPress={() => navigation.navigate("Loans")}
-          variant="secondary"
-        />
-      </SectionCard>
-
-      <View className="flex-row flex-wrap gap-3">
-        <SectionCard className="min-w-[30%] flex-1 gap-2">
-          <AppText className="text-xs uppercase tracking-[1px] text-slate">
-            {t("dashboard.availableAssets")}
-          </AppText>
-          <AppText className="text-3xl text-ink" weight="bold">
-            {balances.length}
-          </AppText>
-        </SectionCard>
-        <SectionCard className="min-w-[30%] flex-1 gap-2">
-          <AppText className="text-xs uppercase tracking-[1px] text-slate">
-            {t("dashboard.pendingAssets")}
-          </AppText>
-          <AppText className="text-3xl text-ink" weight="bold">
-            {pendingAssetCount}
-          </AppText>
-        </SectionCard>
-        <SectionCard className="min-w-[30%] flex-1 gap-2">
-          <AppText className="text-xs uppercase tracking-[1px] text-slate">
-            {t("dashboard.moneyMovement")}
-          </AppText>
-          <AppText className="text-3xl text-ink" weight="bold">
-            {intents.length}
-          </AppText>
-        </SectionCard>
-      </View>
-
-      <InlineNotice
-        message={
-          staleOperationalData
-            ? t("dashboard.latestSnapshotStale")
-            : t("dashboard.latestSnapshotFresh")
-        }
-        tone={staleOperationalData ? "warning" : "positive"}
-      />
-
-      <SectionCard className="gap-4">
-        <View className="flex-row items-center justify-between">
-          <AppText className="text-xl text-ink" weight="bold">
-            {t("dashboard.recentActivity")}
-          </AppText>
-          <AppButton
-            label={t("dashboard.viewHistory")}
-            onPress={() => navigation.navigate("Transactions")}
-            variant="ghost"
-            fullWidth={false}
-          />
-        </View>
-        {historyQuery.isError ? (
+        <AnimatedSection delayOrder={1}>
           <InlineNotice
             message={
-              historyQuery.error instanceof Error
-                ? historyQuery.error.message
+              balancesQuery.error instanceof Error
+                ? balancesQuery.error.message
                 : t("common.notAvailable")
             }
             tone="critical"
           />
-        ) : intents.length === 0 ? (
-          <AppText className="text-sm leading-6 text-slate">
-            {t("dashboard.noRecentActivity")}
+        </AnimatedSection>
+      ) : null}
+
+      <AnimatedSection delayOrder={2} variant="up">
+        <SectionCard className="gap-4 bg-ink">
+          <AppText className="text-sm text-sea" weight="semibold">
+            {t("dashboard.managedWallet")}
           </AppText>
-        ) : (
-          <View className="gap-3">
-            {intents.slice(0, 3).map((intent) => (
-              <View
-                key={intent.id}
-                className="gap-3 rounded-2xl border border-border bg-white px-4 py-4"
-              >
-                <View className="flex-row items-start justify-between gap-3">
-                  <View className="flex-1 gap-1">
-                    <AppText className="text-sm text-ink" weight="semibold">
-                      {normalizeIntentTypeLabel(intent.intentType, locale)}
-                    </AppText>
-                    <AppText className="text-base text-ink" weight="bold">
-                      {formatIntentAmount(
-                        intent.settledAmount ?? intent.requestedAmount,
-                        intent.asset.symbol,
-                        intent.intentType,
-                        locale
-                      )}
-                    </AppText>
-                    <AppText className="text-xs text-slate">
-                      {formatRelativeTimeLabel(intent.updatedAt, locale)}
-                    </AppText>
-                  </View>
-                  <StatusChip
-                    label={formatIntentStatusLabel(intent.status, locale)}
-                    tone={getIntentStatusTone(intent.status)}
-                  />
-                </View>
-              </View>
-            ))}
+          <AppText className="text-2xl text-white" weight="bold">
+            {formatShortAddress(user?.ethereumAddress, t("wallet.noWallet"))}
+          </AppText>
+          <AppButton
+            label={t("navigation.loans")}
+            onPress={() => navigation.navigate("Loans")}
+            variant="secondary"
+          />
+        </SectionCard>
+      </AnimatedSection>
+
+      <AnimatedSection delayOrder={3}>
+        <View className="flex-row flex-wrap gap-3">
+          <SectionCard className="min-w-[30%] flex-1 gap-2">
+            <AppText className="text-xs uppercase tracking-[1px] text-slate">
+              {t("dashboard.availableAssets")}
+            </AppText>
+            <AppText className="text-3xl text-ink" weight="bold">
+              {balances.length}
+            </AppText>
+          </SectionCard>
+          <SectionCard className="min-w-[30%] flex-1 gap-2">
+            <AppText className="text-xs uppercase tracking-[1px] text-slate">
+              {t("dashboard.pendingAssets")}
+            </AppText>
+            <AppText className="text-3xl text-ink" weight="bold">
+              {pendingAssetCount}
+            </AppText>
+          </SectionCard>
+          <SectionCard className="min-w-[30%] flex-1 gap-2">
+            <AppText className="text-xs uppercase tracking-[1px] text-slate">
+              {t("dashboard.moneyMovement")}
+            </AppText>
+            <AppText className="text-3xl text-ink" weight="bold">
+              {intents.length}
+            </AppText>
+          </SectionCard>
+        </View>
+      </AnimatedSection>
+
+      <AnimatedSection delayOrder={4}>
+        <InlineNotice
+          message={
+            staleOperationalData
+              ? t("dashboard.latestSnapshotStale")
+              : t("dashboard.latestSnapshotFresh")
+          }
+          tone={staleOperationalData ? "warning" : "positive"}
+        />
+      </AnimatedSection>
+
+      <AnimatedSection delayOrder={5}>
+        <SectionCard className="gap-4">
+          <View className="flex-row items-center justify-between">
+            <AppText className="text-xl text-ink" weight="bold">
+              {t("dashboard.recentActivity")}
+            </AppText>
+            <AppButton
+              label={t("dashboard.viewHistory")}
+              onPress={() => navigation.navigate("Transactions")}
+              variant="ghost"
+              fullWidth={false}
+            />
           </View>
-        )}
-      </SectionCard>
+          {historyQuery.isError ? (
+            <InlineNotice
+              message={
+                historyQuery.error instanceof Error
+                  ? historyQuery.error.message
+                  : t("common.notAvailable")
+              }
+              tone="critical"
+            />
+          ) : intents.length === 0 ? (
+            <AppText className="text-sm leading-6 text-slate">
+              {t("dashboard.noRecentActivity")}
+            </AppText>
+          ) : (
+            <View className="gap-3">
+              {intents.slice(0, 3).map((intent, index) => (
+                <AnimatedSection key={intent.id} delayOrder={index + 1}>
+                  <View className="gap-3 rounded-2xl border border-border bg-white px-4 py-4">
+                    <View className="flex-row items-start justify-between gap-3">
+                      <View className="flex-1 gap-1">
+                        <AppText className="text-sm text-ink" weight="semibold">
+                          {normalizeIntentTypeLabel(intent.intentType, locale)}
+                        </AppText>
+                        <AppText className="text-base text-ink" weight="bold">
+                          {formatIntentAmount(
+                            intent.settledAmount ?? intent.requestedAmount,
+                            intent.asset.symbol,
+                            intent.intentType,
+                            locale
+                          )}
+                        </AppText>
+                        <AppText className="text-xs text-slate">
+                          {formatRelativeTimeLabel(intent.updatedAt, locale)}
+                        </AppText>
+                      </View>
+                      <StatusChip
+                        label={formatIntentStatusLabel(intent.status, locale)}
+                        tone={getIntentStatusTone(intent.status)}
+                      />
+                    </View>
+                  </View>
+                </AnimatedSection>
+              ))}
+            </View>
+          )}
+        </SectionCard>
+      </AnimatedSection>
     </AppScreen>
   );
 }

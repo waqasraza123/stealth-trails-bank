@@ -51,6 +51,24 @@ body {
   font-family: var(--font-sans);
 }
 
+.admin-ambient-orb {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(14px);
+  opacity: 0.55;
+  pointer-events: none;
+  animation: adminOrbDrift 16s ease-in-out infinite;
+}
+
+.admin-ambient-orb--emerald {
+  background: radial-gradient(circle, rgba(17, 128, 106, 0.2), rgba(17, 128, 106, 0));
+}
+
+.admin-ambient-orb--indigo {
+  background: radial-gradient(circle, rgba(91, 115, 217, 0.18), rgba(91, 115, 217, 0));
+  animation-delay: -5s;
+}
+
 button,
 input,
 select {
@@ -897,6 +915,16 @@ button {
   100% {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes adminOrbDrift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -8px, 0) scale(1.04);
   }
 }
 

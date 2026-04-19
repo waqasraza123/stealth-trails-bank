@@ -47,6 +47,7 @@ import {
   TimelinePanel,
   WorkspaceLayout
 } from "@/components/console/primitives";
+import { AdminStage } from "@/components/motion/primitives";
 import {
   buildApprovalGateNotice,
   isEvidenceStale,
@@ -1093,7 +1094,7 @@ export function LaunchReadinessPage() {
     !latestScopedLaunchClosurePack;
 
   return (
-    <div className="admin-page-grid">
+    <AdminStage className="admin-page-grid">
       <SectionPanel
         title="Launch readiness"
         description="Evidence posture, approval chain, and stale-proof visibility."
@@ -2921,6 +2922,6 @@ export function LaunchReadinessPage() {
           </div>
         </div>
       </SectionPanel>
-    </div>
+    </AdminStage>
   );
 }

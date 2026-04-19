@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronDown, KeyRound } from "lucide-react";
 import { AuthShell } from "@/components/auth/AuthShell";
@@ -191,27 +192,35 @@ const SignIn = () => {
           />
         </button>
 
-        {showSharedAccess ? (
-          <div className="mt-4 rounded-2xl border border-[rgba(18,115,103,0.18)] bg-[rgba(255,255,255,0.72)] p-4 text-sm">
-            <p className="font-medium text-auth-form-foreground">
-              {t("auth.signIn.demoPanelTitle")}
-            </p>
-            <p className="mt-2 text-auth-form-muted">
-              {t("auth.signIn.emailLabel")}: <span className="font-semibold text-auth-form-foreground">admin@gmail.com</span>
-            </p>
-            <p className="text-auth-form-muted">
-              {t("auth.signIn.passwordLabel")}: <span className="font-semibold text-auth-form-foreground">P@ssw0rd</span>
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              className="mt-4 h-11 w-full rounded-2xl border-black/10 bg-white/80 font-semibold text-auth-form-foreground hover:bg-[hsl(var(--auth-form-accent))] hover:text-[hsl(var(--auth-form-background))]"
-              onClick={useSharedLogin}
+        <AnimatePresence initial={false}>
+          {showSharedAccess ? (
+            <motion.div
+              animate={{ height: "auto", opacity: 1, y: 0 }}
+              className="mt-4 overflow-hidden rounded-2xl border border-[rgba(18,115,103,0.18)] bg-[rgba(255,255,255,0.72)] p-4 text-sm"
+              exit={{ height: 0, opacity: 0, y: -10 }}
+              initial={{ height: 0, opacity: 0, y: -10 }}
+              transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
             >
-              {t("auth.signIn.demoButton")}
-            </Button>
-          </div>
-        ) : null}
+              <p className="font-medium text-auth-form-foreground">
+                {t("auth.signIn.demoPanelTitle")}
+              </p>
+              <p className="mt-2 text-auth-form-muted">
+                {t("auth.signIn.emailLabel")}: <span className="font-semibold text-auth-form-foreground">admin@gmail.com</span>
+              </p>
+              <p className="text-auth-form-muted">
+                {t("auth.signIn.passwordLabel")}: <span className="font-semibold text-auth-form-foreground">P@ssw0rd</span>
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-4 h-11 w-full rounded-2xl border-black/10 bg-white/80 font-semibold text-auth-form-foreground hover:bg-[hsl(var(--auth-form-accent))] hover:text-[hsl(var(--auth-form-background))]"
+                onClick={useSharedLogin}
+              >
+                {t("auth.signIn.demoButton")}
+              </Button>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
     </AuthShell>
   );

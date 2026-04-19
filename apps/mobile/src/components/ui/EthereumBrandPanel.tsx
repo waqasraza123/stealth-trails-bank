@@ -1,5 +1,14 @@
+import { useEffect } from "react";
 import { View } from "react-native";
 import Svg, { Path, Rect } from "react-native-svg";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming
+} from "react-native-reanimated";
+import { motionDurations } from "@stealth-trails-bank/ui-foundation";
 import { AppText } from "./AppText";
 
 type EthereumBrandPanelProps = {
@@ -42,10 +51,31 @@ export function EthereumBrandPanel({
   const containerClassName = compact
     ? `gap-3 rounded-[28px] border border-sand bg-white/90 px-5 py-5 ${alignmentClassName}`
     : `gap-4 rounded-[32px] border border-sand bg-white/90 px-6 py-6 ${alignmentClassName}`;
+  const drift = useSharedValue(0);
+
+  useEffect(() => {
+    drift.value = withRepeat(
+      withTiming(1, {
+        duration: motionDurations.ambientMs,
+        easing: Easing.inOut(Easing.quad)
+      }),
+      -1,
+      true
+    );
+  }, [drift]);
+
+  const markStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: drift.value * -6 },
+      { scale: 1 + drift.value * 0.03 }
+    ]
+  }));
 
   return (
     <View className={containerClassName} testID={testID}>
-      <EthereumMark size={markSize} />
+      <Animated.View style={markStyle}>
+        <EthereumMark size={markSize} />
+      </Animated.View>
       <View className={`gap-1 ${alignmentClassName}`}>
         <AppText className={`text-2xl text-ink ${textClassName}`} weight="bold">
           {title}

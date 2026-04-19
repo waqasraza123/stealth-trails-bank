@@ -9,6 +9,7 @@ import {
   MetricCard,
   SectionPanel
 } from "@/components/console/primitives";
+import { AdminStage, AdminStagger, AdminStaggerItem } from "@/components/motion/primitives";
 import { mapStatusToTone, useConfiguredSessionGuard } from "./shared";
 
 export function OperationsPage() {
@@ -52,42 +53,52 @@ export function OperationsPage() {
   const release = releaseReadinessQuery.data!;
 
   return (
-    <div className="admin-page-grid">
+    <AdminStage className="admin-page-grid">
       <SectionPanel
         title="Operations overview"
         description="Backlog, health, incidents, and launch posture in one command surface."
       >
-        <div className="admin-metrics-grid">
-          <MetricCard
-            label="Open alerts"
-            value={formatCount(operations.alertSummary.openCount)}
-            detail={`${formatCount(operations.alertSummary.criticalCount)} critical`}
-          />
-          <MetricCard
-            label="Queued work"
-            value={formatCount(operations.queueHealth.totalQueuedCount)}
-            detail={`${formatCount(operations.queueHealth.agedQueuedCount)} aged`}
-          />
-          <MetricCard
-            label="Withdrawal rail"
-            value={formatCount(
-              operations.withdrawalExecutionHealth.pendingConfirmationWithdrawalCount
-            )}
-            detail={`${formatCount(
-              operations.withdrawalExecutionHealth.manualInterventionWithdrawalCount
-            )} manual`}
-          />
-          <MetricCard
-            label="Open mismatches"
-            value={formatCount(operations.reconciliationHealth.openMismatchCount)}
-            detail={`${formatCount(operations.reconciliationHealth.criticalMismatchCount)} critical`}
-          />
-          <MetricCard
-            label="Restricted accounts"
-            value={formatCount(operations.incidentSafety.activeRestrictedAccountCount)}
-            detail={`${formatCount(operations.incidentSafety.openReviewCaseCount)} review cases`}
-          />
-        </div>
+        <AdminStagger className="admin-metrics-grid" delay={0.08}>
+          <AdminStaggerItem>
+            <MetricCard
+              label="Open alerts"
+              value={formatCount(operations.alertSummary.openCount)}
+              detail={`${formatCount(operations.alertSummary.criticalCount)} critical`}
+            />
+          </AdminStaggerItem>
+          <AdminStaggerItem>
+            <MetricCard
+              label="Queued work"
+              value={formatCount(operations.queueHealth.totalQueuedCount)}
+              detail={`${formatCount(operations.queueHealth.agedQueuedCount)} aged`}
+            />
+          </AdminStaggerItem>
+          <AdminStaggerItem>
+            <MetricCard
+              label="Withdrawal rail"
+              value={formatCount(
+                operations.withdrawalExecutionHealth.pendingConfirmationWithdrawalCount
+              )}
+              detail={`${formatCount(
+                operations.withdrawalExecutionHealth.manualInterventionWithdrawalCount
+              )} manual`}
+            />
+          </AdminStaggerItem>
+          <AdminStaggerItem>
+            <MetricCard
+              label="Open mismatches"
+              value={formatCount(operations.reconciliationHealth.openMismatchCount)}
+              detail={`${formatCount(operations.reconciliationHealth.criticalMismatchCount)} critical`}
+            />
+          </AdminStaggerItem>
+          <AdminStaggerItem>
+            <MetricCard
+              label="Restricted accounts"
+              value={formatCount(operations.incidentSafety.activeRestrictedAccountCount)}
+              detail={`${formatCount(operations.incidentSafety.openReviewCaseCount)} review cases`}
+            />
+          </AdminStaggerItem>
+        </AdminStagger>
       </SectionPanel>
 
       <SectionPanel
@@ -159,6 +170,6 @@ export function OperationsPage() {
           </div>
         </div>
       </SectionPanel>
-    </div>
+    </AdminStage>
   );
 }

@@ -9,6 +9,7 @@ import { FieldInput } from "../../components/ui/FieldInput";
 import { InlineNotice } from "../../components/ui/InlineNotice";
 import { LanguageToggle } from "../../components/ui/LanguageToggle";
 import { EthereumBrandPanel } from "../../components/ui/EthereumBrandPanel";
+import { AnimatedSection } from "../../components/ui/AnimatedSection";
 import { useAuthActions } from "../../hooks/use-session";
 import { useT } from "../../i18n/use-t";
 import {
@@ -65,51 +66,65 @@ export function SignInScreen() {
       subtitle={t("auth.signInDescription")}
       trailing={<LanguageToggle />}>
       <View className="gap-4">
-        <EthereumBrandPanel
-          subtitle="Battle-tested Ethereum bank with advanced privacy features"
-          testID="ethereum-brand-panel"
-        />
-        <FieldInput
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="email-address"
-          label={t("auth.email")}
-          onChangeText={setEmail}
-          value={email}
-        />
-        <FieldInput
-          autoCapitalize="none"
-          label={t("auth.password")}
-          onChangeText={setPassword}
-          secureTextEntry
-          value={password}
-        />
-        {error ? <InlineNotice message={error} tone="critical" /> : null}
-        <AppButton
-          disabled={loading}
-          label={t("auth.signIn")}
-          onPress={() => {
-            void handleSubmit();
-          }}
-        />
-        {__DEV__ ? (
-          <AppButton
-            label={t("auth.demoFill")}
-            onPress={() => {
-              setEmail(sharedLoginCredentials.email);
-              setPassword(sharedLoginCredentials.password);
-            }}
-            variant="secondary"
+        <AnimatedSection delayOrder={1} variant="up">
+          <EthereumBrandPanel
+            subtitle="Battle-tested Ethereum bank with advanced privacy features"
+            testID="ethereum-brand-panel"
           />
+        </AnimatedSection>
+        <AnimatedSection delayOrder={2}>
+          <FieldInput
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            label={t("auth.email")}
+            onChangeText={setEmail}
+            value={email}
+          />
+        </AnimatedSection>
+        <AnimatedSection delayOrder={3}>
+          <FieldInput
+            autoCapitalize="none"
+            label={t("auth.password")}
+            onChangeText={setPassword}
+            secureTextEntry
+            value={password}
+          />
+        </AnimatedSection>
+        {error ? (
+          <AnimatedSection delayOrder={4}>
+            <InlineNotice message={error} tone="critical" />
+          </AnimatedSection>
         ) : null}
-        <Pressable
-          onPress={() => {
-            navigation.navigate("SignUp");
-          }}>
-          <AppText className="text-center text-sm text-slate">
-            {t("auth.switchToSignUp")}
-          </AppText>
-        </Pressable>
+        <AnimatedSection delayOrder={5} className="gap-3">
+          <AppButton
+            disabled={loading}
+            label={t("auth.signIn")}
+            onPress={() => {
+              void handleSubmit();
+            }}
+          />
+          {__DEV__ ? (
+            <AppButton
+              label={t("auth.demoFill")}
+              onPress={() => {
+                setEmail(sharedLoginCredentials.email);
+                setPassword(sharedLoginCredentials.password);
+              }}
+              variant="secondary"
+            />
+          ) : null}
+        </AnimatedSection>
+        <AnimatedSection delayOrder={6}>
+          <Pressable
+            onPress={() => {
+              navigation.navigate("SignUp");
+            }}>
+            <AppText className="text-center text-sm text-slate">
+              {t("auth.switchToSignUp")}
+            </AppText>
+          </Pressable>
+        </AnimatedSection>
       </View>
     </AppScreen>
   );
