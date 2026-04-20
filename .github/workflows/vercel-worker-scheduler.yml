@@ -1,0 +1,93 @@
+name: vercel-worker-scheduler
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which worker job group to run"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - tick
+          - maintenance
+  schedule:
+    - cron: "*/5 * * * *"
+    - cron: "*/15 * * * *"
+
+env:
+  WORKER_BASE_URL: https://stealth-trails-bank-worker-waqas-projects-ee13b447.vercel.app
+
+jobs:
+  tick:
+    if: |
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' &&
+        (github.event.inputs.target == 'all' || github.event.inputs.target == 'tick'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate worker scheduler secrets
+        env:
+          VERCEL_BYPASS_SECRET: ${{ secrets.STEALTH_TRAILS_BANK_WORKER_VERCEL_BYPASS_SECRET }}
+          WORKER_CRON_SECRET: ${{ secrets.STEALTH_TRAILS_BANK_WORKER_CRON_SECRET }}
+        run: |
+          test -n "$VERCEL_BYPASS_SECRET"
+          test -n "$WORKER_CRON_SECRET"
+
+      - name: Invoke worker tick
+        env:
+          VERCEL_BYPASS_SECRET: ${{ secrets.STEALTH_TRAILS_BANK_WORKER_VERCEL_BYPASS_SECRET }}
+          WORKER_CRON_SECRET: ${{ secrets.STEALTH_TRAILS_BANK_WORKER_CRON_SECRET }}
+        run: |
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${WORKER_CRON_SECRET}" \
+            --header "x-vercel-protection-bypass: ${VERCEL_BYPASS_SECRET}" \
+            "${WORKER_BASE_URL}/api/cron/worker-tick"
+
+  maintenance:
+    if: |
+      github.event.schedule == '*/15 * * * *' ||
+      (github.event_name == 'workflow_dispatch' &&
+        (github.event.inputs.target == 'all' || github.event.inputs.target == 'maintenance'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate worker scheduler secrets
+        env:
+          VERCEL_BYPASS_SECRET: ${{ secrets.STEALTH_TRAILS_BANK_WORKER_VERCEL_BYPASS_SECRET }}
+          WORKER_CRON_SECRET: ${{ secrets.STEALTH_TRAILS_BANK_WORKER_CRON_SECRET }}
+        run: |
+          test -n "$VERCEL_BYPASS_SECRET"
+          test -n "$WORKER_CRON_SECRET"
+
+      - name: Run ledger reconciliation scan
+        env:
+          VERCEL_BYPASS_SECRET: ${{ secrets.STEALTH_TRAILS_BANK_WORKER_VERCEL_BYPASS_SECRET }}
+          WORKER_CRON_SECRET: ${{ secrets.STEALTH_TRAILS_BANK_WORKER_CRON_SECRET }}
+        run: |
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${WORKER_CRON_SECRET}" \
+            --header "x-vercel-protection-bypass: ${VERCEL_BYPASS_SECRET}" \
+            "${WORKER_BASE_URL}/api/cron/ledger-reconciliation-scan"
+
+      - name: Run solvency snapshot
+        env:
+          VERCEL_BYPASS_SECRET: ${{ secrets.STEALTH_TRAILS_BANK_WORKER_VERCEL_BYPASS_SECRET }}
+          WORKER_CRON_SECRET: ${{ secrets.STEALTH_TRAILS_BANK_WORKER_CRON_SECRET }}
+        run: |
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${WORKER_CRON_SECRET}" \
+            --header "x-vercel-protection-bypass: ${VERCEL_BYPASS_SECRET}" \
+            "${WORKER_BASE_URL}/api/cron/solvency-snapshot"
+
+      - name: Run platform alert re-escalation
+        env:
+          VERCEL_BYPASS_SECRET: ${{ secrets.STEALTH_TRAILS_BANK_WORKER_VERCEL_BYPASS_SECRET }}
+          WORKER_CRON_SECRET: ${{ secrets.STEALTH_TRAILS_BANK_WORKER_CRON_SECRET }}
+        run: |
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${WORKER_CRON_SECRET}" \
+            --header "x-vercel-protection-bypass: ${VERCEL_BYPASS_SECRET}" \
+            "${WORKER_BASE_URL}/api/cron/platform-alert-reescalation"
