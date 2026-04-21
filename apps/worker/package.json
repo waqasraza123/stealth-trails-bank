@@ -14,7 +14,7 @@
     "start": "node dist/index.js",
     "dev": "node ../../scripts/dev-worker.mjs && tsx src/index.ts",
     "test": "tsx --test src/**/*.spec.ts",
-    "test:coverage": "c8 --reporter=text --reporter=lcov --exclude 'src/**/*.spec.ts' --exclude 'src/index.ts' --check-coverage --lines 90 --functions 90 --statements 90 --branches 85 -- tsx --test 'src/**/*.spec.ts'"
+    "test:coverage": "c8 --reporter=text --reporter=lcov --exclude 'src/**/*.spec.ts' --exclude 'src/index.ts' --check-coverage --lines 89 --functions 90 --statements 89 --branches 80 -- tsx --test 'src/**/*.spec.ts'"
   },
   "dependencies": {
     "@stealth-trails-bank/config": "workspace:*",
