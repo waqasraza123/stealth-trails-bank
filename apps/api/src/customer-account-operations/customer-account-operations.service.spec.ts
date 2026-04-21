@@ -23,6 +23,9 @@ function createService() {
     oversightIncidentEvent: {
       findMany: jest.fn()
     },
+    retirementVaultEvent: {
+      findMany: jest.fn()
+    },
     customerAccountRestriction: {
       findMany: jest.fn(),
       count: jest.fn()
@@ -153,6 +156,7 @@ describe("CustomerAccountOperationsService", () => {
         }
       }
     ]);
+    (prismaService.retirementVaultEvent.findMany as jest.Mock).mockResolvedValue([]);
 
     (prismaService.customerAccountRestriction.findMany as jest.Mock).mockResolvedValue([
       {
@@ -237,6 +241,7 @@ describe("CustomerAccountOperationsService", () => {
       }
     ]);
     (prismaService.oversightIncidentEvent.findMany as jest.Mock).mockResolvedValue([]);
+    (prismaService.retirementVaultEvent.findMany as jest.Mock).mockResolvedValue([]);
     (prismaService.customerAccountRestriction.findMany as jest.Mock).mockResolvedValue([]);
     (prismaService.transactionIntent.count as jest.Mock)
       .mockResolvedValueOnce(0)

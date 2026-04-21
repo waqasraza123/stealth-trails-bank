@@ -117,6 +117,34 @@ function createInternalApiClient(overrides: Record<string, unknown>) {
     async listLoanLiquidationCandidates() {
       return { agreements: [], limit: 20 };
     },
+    async sweepRetirementVaultReleaseRequests() {
+      return {
+        limit: 20,
+        readyForReleaseCount: 0,
+        releasedCount: 0,
+        failedCount: 0,
+        blockedReleaseCount: 0,
+        staleReviewRequiredCount: 0,
+        staleCooldownCount: 0,
+        staleReadyForReleaseCount: 0,
+        staleExecutingCount: 0,
+        processedReleaseRequestIds: []
+      };
+    },
+    async sweepRetirementVaultRuleChangeRequests() {
+      return {
+        limit: 20,
+        readyToApplyCount: 0,
+        appliedCount: 0,
+        failedCount: 0,
+        blockedRuleChangeCount: 0,
+        staleReviewRequiredCount: 0,
+        staleCooldownCount: 0,
+        staleReadyToApplyCount: 0,
+        staleApplyingCount: 0,
+        processedRuleChangeRequestIds: []
+      };
+    },
     ...overrides
   };
 }

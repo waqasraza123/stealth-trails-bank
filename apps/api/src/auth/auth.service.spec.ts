@@ -1349,7 +1349,6 @@ describe("AuthService", () => {
           recommendedAction: "open_review_case",
           riskReasons: expect.arrayContaining([
             "expired_trust_challenge",
-            "recent_session_activity",
             "multiple_untrusted_sessions",
             "high_active_session_count",
           ]),

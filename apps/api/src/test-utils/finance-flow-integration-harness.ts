@@ -198,7 +198,8 @@ export class FinanceFlowIntegrationHarness {
   readonly authService = {
     validateToken: jest.fn(async () => ({
       id: this.customer.supabaseUserId
-    }))
+    })),
+    assertCustomerStepUpFresh: jest.fn(async () => undefined)
   };
 
   readonly prismaService = {

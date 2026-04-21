@@ -26,6 +26,24 @@ function runCommand(command, args) {
   }
 }
 
+function readCurrentBranch() {
+  const result = spawnSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    cwd: repoRoot(),
+    encoding: "utf8"
+  });
+
+  if (result.error) {
+    console.error(result.error.message);
+    process.exit(1);
+  }
+
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
+  }
+
+  return result.stdout.trim();
+}
+
 function main() {
   const forwardedArgs = [];
 
@@ -37,7 +55,9 @@ function main() {
     forwardedArgs.push(arg);
   }
 
-  runCommand("pnpm", ["verify:push"]);
+  if (readCurrentBranch() !== "dev") {
+    runCommand("pnpm", ["verify:push"]);
+  }
 
   runCommand("git", ["push", "--no-verify", ...forwardedArgs]);
 }

@@ -48,7 +48,23 @@ function runWithStubs(args, options = {}) {
   try {
     mkdirSync(binDir);
 
-    createLogLineStub(binDir, "git", "git", options.gitExitCode ?? 0);
+    createExecutableStub(
+      binDir,
+      "git",
+      `#!/usr/bin/env node
+const { appendFileSync } = require("node:fs");
+const args = process.argv.slice(2);
+appendFileSync(process.env.LOG_FILE, JSON.stringify({
+  tool: "git",
+  args
+}) + "\\n");
+if (args[0] === "rev-parse" && args[1] === "--abbrev-ref" && args[2] === "HEAD") {
+  process.stdout.write(${JSON.stringify(`${options.gitBranch ?? "main"}\n`)});
+  process.exit(0);
+}
+process.exit(${options.gitExitCode ?? 0});
+`
+    );
     createLogLineStub(binDir, "pnpm", "pnpm", options.pnpmExitCode ?? 0);
 
     const result = spawnSync(process.execPath, [pushScript, ...args], {
@@ -97,6 +113,10 @@ test("push wrapper runs validation by default and forwards git args with --no-ve
 
   assert.equal(result.status, 0);
   assert.deepEqual(calls, [
+    {
+      tool: "git",
+      args: ["rev-parse", "--abbrev-ref", "HEAD"]
+    },
     { tool: "pnpm", args: ["verify:push"] },
     {
       tool: "git",
@@ -115,10 +135,32 @@ test("push wrapper keeps the legacy validate flag as a no-op alias", () => {
 
   assert.equal(result.status, 0);
   assert.deepEqual(calls, [
+    {
+      tool: "git",
+      args: ["rev-parse", "--abbrev-ref", "HEAD"]
+    },
     { tool: "pnpm", args: ["verify:push"] },
     {
       tool: "git",
       args: ["push", "--no-verify", "--force", "origin", "main"]
+    }
+  ]);
+});
+
+test("push wrapper skips validation on the dev branch", () => {
+  const { result, calls } = runWithStubs(["origin", "dev"], {
+    gitBranch: "dev"
+  });
+
+  assert.equal(result.status, 0);
+  assert.deepEqual(calls, [
+    {
+      tool: "git",
+      args: ["rev-parse", "--abbrev-ref", "HEAD"]
+    },
+    {
+      tool: "git",
+      args: ["push", "--no-verify", "origin", "dev"]
     }
   ]);
 });
@@ -152,6 +194,59 @@ test("pre-push hook runs validation and propagates failures", () => {
   }
 });
 
+test("pre-push hook skips validation on the dev branch", () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "pre-push-hook-dev-test-"));
+  const binDir = path.join(tempDir, "bin");
+  const logFile = path.join(tempDir, "calls.log");
+
+  try {
+    mkdirSync(binDir);
+
+    createExecutableStub(
+      binDir,
+      "git",
+      `#!/usr/bin/env node
+const { appendFileSync } = require("node:fs");
+const args = process.argv.slice(2);
+appendFileSync(process.env.LOG_FILE, JSON.stringify({
+  tool: "git",
+  args
+}) + "\\n");
+if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+  process.stdout.write(process.cwd());
+  process.exit(0);
+}
+if (args[0] === "rev-parse" && args[1] === "--abbrev-ref" && args[2] === "HEAD") {
+  process.stdout.write("dev\\n");
+  process.exit(0);
+}
+process.exit(0);
+`
+    );
+    createLogLineStub(binDir, "pnpm", "pnpm", 99);
+
+    const result = spawnSync("sh", [hookScript], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LOG_FILE: logFile,
+        PATH: `${binDir}:${process.env.PATH}`
+      }
+    });
+
+    const calls = readLogEntries(logFile);
+
+    assert.equal(result.status, 0);
+    assert.deepEqual(calls, [
+      { tool: "git", args: ["rev-parse", "--show-toplevel"] },
+      { tool: "git", args: ["rev-parse", "--abbrev-ref", "HEAD"] }
+    ]);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("safe-push remains a validating alias for the new push wrapper", () => {
   const tempDir = mkdtempSync(path.join(os.tmpdir(), "safe-push-test-"));
   const binDir = path.join(tempDir, "bin");
@@ -176,6 +271,10 @@ test("safe-push remains a validating alias for the new push wrapper", () => {
 
     assert.equal(result.status, 0);
     assert.deepEqual(calls, [
+      {
+        tool: "git",
+        args: ["rev-parse", "--abbrev-ref", "HEAD"]
+      },
       { tool: "pnpm", args: ["verify:push"] },
       {
         tool: "git",

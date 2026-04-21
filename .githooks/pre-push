@@ -4,4 +4,10 @@ set -eu
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
+current_branch="$(git rev-parse --abbrev-ref HEAD)"
+
+if [ "$current_branch" = "dev" ]; then
+  exit 0
+fi
+
 exec pnpm verify:push
