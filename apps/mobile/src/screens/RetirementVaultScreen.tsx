@@ -14,9 +14,11 @@ import { SectionCard } from "../components/ui/SectionCard";
 import {
   useBalancesQuery,
   useCancelRetirementVaultReleaseMutation,
+  useCancelRetirementVaultRuleChangeMutation,
   useCreateRetirementVaultMutation,
   useFundRetirementVaultMutation,
   useRequestRetirementVaultReleaseMutation,
+  useRequestRetirementVaultRuleChangeMutation,
   useRetirementVaultsQuery,
   useSupportedAssetsQuery,
 } from "../hooks/use-customer-queries";
@@ -29,11 +31,14 @@ import {
   isPositiveDecimalString,
   isPositiveIntegerString,
 } from "../lib/finance";
-import type { RetirementVaultReleaseRequestProjection } from "../lib/api/types";
+import type {
+  RetirementVaultReleaseRequestProjection,
+  RetirementVaultRuleChangeRequestProjection,
+} from "../lib/api/types";
 import { useSessionStore } from "../stores/session-store";
 
 type RetirementVaultScreenProps = {
-  initialFocus?: "create" | "fund" | "release";
+  initialFocus?: "create" | "fund" | "release" | "rules";
 };
 
 function isActiveReleaseStatus(status: RetirementVaultReleaseRequestProjection["status"]) {
@@ -55,6 +60,23 @@ function canCancelReleaseStatus(
   );
 }
 
+function isActiveRuleChangeStatus(
+  status: RetirementVaultRuleChangeRequestProjection["status"],
+) {
+  return [
+    "review_required",
+    "cooldown_active",
+    "ready_to_apply",
+    "applying",
+  ].includes(status);
+}
+
+function canCancelRuleChangeStatus(
+  status: RetirementVaultRuleChangeRequestProjection["status"],
+) {
+  return ["review_required", "cooldown_active"].includes(status);
+}
+
 export function RetirementVaultScreen({
   initialFocus = "fund",
 }: RetirementVaultScreenProps) {
@@ -74,10 +96,14 @@ export function RetirementVaultScreen({
     useRequestRetirementVaultReleaseMutation();
   const cancelRetirementVaultReleaseMutation =
     useCancelRetirementVaultReleaseMutation();
+  const requestRetirementVaultRuleChangeMutation =
+    useRequestRetirementVaultRuleChangeMutation();
+  const cancelRetirementVaultRuleChangeMutation =
+    useCancelRetirementVaultRuleChangeMutation();
   const assets = assetsQuery.data?.assets ?? [];
   const balances = balancesQuery.data?.balances ?? [];
   const vaults = retirementVaultsQuery.data?.vaults ?? [];
-  const [focus, setFocus] = useState<"create" | "fund" | "release">(
+  const [focus, setFocus] = useState<"create" | "fund" | "release" | "rules">(
     initialFocus,
   );
   const [createAsset, setCreateAsset] = useState("");
@@ -87,6 +113,12 @@ export function RetirementVaultScreen({
   const [strictMode, setStrictMode] = useState("strict");
   const [fundAmount, setFundAmount] = useState("");
   const [releaseAmount, setReleaseAmount] = useState("");
+  const [ruleChangeAsset, setRuleChangeAsset] = useState("");
+  const [ruleChangeUnlockYears, setRuleChangeUnlockYears] = useState("10");
+  const [ruleChangeStrictMode, setRuleChangeStrictMode] = useState("strict");
+  const [ruleChangeReasonCode, setRuleChangeReasonCode] =
+    useState("future_lock_reset");
+  const [ruleChangeReasonNote, setRuleChangeReasonNote] = useState("");
   const [releaseReasonCode, setReleaseReasonCode] = useState("hardship");
   const [releaseReasonNote, setReleaseReasonNote] = useState("");
   const [releaseEvidenceNote, setReleaseEvidenceNote] = useState("");
@@ -98,10 +130,13 @@ export function RetirementVaultScreen({
   const activeCreateAsset = createAsset || assets[0]?.symbol || "";
   const activeFundAsset = fundAsset || vaults[0]?.asset.symbol || "";
   const activeReleaseAsset = releaseAsset || vaults[0]?.asset.symbol || "";
+  const activeRuleChangeAsset = ruleChangeAsset || vaults[0]?.asset.symbol || "";
   const selectedFundBalance =
     balances.find((balance) => balance.asset.symbol === activeFundAsset) ?? null;
   const selectedReleaseVault =
     vaults.find((vault) => vault.asset.symbol === activeReleaseAsset) ?? null;
+  const selectedRuleChangeVault =
+    vaults.find((vault) => vault.asset.symbol === activeRuleChangeAsset) ?? null;
   const lockedVaultBalance = vaults.reduce(
     (sum, vault) => sum + Number.parseFloat(vault.lockedBalance || "0"),
     0,
@@ -119,6 +154,22 @@ export function RetirementVaultScreen({
           })),
         )
         .filter((request) => isActiveReleaseStatus(request.status))
+        .sort(
+          (left, right) =>
+            Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
+        ),
+    [vaults],
+  );
+  const activeRuleChangeRequests = useMemo(
+    () =>
+      vaults
+        .flatMap((vault) =>
+          vault.ruleChangeRequests.map((request) => ({
+            ...request,
+            asset: vault.asset,
+          })),
+        )
+        .filter((request) => isActiveRuleChangeStatus(request.status))
         .sort(
           (left, right) =>
             Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
@@ -344,6 +395,84 @@ export function RetirementVaultScreen({
     }
   }
 
+  async function handleRequestRuleChange() {
+    if (!selectedRuleChangeVault) {
+      Alert.alert(
+        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+        locale === "ar"
+          ? "أنشئ أو اختر قبو تقاعد أولاً."
+          : "Create or select a retirement vault first.",
+      );
+      return;
+    }
+
+    if (!isPositiveIntegerString(ruleChangeUnlockYears)) {
+      Alert.alert(
+        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+        locale === "ar"
+          ? "أدخل عدداً صحيحاً من السنوات."
+          : "Enter a whole number of years.",
+      );
+      return;
+    }
+
+    const unlockAt = new Date();
+    unlockAt.setUTCFullYear(
+      unlockAt.getUTCFullYear() + Number.parseInt(ruleChangeUnlockYears, 10),
+    );
+
+    const weakensProtection =
+      unlockAt.getTime() < new Date(selectedRuleChangeVault.unlockAt).getTime() ||
+      (selectedRuleChangeVault.strictMode && ruleChangeStrictMode !== "strict");
+
+    try {
+      const result = await requestRetirementVaultRuleChangeMutation.mutateAsync({
+        assetSymbol: selectedRuleChangeVault.asset.symbol,
+        unlockAt: unlockAt.toISOString(),
+        strictMode: ruleChangeStrictMode === "strict",
+        reasonCode: weakensProtection ? ruleChangeReasonCode : undefined,
+        reasonNote: ruleChangeReasonNote.trim() || undefined,
+      });
+
+      Alert.alert(
+        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+        result.appliedImmediately
+          ? locale === "ar"
+            ? "تم تطبيق تشديد القاعدة فوراً."
+            : "The rule strengthening was applied immediately."
+          : locale === "ar"
+            ? "دخل تعديل القاعدة مسار مراجعة وتهدئة محكوم."
+            : "The rule change entered governed review and cooldown.",
+      );
+    } catch (requestError) {
+      Alert.alert(
+        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+        requestError instanceof Error
+          ? requestError.message
+          : String(requestError),
+      );
+    }
+  }
+
+  async function handleCancelRuleChange(ruleChangeRequestId: string) {
+    try {
+      await cancelRetirementVaultRuleChangeMutation.mutateAsync(ruleChangeRequestId);
+      Alert.alert(
+        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+        locale === "ar"
+          ? "تم إلغاء تعديل القاعدة."
+          : "The rule change was cancelled.",
+      );
+    } catch (requestError) {
+      Alert.alert(
+        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+        requestError instanceof Error
+          ? requestError.message
+          : String(requestError),
+      );
+    }
+  }
+
   const assetOptions = useMemo(
     () =>
       assets.map((asset) => ({
@@ -366,8 +495,8 @@ export function RetirementVaultScreen({
       title={locale === "ar" ? "قبو التقاعد" : "Retirement Vault"}
       subtitle={
         locale === "ar"
-          ? "أنشئ القفل، موّل الرصيد المقفل، ثم افتح الإفراج المحكوم عند الحاجة."
-          : "Create the lock, fund the protected balance, then open governed release when needed."
+          ? "أنشئ القفل، موّل الرصيد المقفل، ثم افتح الإفراج أو تعديل القاعدة عبر مسار محكوم."
+          : "Create the lock, fund the protected balance, then open governed release or rule change when needed."
       }
       trailing={<LanguageToggle />}
     >
@@ -411,7 +540,7 @@ export function RetirementVaultScreen({
                   {locale === "ar" ? "طلبات نشطة" : "Active requests"}
                 </AppText>
                 <AppText className="mt-2 text-3xl text-white" weight="bold">
-                  {activeReleaseRequests.length}
+                  {activeReleaseRequests.length + activeRuleChangeRequests.length}
                 </AppText>
               </View>
               <View className="min-w-[46%] flex-1 rounded-[24px] bg-white/8 px-4 py-4">
@@ -451,7 +580,9 @@ export function RetirementVaultScreen({
             </View>
           </View>
           <OptionChips
-            onChange={(value) => setFocus(value as "create" | "fund" | "release")}
+            onChange={(value) =>
+              setFocus(value as "create" | "fund" | "release" | "rules")
+            }
             options={[
               {
                 label: locale === "ar" ? "إنشاء" : "Create",
@@ -464,6 +595,10 @@ export function RetirementVaultScreen({
               {
                 label: locale === "ar" ? "إفراج" : "Release",
                 value: "release",
+              },
+              {
+                label: locale === "ar" ? "قواعد" : "Rules",
+                value: "rules",
               },
             ]}
             value={focus}
@@ -580,7 +715,7 @@ export function RetirementVaultScreen({
                 }}
               />
             </>
-          ) : (
+          ) : focus === "release" ? (
             <>
               <AppText className="text-xl text-ink" weight="bold">
                 {locale === "ar" ? "طلب الإفراج" : "Request release"}
@@ -664,6 +799,95 @@ export function RetirementVaultScreen({
                 }
                 onPress={() => {
                   void handleRequestRelease();
+                }}
+              />
+            </>
+          ) : (
+            <>
+              <AppText className="text-xl text-ink" weight="bold">
+                {locale === "ar" ? "تعديل القاعدة" : "Rule change"}
+              </AppText>
+              <OptionChips
+                onChange={setRuleChangeAsset}
+                options={
+                  vaultOptions.length > 0
+                    ? vaultOptions
+                    : [
+                        {
+                          label: locale === "ar" ? "لا توجد أقبية" : "No vaults",
+                          value: "",
+                        },
+                      ]
+                }
+                value={activeRuleChangeAsset}
+              />
+              <FieldInput
+                keyboardType="number-pad"
+                label={locale === "ar" ? "سنوات الإفراج الجديدة" : "New release years"}
+                onChangeText={setRuleChangeUnlockYears}
+                value={ruleChangeUnlockYears}
+              />
+              <OptionChips
+                onChange={setRuleChangeStrictMode}
+                options={[
+                  {
+                    label: locale === "ar" ? "صارم" : "Strict",
+                    value: "strict",
+                  },
+                  {
+                    label: locale === "ar" ? "قياسي" : "Standard",
+                    value: "standard",
+                  },
+                ]}
+                value={ruleChangeStrictMode}
+              />
+              <OptionChips
+                onChange={setRuleChangeReasonCode}
+                options={[
+                  {
+                    label: locale === "ar" ? "إعادة ضبط" : "Reset",
+                    value: "future_lock_reset",
+                  },
+                  {
+                    label: locale === "ar" ? "إعادة تخطيط" : "Replan",
+                    value: "household_replan",
+                  },
+                  {
+                    label: locale === "ar" ? "موازنة" : "Rebalance",
+                    value: "protection_rebalance",
+                  },
+                ]}
+                value={ruleChangeReasonCode}
+              />
+              <FieldInput
+                label={locale === "ar" ? "ملاحظة الحوكمة" : "Governance note"}
+                onChangeText={setRuleChangeReasonNote}
+                value={ruleChangeReasonNote}
+              />
+              <InlineNotice
+                message={
+                  locale === "ar"
+                    ? "تعديل القاعدة الذي يضعف الحماية لا يُطبق فوراً. يدخل مراجعة ثم تهدئة قبل التطبيق."
+                    : "A rule change that weakens protection does not apply immediately. It enters review and cooldown before application."
+                }
+                tone="warning"
+              />
+              <AppButton
+                disabled={
+                  requestRetirementVaultRuleChangeMutation.isPending ||
+                  vaults.length === 0
+                }
+                label={
+                  requestRetirementVaultRuleChangeMutation.isPending
+                    ? locale === "ar"
+                      ? "جارٍ تسجيل التعديل..."
+                      : "Recording rule change..."
+                    : locale === "ar"
+                      ? "طلب تعديل القاعدة"
+                      : "Request rule change"
+                }
+                onPress={() => {
+                  void handleRequestRuleChange();
                 }}
               />
             </>
@@ -752,6 +976,61 @@ export function RetirementVaultScreen({
       </AnimatedSection>
 
       <AnimatedSection delayOrder={5}>
+        <SectionCard className="gap-3">
+          <View className="flex-row items-center justify-between gap-3">
+            <AppText className="text-xl text-ink" weight="bold">
+              {locale === "ar" ? "تعديلات القاعدة النشطة" : "Active rule changes"}
+            </AppText>
+            <View className="rounded-full bg-ink px-3 py-1">
+              <AppText className="text-xs text-white" weight="semibold">
+                {activeRuleChangeRequests.length}
+              </AppText>
+            </View>
+          </View>
+          {activeRuleChangeRequests.length === 0 ? (
+            <AppText className="text-sm leading-6 text-slate">
+              {locale === "ar"
+                ? "لا يوجد تعديل قاعدة نشط الآن."
+                : "No governed rule change is active right now."}
+            </AppText>
+          ) : (
+            activeRuleChangeRequests.map((request) => (
+              <View
+                key={request.id}
+                className="gap-3 rounded-2xl border border-border bg-white px-4 py-4"
+              >
+                <AppText className="text-base text-ink" weight="semibold">
+                  {request.asset.displayName}
+                </AppText>
+                <AppText className="text-sm text-slate">
+                  {formatDateLabel(request.currentUnlockAt, locale)} to{" "}
+                  {formatDateLabel(request.requestedUnlockAt, locale)}
+                </AppText>
+                {canCancelRuleChangeStatus(request.status) ? (
+                  <AppButton
+                    disabled={cancelRetirementVaultRuleChangeMutation.isPending}
+                    label={
+                      cancelRetirementVaultRuleChangeMutation.isPending
+                        ? locale === "ar"
+                          ? "جارٍ الإلغاء..."
+                          : "Cancelling..."
+                        : locale === "ar"
+                          ? "إلغاء التعديل"
+                          : "Cancel rule change"
+                    }
+                    onPress={() => {
+                      void handleCancelRuleChange(request.id);
+                    }}
+                    variant="ghost"
+                  />
+                ) : null}
+              </View>
+            ))
+          )}
+        </SectionCard>
+      </AnimatedSection>
+
+      <AnimatedSection delayOrder={6}>
         <SectionCard className="gap-3">
           <View className="flex-row items-center justify-between gap-3">
             <AppText className="text-xl text-ink" weight="bold">

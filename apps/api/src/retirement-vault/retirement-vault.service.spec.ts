@@ -36,6 +36,7 @@ function buildVaultRecord(
     restrictionReleasedByOperatorRole: string | null;
     restrictionReleaseNote: string | null;
     releaseRequests: unknown[];
+    ruleChangeRequests: unknown[];
     events: unknown[];
   }> = {},
 ) {
@@ -72,6 +73,7 @@ function buildVaultRecord(
       chainId: 8453,
     },
     releaseRequests: overrides.releaseRequests ?? [],
+    ruleChangeRequests: overrides.ruleChangeRequests ?? [],
     events: overrides.events ?? [],
   };
 }
@@ -278,6 +280,12 @@ function createService() {
       updateMany: jest.fn(),
       findUnique: jest.fn(),
     },
+    retirementVaultRuleChangeRequest: {
+      create: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+      findUnique: jest.fn(),
+    },
     reviewCase: {
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -305,6 +313,13 @@ function createService() {
       findUnique: jest.fn(),
     },
     retirementVaultReleaseRequest: {
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
+      updateMany: jest.fn(),
+    },
+    retirementVaultRuleChangeRequest: {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
       findMany: jest.fn(),
@@ -510,6 +525,98 @@ describe("RetirementVaultService", () => {
     );
     expect(result.releaseRequest.reviewCase?.id).toBe(reviewCase.id);
     expect(reviewCasesService.openOrReuseReviewCase).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies a protection-strengthening vault rule change immediately", async () => {
+    const { service, prismaService, transactionClient } = createService();
+
+    const currentVault = buildVaultRecord({
+      strictMode: false,
+      unlockAt: new Date("2027-01-01T00:00:00.000Z"),
+    });
+    const appliedRuleChange = {
+      id: "rule_change_1",
+      retirementVaultId: "vault_1",
+      status: "applied",
+      requestedByActorType: "customer",
+      requestedByActorId: "supabase_1",
+      currentUnlockAt: new Date("2027-01-01T00:00:00.000Z"),
+      requestedUnlockAt: new Date("2028-01-01T00:00:00.000Z"),
+      currentStrictMode: false,
+      requestedStrictMode: true,
+      weakensProtection: false,
+      reasonCode: null,
+      reasonNote: null,
+      reviewRequiredAt: null,
+      reviewDecidedAt: null,
+      requestedAt: new Date("2026-04-20T12:00:00.000Z"),
+      cooldownStartedAt: null,
+      cooldownEndsAt: null,
+      approvedAt: null,
+      approvedByOperatorId: null,
+      approvedByOperatorRole: null,
+      rejectedAt: null,
+      rejectedByOperatorId: null,
+      rejectedByOperatorRole: null,
+      cancelledAt: null,
+      cancelledByActorType: null,
+      cancelledByActorId: null,
+      applyStartedAt: null,
+      appliedAt: new Date("2026-04-20T12:00:00.000Z"),
+      appliedByWorkerId: null,
+      applyFailureCode: null,
+      applyFailureReason: null,
+      createdAt: new Date("2026-04-20T12:00:00.000Z"),
+      updatedAt: new Date("2026-04-20T12:00:00.000Z"),
+      reviewCase: null,
+    };
+    const updatedVault = buildVaultRecord({
+      strictMode: true,
+      unlockAt: new Date("2028-01-01T00:00:00.000Z"),
+      ruleChangeRequests: [appliedRuleChange],
+    });
+
+    prismaService.customerAccount.findFirst.mockResolvedValue({
+      id: "account_1",
+      status: AccountLifecycleStatus.active,
+      customer: {
+        id: "customer_1",
+      },
+    });
+    prismaService.asset.findUnique.mockResolvedValue({
+      id: "asset_1",
+      symbol: "USDC",
+      status: AssetStatus.active,
+    });
+    prismaService.retirementVault.findUnique
+      .mockResolvedValueOnce(currentVault)
+      .mockResolvedValueOnce(updatedVault);
+    transactionClient.retirementVaultRuleChangeRequest.create.mockResolvedValue(
+      appliedRuleChange,
+    );
+    transactionClient.retirementVault.update.mockResolvedValue(updatedVault);
+    transactionClient.retirementVaultEvent.createMany.mockResolvedValue({
+      count: 2,
+    });
+    transactionClient.auditEvent.create.mockResolvedValue(undefined);
+    transactionClient.retirementVault.findUnique.mockResolvedValue(updatedVault);
+
+    const result = await service.requestMyRetirementVaultRuleChange("supabase_1", {
+      assetSymbol: "USDC",
+      unlockAt: "2028-01-01T00:00:00.000Z",
+      strictMode: true,
+    });
+
+    expect(result.appliedImmediately).toBe(true);
+    expect(result.reviewCaseReused).toBe(false);
+    expect(result.vault.strictMode).toBe(true);
+    expect(transactionClient.retirementVault.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          strictMode: true,
+        }),
+      }),
+    );
   });
 
   it("restricts an internal retirement vault and records operator governance metadata", async () => {

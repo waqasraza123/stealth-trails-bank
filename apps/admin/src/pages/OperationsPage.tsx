@@ -110,6 +110,20 @@ export function OperationsPage() {
               )} stale or failed`}
             />
           </AdminStaggerItem>
+          <AdminStaggerItem>
+            <MetricCard
+              label="Vault rule rail"
+              value={formatCount(
+                operations.retirementVaultHealth.pendingRuleChangeReviewCount,
+              )}
+              detail={`${formatCount(
+                operations.retirementVaultHealth.staleRuleChangeCooldownCount +
+                  operations.retirementVaultHealth.staleRuleChangeReadyCount +
+                  operations.retirementVaultHealth.staleRuleChangeApplyingCount +
+                  operations.retirementVaultHealth.failedRuleChangeCount,
+              )} stale or failed`}
+            />
+          </AdminStaggerItem>
         </AdminStagger>
       </SectionPanel>
 
@@ -179,6 +193,12 @@ export function OperationsPage() {
               {formatCount(operations.retirementVaultHealth.cooldownActiveCount)} cooling down /{" "}
               {formatCount(operations.retirementVaultHealth.blockedReleaseCount)} blocked by restriction /{" "}
               {formatCount(operations.retirementVaultHealth.failedReleaseCount)} failed
+            </p>
+            <p className="admin-copy">
+              Rule changes: {formatCount(operations.retirementVaultHealth.pendingRuleChangeReviewCount)} review required /{" "}
+              {formatCount(operations.retirementVaultHealth.ruleChangeCooldownCount)} cooling down /{" "}
+              {formatCount(operations.retirementVaultHealth.blockedRuleChangeCount)} blocked /{" "}
+              {formatCount(operations.retirementVaultHealth.failedRuleChangeCount)} failed
             </p>
           </div>
           <div className="admin-list-card">

@@ -39,4 +39,22 @@ export class RetirementVaultWorkerController {
       data: result,
     };
   }
+
+  @Post("rule-change-requests/sweep")
+  async sweepRuleChangeRequests(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: SweepRetirementVaultReleaseRequestsDto,
+    @Request() request: InternalWorkerRequest
+  ): Promise<CustomJsonResponse> {
+    const result = await this.retirementVaultService.sweepRuleChangeRequests(
+      request.internalWorker.workerId,
+      dto.limit ?? 25
+    );
+
+    return {
+      status: "success",
+      message: "Retirement vault rule change sweep completed successfully.",
+      data: result,
+    };
+  }
 }

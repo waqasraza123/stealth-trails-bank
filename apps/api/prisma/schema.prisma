@@ -258,6 +258,7 @@ model RetirementVault {
   updatedAt         DateTime                        @updatedAt
   transactionIntents TransactionIntent[]
   releaseRequests   RetirementVaultReleaseRequest[]
+  ruleChangeRequests RetirementVaultRuleChangeRequest[]
   events            RetirementVaultEvent[]
 
   @@unique([customerAccountId, assetId])
@@ -308,6 +309,50 @@ model RetirementVaultReleaseRequest {
   @@index([retirementVaultId, status, requestedAt])
   @@index([status, cooldownEndsAt])
   @@index([status, readyForReleaseAt])
+  @@index([reviewCaseId])
+}
+
+model RetirementVaultRuleChangeRequest {
+  id                    String                                 @id @default(cuid())
+  retirementVaultId     String
+  retirementVault       RetirementVault                        @relation(fields: [retirementVaultId], references: [id])
+  status                RetirementVaultRuleChangeRequestStatus
+  requestedByActorType  String                                 @default("customer")
+  requestedByActorId    String?
+  currentUnlockAt       DateTime
+  requestedUnlockAt     DateTime
+  currentStrictMode     Boolean
+  requestedStrictMode   Boolean
+  weakensProtection     Boolean                                @default(false)
+  reasonCode            String?
+  reasonNote            String?
+  reviewCaseId          String?
+  reviewCase            ReviewCase?                            @relation("RetirementVaultRuleChangeReviewCase", fields: [reviewCaseId], references: [id])
+  reviewRequiredAt      DateTime?
+  reviewDecidedAt       DateTime?
+  requestedAt           DateTime                               @default(now())
+  cooldownStartedAt     DateTime?
+  cooldownEndsAt        DateTime?
+  approvedAt            DateTime?
+  approvedByOperatorId  String?
+  approvedByOperatorRole String?
+  rejectedAt            DateTime?
+  rejectedByOperatorId  String?
+  rejectedByOperatorRole String?
+  cancelledAt           DateTime?
+  cancelledByActorType  String?
+  cancelledByActorId    String?
+  applyStartedAt        DateTime?
+  appliedAt             DateTime?
+  appliedByWorkerId     String?
+  applyFailureCode      String?
+  applyFailureReason    String?
+  createdAt             DateTime                               @default(now())
+  updatedAt             DateTime                               @updatedAt
+
+  @@index([retirementVaultId, status, requestedAt])
+  @@index([status, cooldownEndsAt])
+  @@index([status, appliedAt])
   @@index([reviewCaseId])
 }
 
@@ -491,6 +536,7 @@ model ReviewCase {
   events              ReviewCaseEvent[]
   manualInterventionIntents TransactionIntent[] @relation("ManualInterventionReviewCase")
   retirementVaultReleaseRequests RetirementVaultReleaseRequest[] @relation("RetirementVaultReleaseReviewCase")
+  retirementVaultRuleChangeRequests RetirementVaultRuleChangeRequest[] @relation("RetirementVaultRuleChangeReviewCase")
   restrictionReleaseReviews CustomerAccountRestriction[] @relation("RestrictionReleaseReviewCase")
   ledgerReconciliationMismatches LedgerReconciliationMismatch[]
 
@@ -621,6 +667,17 @@ enum RetirementVaultReleaseRequestKind {
   early_unlock
 }
 
+enum RetirementVaultRuleChangeRequestStatus {
+  review_required
+  cooldown_active
+  ready_to_apply
+  applying
+  rejected
+  cancelled
+  applied
+  failed
+}
+
 enum RetirementVaultEventType {
   created
   funded
@@ -635,6 +692,15 @@ enum RetirementVaultEventType {
   release_failed
   restricted
   restriction_released
+  rule_change_requested
+  rule_change_review_required
+  rule_change_approved
+  rule_change_rejected
+  rule_change_cancelled
+  rule_change_cooldown_started
+  rule_change_cooldown_completed
+  rule_change_applied
+  rule_change_failed
 }
 
 enum PolicyDecision {

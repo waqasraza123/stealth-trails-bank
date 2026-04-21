@@ -1,5 +1,9 @@
 import { Type } from "class-transformer";
-import { RetirementVaultReleaseRequestStatus, RetirementVaultStatus } from "@prisma/client";
+import {
+  RetirementVaultReleaseRequestStatus,
+  RetirementVaultRuleChangeRequestStatus,
+  RetirementVaultStatus,
+} from "@prisma/client";
 import { IsEnum, IsInt, IsOptional, Max, Min } from "class-validator";
 
 export class ListInternalRetirementVaultsDto {
@@ -10,6 +14,10 @@ export class ListInternalRetirementVaultsDto {
   @IsOptional()
   @IsEnum(RetirementVaultReleaseRequestStatus)
   readonly releaseRequestStatus?: RetirementVaultReleaseRequestStatus;
+
+  @IsOptional()
+  @IsEnum(RetirementVaultRuleChangeRequestStatus)
+  readonly ruleChangeRequestStatus?: RetirementVaultRuleChangeRequestStatus;
 
   @IsOptional()
   @Type(() => Number)

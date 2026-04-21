@@ -182,6 +182,9 @@ export type WorkerIterationMetrics = {
   retirementVaultCooldownCompletedCount: number;
   retirementVaultReleasedCount: number;
   retirementVaultReleaseFailureCount: number;
+  retirementVaultRuleChangeReadyCount: number;
+  retirementVaultRuleChangeAppliedCount: number;
+  retirementVaultRuleChangeFailureCount: number;
   claimableGovernedExecutionRequestCount: number;
   claimedGovernedExecutionRequestCount: number;
   dispatchedGovernedExecutionRequestCount: number;
@@ -228,6 +231,19 @@ export type SweepRetirementVaultReleaseRequestsResult = {
   staleReadyForReleaseCount: number;
   staleExecutingCount: number;
   processedReleaseRequestIds: string[];
+};
+
+export type SweepRetirementVaultRuleChangeRequestsResult = {
+  limit: number;
+  readyToApplyCount: number;
+  appliedCount: number;
+  failedCount: number;
+  blockedRuleChangeCount: number;
+  staleReviewRequiredCount: number;
+  staleCooldownCount: number;
+  staleReadyToApplyCount: number;
+  staleApplyingCount: number;
+  processedRuleChangeRequestIds: string[];
 };
 
 export type CriticalAlertReEscalationSweepResult = {

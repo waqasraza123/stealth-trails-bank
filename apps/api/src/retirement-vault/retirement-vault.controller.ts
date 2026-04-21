@@ -13,6 +13,7 @@ import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { CreateRetirementVaultDto } from "./dto/create-retirement-vault.dto";
 import { FundRetirementVaultDto } from "./dto/fund-retirement-vault.dto";
 import { RequestRetirementVaultReleaseDto } from "./dto/request-retirement-vault-release.dto";
+import { RequestRetirementVaultRuleChangeDto } from "./dto/request-retirement-vault-rule-change.dto";
 import { RetirementVaultService } from "./retirement-vault.service";
 
 type AuthenticatedRequest = {
@@ -127,6 +128,50 @@ export class RetirementVaultController {
     return {
       status: "success",
       message: "Retirement vault unlock request cancelled successfully.",
+      data: result
+    };
+  }
+
+  @Post("me/rule-change-requests")
+  async requestMyRetirementVaultRuleChange(
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true
+      })
+    )
+    dto: RequestRetirementVaultRuleChangeDto,
+    @Request() request: AuthenticatedRequest
+  ): Promise<CustomJsonResponse> {
+    const result =
+      await this.retirementVaultService.requestMyRetirementVaultRuleChange(
+        request.user.id,
+        dto
+      );
+
+    return {
+      status: "success",
+      message: result.appliedImmediately
+        ? "Retirement vault rule change applied successfully."
+        : "Retirement vault rule change request recorded successfully.",
+      data: result
+    };
+  }
+
+  @Post("me/rule-change-requests/:ruleChangeRequestId/cancel")
+  async cancelMyRetirementVaultRuleChange(
+    @Param("ruleChangeRequestId") ruleChangeRequestId: string,
+    @Request() request: AuthenticatedRequest
+  ): Promise<CustomJsonResponse> {
+    const result =
+      await this.retirementVaultService.cancelMyRetirementVaultRuleChange(
+        request.user.id,
+        ruleChangeRequestId
+      );
+
+    return {
+      status: "success",
+      message: "Retirement vault rule change request cancelled successfully.",
       data: result
     };
   }

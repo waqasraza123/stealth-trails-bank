@@ -225,6 +225,9 @@ function createService() {
     retirementVaultReleaseRequest: {
       count: jest.fn().mockResolvedValue(0),
     },
+    retirementVaultRuleChangeRequest: {
+      count: jest.fn().mockResolvedValue(0),
+    },
     auditEvent: {
       create: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),

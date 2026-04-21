@@ -128,6 +128,7 @@ export type RetirementVaultProjection = {
   createdAt: string;
   updatedAt: string;
   releaseRequests: RetirementVaultReleaseRequestProjection[];
+  ruleChangeRequests: RetirementVaultRuleChangeRequestProjection[];
   events: RetirementVaultEventProjection[];
 };
 
@@ -207,6 +208,51 @@ export type RetirementVaultEventProjection = {
   createdAt: string;
 };
 
+export type RetirementVaultRuleChangeRequestProjection = {
+  id: string;
+  retirementVaultId: string;
+  status:
+    | "review_required"
+    | "cooldown_active"
+    | "ready_to_apply"
+    | "applying"
+    | "rejected"
+    | "cancelled"
+    | "applied"
+    | "failed";
+  requestedByActorType: string;
+  requestedByActorId: string | null;
+  currentUnlockAt: string;
+  requestedUnlockAt: string;
+  currentStrictMode: boolean;
+  requestedStrictMode: boolean;
+  weakensProtection: boolean;
+  reasonCode: string | null;
+  reasonNote: string | null;
+  reviewRequiredAt: string | null;
+  reviewDecidedAt: string | null;
+  requestedAt: string;
+  cooldownStartedAt: string | null;
+  cooldownEndsAt: string | null;
+  approvedAt: string | null;
+  approvedByOperatorId: string | null;
+  approvedByOperatorRole: string | null;
+  rejectedAt: string | null;
+  rejectedByOperatorId: string | null;
+  rejectedByOperatorRole: string | null;
+  cancelledAt: string | null;
+  cancelledByActorType: string | null;
+  cancelledByActorId: string | null;
+  applyStartedAt: string | null;
+  appliedAt: string | null;
+  appliedByWorkerId: string | null;
+  applyFailureCode: string | null;
+  applyFailureReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  reviewCase: RetirementVaultReviewCaseSummary | null;
+};
+
 export type ListMyRetirementVaultsResult = {
   customerAccountId: string;
   vaults: RetirementVaultProjection[];
@@ -262,6 +308,18 @@ export type RequestMyRetirementVaultReleaseResult = {
 export type CancelMyRetirementVaultReleaseResult = {
   vault: RetirementVaultProjection;
   releaseRequest: RetirementVaultReleaseRequestProjection;
+};
+
+export type RequestMyRetirementVaultRuleChangeResult = {
+  vault: RetirementVaultProjection;
+  ruleChangeRequest: RetirementVaultRuleChangeRequestProjection;
+  reviewCaseReused: boolean;
+  appliedImmediately: boolean;
+};
+
+export type CancelMyRetirementVaultRuleChangeResult = {
+  vault: RetirementVaultProjection;
+  ruleChangeRequest: RetirementVaultRuleChangeRequestProjection;
 };
 
 export type TransactionHistoryIntent = {

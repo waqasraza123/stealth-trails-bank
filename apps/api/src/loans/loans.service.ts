@@ -166,7 +166,7 @@ const NOTICE_REASON_COPY: Record<string, string> = {
 @Injectable()
 export class LoansService {
   private readonly logger = new Logger(LoansService.name);
-  private readonly provider: ethers.providers.JsonRpcProvider;
+  private readonly provider: ethers.providers.JsonRpcProvider | null;
   private readonly loanContractVersion: string | null;
   private readonly treasurySafeAddress: string | null;
   private readonly readContract: ethers.Contract | null;
@@ -186,40 +186,50 @@ export class LoansService {
       | "requestLoanContractCreation"
     >
   ) {
-    const runtimeConfig = loadOptionalBlockchainContractWriteRuntimeConfig();
-    this.loanContractVersion = runtimeConfig.loanContractVersion;
-    this.treasurySafeAddress =
-      runtimeConfig.governedCustody?.authorities.find(
-        (authority) => authority.authorityType === "treasury_safe"
-      )?.address ?? null;
-    this.provider = createJsonRpcProvider(runtimeConfig.rpcUrl);
+    this.provider = null;
+    this.loanContractVersion = null;
+    this.treasurySafeAddress = null;
+    this.readContract = null;
+    this.writeContract = null;
 
-    if (!runtimeConfig.loanContractAddress) {
-      this.readContract = null;
-      this.writeContract = null;
-      this.logger.warn(
-        "Loan contract integration is disabled because LOAN_CONTRACT_ADDRESS is not configured."
-      );
-      return;
-    }
+    try {
+      const runtimeConfig = loadOptionalBlockchainContractWriteRuntimeConfig();
+      this.loanContractVersion = runtimeConfig.loanContractVersion;
+      this.treasurySafeAddress =
+        runtimeConfig.governedCustody?.authorities.find(
+          (authority) => authority.authorityType === "treasury_safe"
+        )?.address ?? null;
+      this.provider = createJsonRpcProvider(runtimeConfig.rpcUrl);
 
-    this.readContract = this.isLoanBookV1Contract()
-      ? createLoanBookV1Contract(runtimeConfig.loanContractAddress, this.provider)
-      : createLoanBookReadContract(
-          runtimeConfig.loanContractAddress,
-          this.provider
+      if (!runtimeConfig.loanContractAddress) {
+        this.logger.warn(
+          "Loan contract integration is disabled because LOAN_CONTRACT_ADDRESS is not configured."
         );
-    this.writeContract = runtimeConfig.ethereumPrivateKey
-      ? this.isLoanBookV1Contract()
-        ? createLoanBookV1Contract(
+        return;
+      }
+
+      this.readContract = this.isLoanBookV1Contract()
+        ? createLoanBookV1Contract(runtimeConfig.loanContractAddress, this.provider)
+        : createLoanBookReadContract(
             runtimeConfig.loanContractAddress,
-            new ethers.Wallet(runtimeConfig.ethereumPrivateKey, this.provider)
-          )
-        : createLoanBookWriteContract(
-            runtimeConfig.loanContractAddress,
-            new ethers.Wallet(runtimeConfig.ethereumPrivateKey, this.provider)
-          )
-      : null;
+            this.provider
+          );
+      this.writeContract = runtimeConfig.ethereumPrivateKey
+        ? this.isLoanBookV1Contract()
+          ? createLoanBookV1Contract(
+              runtimeConfig.loanContractAddress,
+              new ethers.Wallet(runtimeConfig.ethereumPrivateKey, this.provider)
+            )
+          : createLoanBookWriteContract(
+              runtimeConfig.loanContractAddress,
+              new ethers.Wallet(runtimeConfig.ethereumPrivateKey, this.provider)
+            )
+        : null;
+    } catch (error) {
+      this.logger.warn(
+        `Loan contract integration is disabled during bootstrap: ${error instanceof Error ? error.message : "unknown error"}.`
+      );
+    }
   }
 
   private isLoanBookV1Contract(): boolean {

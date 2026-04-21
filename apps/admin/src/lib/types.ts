@@ -1378,6 +1378,15 @@ export type OperationsStatus = {
     staleCooldownCount: number;
     staleReadyForReleaseCount: number;
     staleExecutingCount: number;
+    pendingRuleChangeReviewCount: number;
+    ruleChangeCooldownCount: number;
+    readyToApplyRuleChangeCount: number;
+    failedRuleChangeCount: number;
+    blockedRuleChangeCount: number;
+    staleRuleChangeReviewCount: number;
+    staleRuleChangeCooldownCount: number;
+    staleRuleChangeReadyCount: number;
+    staleRuleChangeApplyingCount: number;
   };
   recentAlerts: PlatformAlert[];
 };
@@ -2480,6 +2489,48 @@ export type InternalRetirementVaultReleaseDecisionResult = {
   stateReused: boolean;
 };
 
+export type RetirementVaultRuleChangeRequestProjection = {
+  id: string;
+  retirementVaultId: string;
+  status: string;
+  requestedByActorType: string;
+  requestedByActorId: string | null;
+  currentUnlockAt: string;
+  requestedUnlockAt: string;
+  currentStrictMode: boolean;
+  requestedStrictMode: boolean;
+  weakensProtection: boolean;
+  reasonCode: string | null;
+  reasonNote: string | null;
+  reviewRequiredAt: string | null;
+  reviewDecidedAt: string | null;
+  requestedAt: string;
+  cooldownStartedAt: string | null;
+  cooldownEndsAt: string | null;
+  approvedAt: string | null;
+  approvedByOperatorId: string | null;
+  approvedByOperatorRole: string | null;
+  rejectedAt: string | null;
+  rejectedByOperatorId: string | null;
+  rejectedByOperatorRole: string | null;
+  cancelledAt: string | null;
+  cancelledByActorType: string | null;
+  cancelledByActorId: string | null;
+  applyStartedAt: string | null;
+  appliedAt: string | null;
+  appliedByWorkerId: string | null;
+  applyFailureCode: string | null;
+  applyFailureReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  reviewCase: RetirementVaultReviewCaseSummary | null;
+};
+
+export type InternalRetirementVaultRuleChangeDecisionResult = {
+  ruleChangeRequest: RetirementVaultRuleChangeRequestProjection;
+  stateReused: boolean;
+};
+
 export type RetirementVaultRestrictionProjection = {
   restrictedAt: string | null;
   restrictionReasonCode: string | null;
@@ -2512,6 +2563,7 @@ export type InternalRetirementVault = {
   createdAt: string;
   updatedAt: string;
   releaseRequests: RetirementVaultReleaseRequestProjection[];
+  ruleChangeRequests: RetirementVaultRuleChangeRequestProjection[];
   events: RetirementVaultEventProjection[];
   restriction: RetirementVaultRestrictionProjection;
   customerAccount: {

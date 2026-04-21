@@ -17,6 +17,7 @@ import {
   RetirementVaultEventType,
   RetirementVaultReleaseRequestKind,
   RetirementVaultReleaseRequestStatus,
+  RetirementVaultRuleChangeRequestStatus,
   RetirementVaultStatus,
   ReviewCaseEventType,
   ReviewCaseStatus,
@@ -37,6 +38,7 @@ import { FundRetirementVaultDto } from "./dto/fund-retirement-vault.dto";
 import { GetInternalRetirementVaultWorkspaceDto } from "./dto/get-internal-retirement-vault-workspace.dto";
 import { ListInternalRetirementVaultReleaseRequestsDto } from "./dto/list-internal-retirement-vault-release-requests.dto";
 import { ListInternalRetirementVaultsDto } from "./dto/list-internal-retirement-vaults.dto";
+import { RequestRetirementVaultRuleChangeDto } from "./dto/request-retirement-vault-rule-change.dto";
 import { ReleaseRetirementVaultRestrictionDto } from "./dto/release-retirement-vault-restriction.dto";
 import { RequestRetirementVaultReleaseDto } from "./dto/request-retirement-vault-release.dto";
 import { RestrictRetirementVaultDto } from "./dto/restrict-retirement-vault.dto";
@@ -50,6 +52,12 @@ const ACTIVE_RELEASE_REQUEST_STATUSES: RetirementVaultReleaseRequestStatus[] = [
   RetirementVaultReleaseRequestStatus.cooldown_active,
   RetirementVaultReleaseRequestStatus.ready_for_release,
   RetirementVaultReleaseRequestStatus.executing,
+];
+const ACTIVE_RULE_CHANGE_REQUEST_STATUSES: RetirementVaultRuleChangeRequestStatus[] = [
+  RetirementVaultRuleChangeRequestStatus.review_required,
+  RetirementVaultRuleChangeRequestStatus.cooldown_active,
+  RetirementVaultRuleChangeRequestStatus.ready_to_apply,
+  RetirementVaultRuleChangeRequestStatus.applying,
 ];
 const RETIREMENT_VAULT_REVIEW_STALE_SECONDS = 24 * 60 * 60;
 const RETIREMENT_VAULT_RELEASE_STALE_GRACE_SECONDS = 30 * 60;
@@ -96,6 +104,12 @@ const retirementVaultReleaseRequestInclude = {
   },
 } satisfies Prisma.RetirementVaultReleaseRequestInclude;
 
+const retirementVaultRuleChangeRequestInclude = {
+  reviewCase: {
+    select: releaseRequestReviewCaseSelect,
+  },
+} satisfies Prisma.RetirementVaultRuleChangeRequestInclude;
+
 const internalVaultInclude = {
   asset: {
     select: retirementVaultAssetSelect,
@@ -122,6 +136,13 @@ const internalVaultInclude = {
     include: retirementVaultReleaseRequestInclude,
     take: 12,
   },
+  ruleChangeRequests: {
+    orderBy: {
+      requestedAt: "desc",
+    },
+    include: retirementVaultRuleChangeRequestInclude,
+    take: 12,
+  },
   events: {
     orderBy: retirementVaultEventOrder,
     take: 12,
@@ -137,6 +158,13 @@ const retirementVaultInclude = {
       requestedAt: "desc",
     },
     include: retirementVaultReleaseRequestInclude,
+    take: 10,
+  },
+  ruleChangeRequests: {
+    orderBy: {
+      requestedAt: "desc",
+    },
+    include: retirementVaultRuleChangeRequestInclude,
     take: 10,
   },
   events: {
@@ -176,6 +204,34 @@ const internalReleaseRequestInclude = {
   },
 } satisfies Prisma.RetirementVaultReleaseRequestInclude;
 
+const internalRuleChangeRequestInclude = {
+  reviewCase: {
+    select: releaseRequestReviewCaseSelect,
+  },
+  retirementVault: {
+    include: {
+      asset: {
+        select: retirementVaultAssetSelect,
+      },
+      customerAccount: {
+        select: {
+          id: true,
+          status: true,
+          customer: {
+            select: {
+              id: true,
+              supabaseUserId: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      },
+    },
+  },
+} satisfies Prisma.RetirementVaultRuleChangeRequestInclude;
+
 type RetirementVaultRecord = Prisma.RetirementVaultGetPayload<{
   include: typeof retirementVaultInclude;
 }>;
@@ -200,6 +256,15 @@ type InternalReleaseRequestRecord = Prisma.RetirementVaultReleaseRequestGetPaylo
 type InternalRetirementVaultRecord = Prisma.RetirementVaultGetPayload<{
   include: typeof internalVaultInclude;
 }>;
+
+type RetirementVaultRuleChangeRequestRecord = Prisma.RetirementVaultRuleChangeRequestGetPayload<{
+  include: typeof retirementVaultRuleChangeRequestInclude;
+}>;
+
+type InternalRetirementVaultRuleChangeRequestRecord =
+  Prisma.RetirementVaultRuleChangeRequestGetPayload<{
+    include: typeof internalRuleChangeRequestInclude;
+  }>;
 
 type CustomerAssetContext = {
   customerId: string;
@@ -275,6 +340,43 @@ type RetirementVaultEventProjection = {
   createdAt: string;
 };
 
+type RetirementVaultRuleChangeRequestProjection = {
+  id: string;
+  retirementVaultId: string;
+  status: RetirementVaultRuleChangeRequestStatus;
+  requestedByActorType: string;
+  requestedByActorId: string | null;
+  currentUnlockAt: string;
+  requestedUnlockAt: string;
+  currentStrictMode: boolean;
+  requestedStrictMode: boolean;
+  weakensProtection: boolean;
+  reasonCode: string | null;
+  reasonNote: string | null;
+  reviewRequiredAt: string | null;
+  reviewDecidedAt: string | null;
+  requestedAt: string;
+  cooldownStartedAt: string | null;
+  cooldownEndsAt: string | null;
+  approvedAt: string | null;
+  approvedByOperatorId: string | null;
+  approvedByOperatorRole: string | null;
+  rejectedAt: string | null;
+  rejectedByOperatorId: string | null;
+  rejectedByOperatorRole: string | null;
+  cancelledAt: string | null;
+  cancelledByActorType: string | null;
+  cancelledByActorId: string | null;
+  applyStartedAt: string | null;
+  appliedAt: string | null;
+  appliedByWorkerId: string | null;
+  applyFailureCode: string | null;
+  applyFailureReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  reviewCase: RetirementVaultReviewCaseSummary | null;
+};
+
 export type RetirementVaultProjection = {
   id: string;
   customerAccountId: string;
@@ -294,6 +396,7 @@ export type RetirementVaultProjection = {
   createdAt: string;
   updatedAt: string;
   releaseRequests: RetirementVaultReleaseRequestProjection[];
+  ruleChangeRequests: RetirementVaultRuleChangeRequestProjection[];
   events: RetirementVaultEventProjection[];
 };
 
@@ -407,6 +510,18 @@ type CancelMyRetirementVaultReleaseResult = {
   releaseRequest: RetirementVaultReleaseRequestProjection;
 };
 
+type RequestMyRetirementVaultRuleChangeResult = {
+  vault: RetirementVaultProjection;
+  ruleChangeRequest: RetirementVaultRuleChangeRequestProjection;
+  reviewCaseReused: boolean;
+  appliedImmediately: boolean;
+};
+
+type CancelMyRetirementVaultRuleChangeResult = {
+  vault: RetirementVaultProjection;
+  ruleChangeRequest: RetirementVaultRuleChangeRequestProjection;
+};
+
 type ListInternalRetirementVaultReleaseRequestsResult = {
   releaseRequests: InternalRetirementVaultReleaseRequestProjection[];
   limit: number;
@@ -470,6 +585,24 @@ type GetInternalRetirementVaultWorkspaceResult = {
 type UpdateInternalRetirementVaultRestrictionResult = {
   vault: InternalRetirementVaultProjection;
   stateReused: boolean;
+};
+
+type DecideInternalRetirementVaultRuleChangeRequestResult = {
+  ruleChangeRequest: RetirementVaultRuleChangeRequestProjection;
+  stateReused: boolean;
+};
+
+type SweepRetirementVaultRuleChangeRequestsResult = {
+  limit: number;
+  readyToApplyCount: number;
+  appliedCount: number;
+  failedCount: number;
+  blockedRuleChangeCount: number;
+  staleReviewRequiredCount: number;
+  staleCooldownCount: number;
+  staleReadyToApplyCount: number;
+  staleApplyingCount: number;
+  processedRuleChangeRequestIds: string[];
 };
 
 @Injectable()
@@ -541,6 +674,14 @@ export class RetirementVaultService {
     }
 
     return parsedUnlockAt;
+  }
+
+  private parseOptionalUnlockAt(unlockAt?: string): Date | null {
+    if (!unlockAt?.trim()) {
+      return null;
+    }
+
+    return this.parseUnlockAt(unlockAt);
   }
 
   private assertSensitiveVaultRequestAllowed(
@@ -758,6 +899,47 @@ export class RetirementVaultService {
     };
   }
 
+  private mapRuleChangeRequestProjection(
+    request: RetirementVaultRuleChangeRequestRecord,
+  ): RetirementVaultRuleChangeRequestProjection {
+    return {
+      id: request.id,
+      retirementVaultId: request.retirementVaultId,
+      status: request.status,
+      requestedByActorType: request.requestedByActorType,
+      requestedByActorId: request.requestedByActorId,
+      currentUnlockAt: request.currentUnlockAt.toISOString(),
+      requestedUnlockAt: request.requestedUnlockAt.toISOString(),
+      currentStrictMode: request.currentStrictMode,
+      requestedStrictMode: request.requestedStrictMode,
+      weakensProtection: request.weakensProtection,
+      reasonCode: request.reasonCode,
+      reasonNote: request.reasonNote,
+      reviewRequiredAt: request.reviewRequiredAt?.toISOString() ?? null,
+      reviewDecidedAt: request.reviewDecidedAt?.toISOString() ?? null,
+      requestedAt: request.requestedAt.toISOString(),
+      cooldownStartedAt: request.cooldownStartedAt?.toISOString() ?? null,
+      cooldownEndsAt: request.cooldownEndsAt?.toISOString() ?? null,
+      approvedAt: request.approvedAt?.toISOString() ?? null,
+      approvedByOperatorId: request.approvedByOperatorId,
+      approvedByOperatorRole: request.approvedByOperatorRole,
+      rejectedAt: request.rejectedAt?.toISOString() ?? null,
+      rejectedByOperatorId: request.rejectedByOperatorId,
+      rejectedByOperatorRole: request.rejectedByOperatorRole,
+      cancelledAt: request.cancelledAt?.toISOString() ?? null,
+      cancelledByActorType: request.cancelledByActorType,
+      cancelledByActorId: request.cancelledByActorId,
+      applyStartedAt: request.applyStartedAt?.toISOString() ?? null,
+      appliedAt: request.appliedAt?.toISOString() ?? null,
+      appliedByWorkerId: request.appliedByWorkerId,
+      applyFailureCode: request.applyFailureCode,
+      applyFailureReason: request.applyFailureReason,
+      createdAt: request.createdAt.toISOString(),
+      updatedAt: request.updatedAt.toISOString(),
+      reviewCase: this.mapReviewCaseSummary(request.reviewCase),
+    };
+  }
+
   private mapRetirementVaultProjection(
     vault: RetirementVaultRecord
   ): RetirementVaultProjection {
@@ -781,6 +963,9 @@ export class RetirementVaultService {
       updatedAt: vault.updatedAt.toISOString(),
       releaseRequests: vault.releaseRequests.map((request) =>
         this.mapReleaseRequestProjection(request)
+      ),
+      ruleChangeRequests: vault.ruleChangeRequests.map((request) =>
+        this.mapRuleChangeRequestProjection(request)
       ),
       events: vault.events.map((event) =>
         this.mapRetirementVaultEventProjection(event)
@@ -1022,6 +1207,65 @@ export class RetirementVaultService {
     return cooldownEndsAt;
   }
 
+  private buildRuleChangeCooldownEndsAt(
+    requestedAt: Date,
+    currentStrictMode: boolean,
+  ): Date {
+    const cooldownDays = currentStrictMode ? 14 : 7;
+    const cooldownEndsAt = new Date(requestedAt);
+    cooldownEndsAt.setUTCDate(cooldownEndsAt.getUTCDate() + cooldownDays);
+    return cooldownEndsAt;
+  }
+
+  private assertNoActiveRuleChangeRequest(vault: RetirementVaultRecord): void {
+    const activeRuleChangeRequest = vault.ruleChangeRequests.find((request) =>
+      ACTIVE_RULE_CHANGE_REQUEST_STATUSES.includes(request.status),
+    );
+
+    if (activeRuleChangeRequest) {
+      throw new ConflictException(
+        "A retirement vault rule change request is already active for this asset.",
+      );
+    }
+  }
+
+  private deriveRuleChangeTargets(
+    vault: RetirementVaultRecord,
+    dto: RequestRetirementVaultRuleChangeDto,
+  ): {
+    requestedUnlockAt: Date;
+    requestedStrictMode: boolean;
+    weakensProtection: boolean;
+    strengthensProtection: boolean;
+  } {
+    const requestedUnlockAt =
+      this.parseOptionalUnlockAt(dto.unlockAt) ?? vault.unlockAt;
+    const requestedStrictMode = dto.strictMode ?? vault.strictMode;
+
+    if (
+      requestedUnlockAt.getTime() === vault.unlockAt.getTime() &&
+      requestedStrictMode === vault.strictMode
+    ) {
+      throw new BadRequestException(
+        "Retirement vault rule change must modify unlockAt or strictMode.",
+      );
+    }
+
+    const weakensProtection =
+      requestedUnlockAt.getTime() < vault.unlockAt.getTime() ||
+      (vault.strictMode && !requestedStrictMode);
+    const strengthensProtection =
+      requestedUnlockAt.getTime() > vault.unlockAt.getTime() ||
+      (!vault.strictMode && requestedStrictMode);
+
+    return {
+      requestedUnlockAt,
+      requestedStrictMode,
+      weakensProtection,
+      strengthensProtection,
+    };
+  }
+
   private async loadVaultByCustomerAsset(
     customerAccountId: string,
     assetId: string
@@ -1089,6 +1333,17 @@ export class RetirementVaultService {
     if (!allowedStatuses.includes(request.status)) {
       throw new ConflictException(
         "Retirement vault release request is not actionable in its current state."
+      );
+    }
+  }
+
+  private assertRuleChangeRequestActionable(
+    request: RetirementVaultRuleChangeRequestRecord,
+    allowedStatuses: RetirementVaultRuleChangeRequestStatus[],
+  ): void {
+    if (!allowedStatuses.includes(request.status)) {
+      throw new ConflictException(
+        "Retirement vault rule change request is not actionable in its current state.",
       );
     }
   }
@@ -1283,6 +1538,105 @@ export class RetirementVaultService {
         targetId: existingReviewCase.id,
         metadata: {
           releaseRequestId: params.releaseRequestId,
+          previousStatus: existingReviewCase.status,
+          newStatus: nextStatus,
+          note: params.note,
+          reviewCaseType: existingReviewCase.type,
+          transactionIntentId: existingReviewCase.transactionIntentId,
+          customerAccountId: existingReviewCase.customerAccountId,
+        },
+      },
+    });
+  }
+
+  private async closeLinkedRuleChangeReviewCase(params: {
+    transaction: Prisma.TransactionClient;
+    reviewCaseId: string | null;
+    actorType: string;
+    actorId: string | null;
+    note: string | null;
+    disposition: "resolved" | "dismissed";
+    customerId: string | null;
+    ruleChangeRequestId: string;
+  }): Promise<void> {
+    if (!params.reviewCaseId) {
+      return;
+    }
+
+    const existingReviewCase = await params.transaction.reviewCase.findUnique({
+      where: {
+        id: params.reviewCaseId,
+      },
+      select: {
+        id: true,
+        type: true,
+        status: true,
+        customerAccountId: true,
+        transactionIntentId: true,
+      },
+    });
+
+    if (
+      !existingReviewCase ||
+      existingReviewCase.status === ReviewCaseStatus.resolved ||
+      existingReviewCase.status === ReviewCaseStatus.dismissed
+    ) {
+      return;
+    }
+
+    const nextStatus =
+      params.disposition === "resolved"
+        ? ReviewCaseStatus.resolved
+        : ReviewCaseStatus.dismissed;
+    const eventType =
+      params.disposition === "resolved"
+        ? ReviewCaseEventType.resolved
+        : ReviewCaseEventType.dismissed;
+    const occurredAt = new Date();
+
+    await params.transaction.reviewCase.update({
+      where: {
+        id: existingReviewCase.id,
+      },
+      data: {
+        status: nextStatus,
+        assignedOperatorId:
+          params.actorType === "operator" ? params.actorId : null,
+        resolvedAt: params.disposition === "resolved" ? occurredAt : undefined,
+        dismissedAt:
+          params.disposition === "dismissed" ? occurredAt : undefined,
+        notes: params.note ?? undefined,
+      },
+    });
+
+    await params.transaction.reviewCaseEvent.create({
+      data: {
+        reviewCaseId: existingReviewCase.id,
+        actorType: params.actorType,
+        actorId: params.actorId,
+        eventType,
+        note: params.note,
+        metadata: {
+          ruleChangeRequestId: params.ruleChangeRequestId,
+          previousStatus: existingReviewCase.status,
+          newStatus: nextStatus,
+        },
+      },
+    });
+
+    await params.transaction.auditEvent.create({
+      data: {
+        customerId: params.customerId,
+        actorType: params.actorType,
+        actorId: params.actorId,
+        action:
+          params.disposition === "resolved"
+            ? "review_case.resolved"
+            : "review_case.dismissed",
+        targetType: "ReviewCase",
+        targetId: existingReviewCase.id,
+        metadata: {
+          ruleChangeRequestId: params.ruleChangeRequestId,
           previousStatus: existingReviewCase.status,
           newStatus: nextStatus,
           note: params.note,
@@ -1595,6 +1949,7 @@ export class RetirementVaultService {
     }
 
     this.assertNoActiveReleaseRequest(vault);
+    this.assertNoActiveRuleChangeRequest(vault);
 
     const requestKind = this.deriveReleaseKind(vault);
 
@@ -1883,6 +2238,368 @@ export class RetirementVaultService {
     };
   }
 
+  async requestMyRetirementVaultRuleChange(
+    supabaseUserId: string,
+    dto: RequestRetirementVaultRuleChangeDto,
+  ): Promise<RequestMyRetirementVaultRuleChangeResult> {
+    const normalizedAssetSymbol = this.normalizeAssetSymbol(dto.assetSymbol);
+    const context = await this.resolveCustomerAssetContext(
+      supabaseUserId,
+      normalizedAssetSymbol,
+    );
+    const reasonCode = this.normalizeOptionalString(dto.reasonCode);
+    const reasonNote = this.normalizeOptionalString(dto.reasonNote);
+
+    const vault = await this.loadVaultByCustomerAsset(
+      context.customerAccountId,
+      context.assetId,
+    );
+
+    if (vault.status !== RetirementVaultStatus.active) {
+      throw new ConflictException(
+        "Retirement vault rules can only be changed while the vault is active.",
+      );
+    }
+
+    this.assertNoActiveReleaseRequest(vault);
+    this.assertNoActiveRuleChangeRequest(vault);
+
+    const {
+      requestedUnlockAt,
+      requestedStrictMode,
+      weakensProtection,
+      strengthensProtection,
+    } = this.deriveRuleChangeTargets(vault, dto);
+
+    if (weakensProtection && !reasonCode) {
+      throw new BadRequestException(
+        "Protection-weakening vault rule changes require a reason code.",
+      );
+    }
+
+    if (!weakensProtection && !strengthensProtection) {
+      throw new BadRequestException(
+        "Retirement vault rule change must strengthen or weaken the current lock posture.",
+      );
+    }
+
+    const requestedAt = new Date();
+    const appliedImmediately = !weakensProtection;
+    let reviewCaseReused = false;
+
+    const result = await this.prismaService.$transaction(async (transaction) => {
+      let ruleChangeRequest =
+        await transaction.retirementVaultRuleChangeRequest.create({
+          data: {
+            retirementVaultId: vault.id,
+            status: appliedImmediately
+              ? RetirementVaultRuleChangeRequestStatus.applied
+              : RetirementVaultRuleChangeRequestStatus.review_required,
+            requestedByActorType: "customer",
+            requestedByActorId: supabaseUserId,
+            currentUnlockAt: vault.unlockAt,
+            requestedUnlockAt,
+            currentStrictMode: vault.strictMode,
+            requestedStrictMode,
+            weakensProtection,
+            reasonCode,
+            reasonNote,
+            reviewRequiredAt: appliedImmediately ? null : requestedAt,
+            requestedAt,
+            appliedAt: appliedImmediately ? requestedAt : null,
+          },
+          include: retirementVaultRuleChangeRequestInclude,
+        });
+
+      if (appliedImmediately) {
+        await transaction.retirementVault.update({
+          where: {
+            id: vault.id,
+          },
+          data: {
+            unlockAt: requestedUnlockAt,
+            strictMode: requestedStrictMode,
+          },
+        });
+      } else {
+        const reviewCaseResult = await this.reviewCasesService.openOrReuseReviewCase(
+          transaction,
+          {
+            customerId: context.customerId,
+            customerAccountId: context.customerAccountId,
+            transactionIntentId: null,
+            type: ReviewCaseType.manual_intervention,
+            reasonCode: "retirement_vault_rule_change_weakening",
+            notes:
+              reasonNote ??
+              `Protection-weakening retirement vault rule change requested for ${context.assetSymbol}.`,
+            actorType: "customer",
+            actorId: supabaseUserId,
+            auditAction: "retirement_vault.rule_change_review_case_opened",
+            auditMetadata: {
+              retirementVaultId: vault.id,
+              ruleChangeRequestId: ruleChangeRequest.id,
+              assetSymbol: context.assetSymbol,
+              currentUnlockAt: vault.unlockAt.toISOString(),
+              requestedUnlockAt: requestedUnlockAt.toISOString(),
+              currentStrictMode: vault.strictMode,
+              requestedStrictMode,
+              weakensProtection,
+              reasonCode,
+              reasonNote,
+            },
+          },
+        );
+        reviewCaseReused = reviewCaseResult.reviewCaseReused;
+        ruleChangeRequest = await transaction.retirementVaultRuleChangeRequest.update({
+          where: {
+            id: ruleChangeRequest.id,
+          },
+          data: {
+            reviewCaseId: reviewCaseResult.reviewCase.id,
+          },
+          include: retirementVaultRuleChangeRequestInclude,
+        });
+      }
+
+      const eventData: Prisma.RetirementVaultEventCreateManyInput[] = [
+        {
+          retirementVaultId: vault.id,
+          eventType: RetirementVaultEventType.rule_change_requested,
+          actorType: "customer",
+          actorId: supabaseUserId,
+          metadata: {
+            ruleChangeRequestId: ruleChangeRequest.id,
+            currentUnlockAt: vault.unlockAt.toISOString(),
+            requestedUnlockAt: requestedUnlockAt.toISOString(),
+            currentStrictMode: vault.strictMode,
+            requestedStrictMode,
+            weakensProtection,
+            reasonCode,
+            reasonNote,
+          },
+        },
+      ];
+
+      if (appliedImmediately) {
+        eventData.push({
+          retirementVaultId: vault.id,
+          eventType: RetirementVaultEventType.rule_change_applied,
+          actorType: "customer",
+          actorId: supabaseUserId,
+          metadata: {
+            ruleChangeRequestId: ruleChangeRequest.id,
+            currentUnlockAt: vault.unlockAt.toISOString(),
+            requestedUnlockAt: requestedUnlockAt.toISOString(),
+            currentStrictMode: vault.strictMode,
+            requestedStrictMode,
+            appliedImmediately: true,
+          },
+        });
+      } else {
+        eventData.push({
+          retirementVaultId: vault.id,
+          eventType: RetirementVaultEventType.rule_change_review_required,
+          actorType: "system",
+          actorId: null,
+          metadata: {
+            ruleChangeRequestId: ruleChangeRequest.id,
+            reviewCaseId: ruleChangeRequest.reviewCaseId,
+            weakensProtection: true,
+          },
+        });
+      }
+
+      await transaction.retirementVaultEvent.createMany({
+        data: eventData,
+      });
+
+      await transaction.auditEvent.create({
+        data: {
+          customerId: context.customerId,
+          actorType: "customer",
+          actorId: supabaseUserId,
+          action: appliedImmediately
+            ? "retirement_vault.rule_change_applied"
+            : "retirement_vault.rule_change_requested",
+          targetType: "RetirementVaultRuleChangeRequest",
+          targetId: ruleChangeRequest.id,
+          metadata: {
+            customerAccountId: context.customerAccountId,
+            retirementVaultId: vault.id,
+            currentUnlockAt: vault.unlockAt.toISOString(),
+            requestedUnlockAt: requestedUnlockAt.toISOString(),
+            currentStrictMode: vault.strictMode,
+            requestedStrictMode,
+            weakensProtection,
+            reviewCaseId: ruleChangeRequest.reviewCaseId,
+            reasonCode,
+            reasonNote,
+          },
+        },
+      });
+
+      const updatedVault = await transaction.retirementVault.findUnique({
+        where: {
+          id: vault.id,
+        },
+        include: retirementVaultInclude,
+      });
+
+      if (!updatedVault) {
+        throw new NotFoundException("Retirement vault not found.");
+      }
+
+      return {
+        ruleChangeRequest,
+        updatedVault,
+      };
+    });
+
+    return {
+      vault: this.mapRetirementVaultProjection(result.updatedVault),
+      ruleChangeRequest: this.mapRuleChangeRequestProjection(
+        result.ruleChangeRequest,
+      ),
+      reviewCaseReused,
+      appliedImmediately,
+    };
+  }
+
+  async cancelMyRetirementVaultRuleChange(
+    supabaseUserId: string,
+    ruleChangeRequestId: string,
+  ): Promise<CancelMyRetirementVaultRuleChangeResult> {
+    const ruleChangeRequest =
+      await this.prismaService.retirementVaultRuleChangeRequest.findFirst({
+        where: {
+          id: ruleChangeRequestId,
+          retirementVault: {
+            customerAccount: {
+              customer: {
+                supabaseUserId,
+              },
+            },
+          },
+        },
+        include: retirementVaultRuleChangeRequestInclude,
+      });
+
+    if (!ruleChangeRequest) {
+      throw new NotFoundException(
+        "Retirement vault rule change request not found.",
+      );
+    }
+
+    const cancellableStatuses: RetirementVaultRuleChangeRequestStatus[] = [
+      RetirementVaultRuleChangeRequestStatus.review_required,
+      RetirementVaultRuleChangeRequestStatus.cooldown_active,
+    ];
+
+    if (!cancellableStatuses.includes(ruleChangeRequest.status)) {
+      throw new ConflictException(
+        "Retirement vault rule change request can no longer be cancelled.",
+      );
+    }
+
+    const result = await this.prismaService.$transaction(async (transaction) => {
+      const cancelledRequest =
+        await transaction.retirementVaultRuleChangeRequest.update({
+          where: {
+            id: ruleChangeRequest.id,
+          },
+          data: {
+            status: RetirementVaultRuleChangeRequestStatus.cancelled,
+            cancelledAt: new Date(),
+            cancelledByActorType: "customer",
+            cancelledByActorId: supabaseUserId,
+          },
+          include: retirementVaultRuleChangeRequestInclude,
+        });
+
+      const customer = await transaction.retirementVault.findUnique({
+        where: {
+          id: cancelledRequest.retirementVaultId,
+        },
+        select: {
+          customerAccount: {
+            select: {
+              customer: {
+                select: {
+                  id: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      await this.closeLinkedRuleChangeReviewCase({
+        transaction,
+        reviewCaseId: cancelledRequest.reviewCaseId,
+        actorType: "customer",
+        actorId: supabaseUserId,
+        note: "Customer cancelled the retirement vault rule change request.",
+        disposition: "dismissed",
+        customerId: customer?.customerAccount.customer.id ?? null,
+        ruleChangeRequestId: cancelledRequest.id,
+      });
+
+      await transaction.retirementVaultEvent.create({
+        data: {
+          retirementVaultId: cancelledRequest.retirementVaultId,
+          eventType: RetirementVaultEventType.rule_change_cancelled,
+          actorType: "customer",
+          actorId: supabaseUserId,
+          metadata: {
+            ruleChangeRequestId: cancelledRequest.id,
+            previousStatus: ruleChangeRequest.status,
+          },
+        },
+      });
+
+      await transaction.auditEvent.create({
+        data: {
+          customerId: customer?.customerAccount.customer.id ?? null,
+          actorType: "customer",
+          actorId: supabaseUserId,
+          action: "retirement_vault.rule_change_cancelled",
+          targetType: "RetirementVaultRuleChangeRequest",
+          targetId: cancelledRequest.id,
+          metadata: {
+            retirementVaultId: cancelledRequest.retirementVaultId,
+            previousStatus: ruleChangeRequest.status,
+            status: cancelledRequest.status,
+            reviewCaseId: cancelledRequest.reviewCaseId,
+          },
+        },
+      });
+
+      const updatedVault = await transaction.retirementVault.findUnique({
+        where: {
+          id: cancelledRequest.retirementVaultId,
+        },
+        include: retirementVaultInclude,
+      });
+
+      if (!updatedVault) {
+        throw new NotFoundException("Retirement vault not found.");
+      }
+
+      return {
+        cancelledRequest,
+        updatedVault,
+      };
+    });
+
+    return {
+      vault: this.mapRetirementVaultProjection(result.updatedVault),
+      ruleChangeRequest: this.mapRuleChangeRequestProjection(
+        result.cancelledRequest,
+      ),
+    };
+  }
+
   async listInternalVaults(
     query: ListInternalRetirementVaultsDto
   ): Promise<ListInternalRetirementVaultsResult> {
@@ -1897,6 +2614,14 @@ export class RetirementVaultService {
       where.releaseRequests = {
         some: {
           status: query.releaseRequestStatus,
+        },
+      };
+    }
+
+    if (query.ruleChangeRequestStatus) {
+      where.ruleChangeRequests = {
+        some: {
+          status: query.ruleChangeRequestStatus,
         },
       };
     }
@@ -1932,8 +2657,10 @@ export class RetirementVaultService {
       vault.customerAccount.id
     );
     const releaseRequestIds = vault.releaseRequests.map((request) => request.id);
+    const ruleChangeRequestIds = vault.ruleChangeRequests.map((request) => request.id);
     const reviewCaseIds = vault.releaseRequests
       .map((request) => request.reviewCaseId)
+      .concat(vault.ruleChangeRequests.map((request) => request.reviewCaseId))
       .filter((value): value is string => Boolean(value));
     const transactionIntentIds = vault.releaseRequests
       .map((request) => request.transactionIntentId)
@@ -1946,6 +2673,10 @@ export class RetirementVaultService {
       ...releaseRequestIds.map((releaseRequestId) => ({
         targetType: "RetirementVaultReleaseRequest",
         targetId: releaseRequestId,
+      })),
+      ...ruleChangeRequestIds.map((ruleChangeRequestId) => ({
+        targetType: "RetirementVaultRuleChangeRequest",
+        targetId: ruleChangeRequestId,
       })),
       ...reviewCaseIds.map((reviewCaseId) => ({
         targetType: "ReviewCase",
@@ -2505,6 +3236,602 @@ export class RetirementVaultService {
     return {
       releaseRequest: this.mapInternalReleaseRequestProjection(updatedRequest),
       stateReused: false,
+    };
+  }
+
+  async approveInternalRuleChangeRequest(
+    ruleChangeRequestId: string,
+    operatorId: string,
+    operatorRole?: string | null,
+    note?: string,
+  ): Promise<DecideInternalRetirementVaultRuleChangeRequestResult> {
+    const normalizedOperatorRole = this.assertCanDecideRelease(operatorRole);
+    const normalizedNote = this.normalizeOptionalString(note);
+    const existingRequest =
+      await this.prismaService.retirementVaultRuleChangeRequest.findUnique({
+        where: {
+          id: ruleChangeRequestId,
+        },
+        include: internalRuleChangeRequestInclude,
+      });
+
+    if (!existingRequest) {
+      throw new NotFoundException(
+        "Retirement vault rule change request not found.",
+      );
+    }
+
+    if (
+      existingRequest.status ===
+        RetirementVaultRuleChangeRequestStatus.cooldown_active ||
+      existingRequest.status ===
+        RetirementVaultRuleChangeRequestStatus.ready_to_apply ||
+      existingRequest.status === RetirementVaultRuleChangeRequestStatus.applying ||
+      existingRequest.status === RetirementVaultRuleChangeRequestStatus.applied
+    ) {
+      return {
+        ruleChangeRequest: this.mapRuleChangeRequestProjection(existingRequest),
+        stateReused: true,
+      };
+    }
+
+    this.assertRuleChangeRequestActionable(existingRequest, [
+      RetirementVaultRuleChangeRequestStatus.review_required,
+    ]);
+
+    const occurredAt = new Date();
+    const cooldownEndsAt = this.buildRuleChangeCooldownEndsAt(
+      occurredAt,
+      existingRequest.currentStrictMode,
+    );
+
+    const updatedRequest = await this.prismaService.$transaction(
+      async (transaction) => {
+        const approvedRequest =
+          await transaction.retirementVaultRuleChangeRequest.update({
+            where: {
+              id: existingRequest.id,
+            },
+            data: {
+              status: RetirementVaultRuleChangeRequestStatus.cooldown_active,
+              reviewDecidedAt: occurredAt,
+              approvedAt: occurredAt,
+              approvedByOperatorId: operatorId,
+              approvedByOperatorRole: normalizedOperatorRole,
+              cooldownStartedAt: occurredAt,
+              cooldownEndsAt,
+              applyFailureCode: null,
+              applyFailureReason: null,
+            },
+            include: retirementVaultRuleChangeRequestInclude,
+          });
+
+        await this.closeLinkedRuleChangeReviewCase({
+          transaction,
+          reviewCaseId: approvedRequest.reviewCaseId,
+          actorType: "operator",
+          actorId: operatorId,
+          note:
+            normalizedNote ??
+            "Retirement vault rule weakening approved and moved into cooldown.",
+          disposition: "resolved",
+          customerId: existingRequest.retirementVault.customerAccount.customer.id,
+          ruleChangeRequestId: approvedRequest.id,
+        });
+
+        await transaction.retirementVaultEvent.createMany({
+          data: [
+            {
+              retirementVaultId: approvedRequest.retirementVaultId,
+              eventType: RetirementVaultEventType.rule_change_approved,
+              actorType: "operator",
+              actorId: operatorId,
+              metadata: {
+                ruleChangeRequestId: approvedRequest.id,
+                operatorRole: normalizedOperatorRole,
+                note: normalizedNote,
+              },
+            },
+            {
+              retirementVaultId: approvedRequest.retirementVaultId,
+              eventType: RetirementVaultEventType.rule_change_cooldown_started,
+              actorType: "operator",
+              actorId: operatorId,
+              metadata: {
+                ruleChangeRequestId: approvedRequest.id,
+                operatorRole: normalizedOperatorRole,
+                cooldownEndsAt: cooldownEndsAt.toISOString(),
+              },
+            },
+          ],
+        });
+
+        await transaction.auditEvent.create({
+          data: {
+            customerId: existingRequest.retirementVault.customerAccount.customer.id,
+            actorType: "operator",
+            actorId: operatorId,
+            action: "retirement_vault.rule_change_approved",
+            targetType: "RetirementVaultRuleChangeRequest",
+            targetId: approvedRequest.id,
+            metadata: {
+              retirementVaultId: approvedRequest.retirementVaultId,
+              status: approvedRequest.status,
+              operatorRole: normalizedOperatorRole,
+              cooldownEndsAt: cooldownEndsAt.toISOString(),
+              reviewCaseId: approvedRequest.reviewCaseId,
+              note: normalizedNote,
+            },
+          },
+        });
+
+        return approvedRequest;
+      },
+    );
+
+    return {
+      ruleChangeRequest: this.mapRuleChangeRequestProjection(updatedRequest),
+      stateReused: false,
+    };
+  }
+
+  async rejectInternalRuleChangeRequest(
+    ruleChangeRequestId: string,
+    operatorId: string,
+    operatorRole?: string | null,
+    note?: string,
+  ): Promise<DecideInternalRetirementVaultRuleChangeRequestResult> {
+    const normalizedOperatorRole = this.assertCanDecideRelease(operatorRole);
+    const normalizedNote = this.normalizeOptionalString(note);
+    const existingRequest =
+      await this.prismaService.retirementVaultRuleChangeRequest.findUnique({
+        where: {
+          id: ruleChangeRequestId,
+        },
+        include: internalRuleChangeRequestInclude,
+      });
+
+    if (!existingRequest) {
+      throw new NotFoundException(
+        "Retirement vault rule change request not found.",
+      );
+    }
+
+    if (existingRequest.status === RetirementVaultRuleChangeRequestStatus.rejected) {
+      return {
+        ruleChangeRequest: this.mapRuleChangeRequestProjection(existingRequest),
+        stateReused: true,
+      };
+    }
+
+    this.assertRuleChangeRequestActionable(existingRequest, [
+      RetirementVaultRuleChangeRequestStatus.review_required,
+    ]);
+
+    const occurredAt = new Date();
+
+    const updatedRequest = await this.prismaService.$transaction(
+      async (transaction) => {
+        const rejectedRequest =
+          await transaction.retirementVaultRuleChangeRequest.update({
+            where: {
+              id: existingRequest.id,
+            },
+            data: {
+              status: RetirementVaultRuleChangeRequestStatus.rejected,
+              reviewDecidedAt: occurredAt,
+              rejectedAt: occurredAt,
+              rejectedByOperatorId: operatorId,
+              rejectedByOperatorRole: normalizedOperatorRole,
+            },
+            include: retirementVaultRuleChangeRequestInclude,
+          });
+
+        await this.closeLinkedRuleChangeReviewCase({
+          transaction,
+          reviewCaseId: rejectedRequest.reviewCaseId,
+          actorType: "operator",
+          actorId: operatorId,
+          note:
+            normalizedNote ??
+            "Retirement vault rule weakening rejected after operator review.",
+          disposition: "resolved",
+          customerId: existingRequest.retirementVault.customerAccount.customer.id,
+          ruleChangeRequestId: rejectedRequest.id,
+        });
+
+        await transaction.retirementVaultEvent.create({
+          data: {
+            retirementVaultId: rejectedRequest.retirementVaultId,
+            eventType: RetirementVaultEventType.rule_change_rejected,
+            actorType: "operator",
+            actorId: operatorId,
+            metadata: {
+              ruleChangeRequestId: rejectedRequest.id,
+              operatorRole: normalizedOperatorRole,
+              note: normalizedNote,
+            },
+          },
+        });
+
+        await transaction.auditEvent.create({
+          data: {
+            customerId: existingRequest.retirementVault.customerAccount.customer.id,
+            actorType: "operator",
+            actorId: operatorId,
+            action: "retirement_vault.rule_change_rejected",
+            targetType: "RetirementVaultRuleChangeRequest",
+            targetId: rejectedRequest.id,
+            metadata: {
+              retirementVaultId: rejectedRequest.retirementVaultId,
+              status: rejectedRequest.status,
+              operatorRole: normalizedOperatorRole,
+              reviewCaseId: rejectedRequest.reviewCaseId,
+              note: normalizedNote,
+            },
+          },
+        });
+
+        return rejectedRequest;
+      },
+    );
+
+    return {
+      ruleChangeRequest: this.mapRuleChangeRequestProjection(updatedRequest),
+      stateReused: false,
+    };
+  }
+
+  async sweepRuleChangeRequests(
+    workerId: string,
+    limit: number,
+  ): Promise<SweepRetirementVaultRuleChangeRequestsResult> {
+    const now = new Date();
+    const staleReviewBefore = new Date(
+      now.getTime() - RETIREMENT_VAULT_REVIEW_STALE_SECONDS * 1000,
+    );
+    const staleApplyBefore = new Date(
+      now.getTime() - RETIREMENT_VAULT_RELEASE_STALE_GRACE_SECONDS * 1000,
+    );
+    const staleApplyingBefore = new Date(
+      now.getTime() - RETIREMENT_VAULT_EXECUTING_STALE_SECONDS * 1000,
+    );
+    const processedRuleChangeRequestIds: string[] = [];
+    let readyToApplyCount = 0;
+    let appliedCount = 0;
+    let failedCount = 0;
+
+    const cooldownReadyRequests =
+      await this.prismaService.retirementVaultRuleChangeRequest.findMany({
+        where: {
+          status: RetirementVaultRuleChangeRequestStatus.cooldown_active,
+          cooldownEndsAt: {
+            lte: now,
+          },
+          retirementVault: {
+            status: RetirementVaultStatus.active,
+            customerAccount: {
+              status: AccountLifecycleStatus.active,
+            },
+          },
+        },
+        orderBy: {
+          cooldownEndsAt: "asc",
+        },
+        take: limit,
+      });
+
+    for (const request of cooldownReadyRequests) {
+      const transitioned = await this.prismaService.$transaction(
+        async (transaction) => {
+          const transitionCount =
+            await transaction.retirementVaultRuleChangeRequest.updateMany({
+              where: {
+                id: request.id,
+                status: RetirementVaultRuleChangeRequestStatus.cooldown_active,
+                cooldownEndsAt: {
+                  lte: now,
+                },
+              },
+              data: {
+                status: RetirementVaultRuleChangeRequestStatus.ready_to_apply,
+              },
+            });
+
+          if (transitionCount.count !== 1) {
+            return false;
+          }
+
+          await transaction.retirementVaultEvent.create({
+            data: {
+              retirementVaultId: request.retirementVaultId,
+              eventType: RetirementVaultEventType.rule_change_cooldown_completed,
+              actorType: "worker",
+              actorId: workerId,
+              metadata: {
+                ruleChangeRequestId: request.id,
+                cooldownEndsAt: request.cooldownEndsAt?.toISOString() ?? null,
+              },
+            },
+          });
+
+          await transaction.auditEvent.create({
+            data: {
+              actorType: "worker",
+              actorId: workerId,
+              action: "retirement_vault.rule_change_cooldown_completed",
+              targetType: "RetirementVaultRuleChangeRequest",
+              targetId: request.id,
+              metadata: {
+                retirementVaultId: request.retirementVaultId,
+                cooldownEndsAt: request.cooldownEndsAt?.toISOString() ?? null,
+              },
+            },
+          });
+
+          return true;
+        },
+      );
+
+      if (transitioned) {
+        readyToApplyCount += 1;
+      }
+    }
+
+    const readyRequests =
+      await this.prismaService.retirementVaultRuleChangeRequest.findMany({
+        where: {
+          status: RetirementVaultRuleChangeRequestStatus.ready_to_apply,
+          retirementVault: {
+            status: RetirementVaultStatus.active,
+            customerAccount: {
+              status: AccountLifecycleStatus.active,
+            },
+          },
+        },
+        include: internalRuleChangeRequestInclude,
+        orderBy: {
+          updatedAt: "asc",
+        },
+        take: limit,
+      });
+
+    for (const request of readyRequests) {
+      const claimedCount =
+        await this.prismaService.retirementVaultRuleChangeRequest.updateMany({
+          where: {
+            id: request.id,
+            status: RetirementVaultRuleChangeRequestStatus.ready_to_apply,
+          },
+          data: {
+            status: RetirementVaultRuleChangeRequestStatus.applying,
+            applyStartedAt: new Date(),
+            appliedByWorkerId: workerId,
+          },
+        });
+
+      if (claimedCount.count !== 1) {
+        continue;
+      }
+
+      try {
+        await this.prismaService.$transaction(async (transaction) => {
+          const currentRequest =
+            await transaction.retirementVaultRuleChangeRequest.findUnique({
+              where: {
+                id: request.id,
+              },
+              include: internalRuleChangeRequestInclude,
+            });
+
+          if (!currentRequest) {
+            throw new NotFoundException(
+              "Retirement vault rule change request not found.",
+            );
+          }
+
+          if (
+            currentRequest.status !== RetirementVaultRuleChangeRequestStatus.applying
+          ) {
+            throw new ConflictException(
+              "Retirement vault rule change request is no longer applying.",
+            );
+          }
+
+          await transaction.retirementVault.update({
+            where: {
+              id: currentRequest.retirementVaultId,
+            },
+            data: {
+              unlockAt: currentRequest.requestedUnlockAt,
+              strictMode: currentRequest.requestedStrictMode,
+            },
+          });
+
+          const appliedAt = new Date();
+
+          await transaction.retirementVaultRuleChangeRequest.update({
+            where: {
+              id: currentRequest.id,
+            },
+            data: {
+              status: RetirementVaultRuleChangeRequestStatus.applied,
+              appliedAt,
+              applyFailureCode: null,
+              applyFailureReason: null,
+            },
+          });
+
+          await transaction.retirementVaultEvent.create({
+            data: {
+              retirementVaultId: currentRequest.retirementVaultId,
+              eventType: RetirementVaultEventType.rule_change_applied,
+              actorType: "worker",
+              actorId: workerId,
+              metadata: {
+                ruleChangeRequestId: currentRequest.id,
+                previousUnlockAt: currentRequest.currentUnlockAt.toISOString(),
+                requestedUnlockAt: currentRequest.requestedUnlockAt.toISOString(),
+                previousStrictMode: currentRequest.currentStrictMode,
+                requestedStrictMode: currentRequest.requestedStrictMode,
+              },
+            },
+          });
+
+          await transaction.auditEvent.create({
+            data: {
+              customerId: currentRequest.retirementVault.customerAccount.customer.id,
+              actorType: "worker",
+              actorId: workerId,
+              action: "retirement_vault.rule_change_applied",
+              targetType: "RetirementVaultRuleChangeRequest",
+              targetId: currentRequest.id,
+              metadata: {
+                retirementVaultId: currentRequest.retirementVaultId,
+                previousUnlockAt: currentRequest.currentUnlockAt.toISOString(),
+                requestedUnlockAt: currentRequest.requestedUnlockAt.toISOString(),
+                previousStrictMode: currentRequest.currentStrictMode,
+                requestedStrictMode: currentRequest.requestedStrictMode,
+              },
+            },
+          });
+        });
+
+        appliedCount += 1;
+        processedRuleChangeRequestIds.push(request.id);
+      } catch (error) {
+        const failureMessage =
+          error instanceof Error
+            ? error.message
+            : "Retirement vault rule change application failed.";
+
+        await this.prismaService.$transaction(async (transaction) => {
+          await transaction.retirementVaultRuleChangeRequest.update({
+            where: {
+              id: request.id,
+            },
+            data: {
+              status: RetirementVaultRuleChangeRequestStatus.failed,
+              applyFailureCode: "rule_change_apply_failed",
+              applyFailureReason: failureMessage,
+            },
+          });
+
+          await transaction.retirementVaultEvent.create({
+            data: {
+              retirementVaultId: request.retirementVaultId,
+              eventType: RetirementVaultEventType.rule_change_failed,
+              actorType: "worker",
+              actorId: workerId,
+              metadata: {
+                ruleChangeRequestId: request.id,
+                failureCode: "rule_change_apply_failed",
+                failureReason: failureMessage,
+              },
+            },
+          });
+
+          await transaction.auditEvent.create({
+            data: {
+              customerId: request.retirementVault.customerAccount.customer.id,
+              actorType: "worker",
+              actorId: workerId,
+              action: "retirement_vault.rule_change_failed",
+              targetType: "RetirementVaultRuleChangeRequest",
+              targetId: request.id,
+              metadata: {
+                retirementVaultId: request.retirementVaultId,
+                failureCode: "rule_change_apply_failed",
+                failureReason: failureMessage,
+              },
+            },
+          });
+        });
+
+        failedCount += 1;
+        processedRuleChangeRequestIds.push(request.id);
+      }
+    }
+
+    const [
+      blockedRuleChangeCount,
+      staleReviewRequiredCount,
+      staleCooldownCount,
+      staleReadyToApplyCount,
+      staleApplyingCount,
+    ] = await Promise.all([
+      this.prismaService.retirementVaultRuleChangeRequest.count({
+        where: {
+          status: {
+            in: [
+              RetirementVaultRuleChangeRequestStatus.cooldown_active,
+              RetirementVaultRuleChangeRequestStatus.ready_to_apply,
+              RetirementVaultRuleChangeRequestStatus.applying,
+            ],
+          },
+          OR: [
+            {
+              retirementVault: {
+                status: RetirementVaultStatus.restricted,
+              },
+            },
+            {
+              retirementVault: {
+                customerAccount: {
+                  status: {
+                    not: AccountLifecycleStatus.active,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      }),
+      this.prismaService.retirementVaultRuleChangeRequest.count({
+        where: {
+          status: RetirementVaultRuleChangeRequestStatus.review_required,
+          updatedAt: {
+            lte: staleReviewBefore,
+          },
+        },
+      }),
+      this.prismaService.retirementVaultRuleChangeRequest.count({
+        where: {
+          status: RetirementVaultRuleChangeRequestStatus.cooldown_active,
+          cooldownEndsAt: {
+            lt: staleApplyBefore,
+          },
+        },
+      }),
+      this.prismaService.retirementVaultRuleChangeRequest.count({
+        where: {
+          status: RetirementVaultRuleChangeRequestStatus.ready_to_apply,
+          updatedAt: {
+            lte: staleApplyBefore,
+          },
+        },
+      }),
+      this.prismaService.retirementVaultRuleChangeRequest.count({
+        where: {
+          status: RetirementVaultRuleChangeRequestStatus.applying,
+          updatedAt: {
+            lte: staleApplyingBefore,
+          },
+        },
+      }),
+    ]);
+
+    return {
+      limit,
+      readyToApplyCount,
+      appliedCount,
+      failedCount,
+      blockedRuleChangeCount,
+      staleReviewRequiredCount,
+      staleCooldownCount,
+      staleReadyToApplyCount,
+      staleApplyingCount,
+      processedRuleChangeRequestIds,
     };
   }
 

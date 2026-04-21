@@ -21,6 +21,7 @@ import type {
   GovernedIncidentPackageExport,
   InternalRetirementVaultList,
   InternalRetirementVaultRestrictionResult,
+  InternalRetirementVaultRuleChangeDecisionResult,
   InternalRetirementVaultWorkspace,
   InternalRetirementVaultReleaseDecisionResult,
   InternalRetirementVaultReleaseRequestList,
@@ -1446,6 +1447,34 @@ export async function rejectRetirementVaultReleaseRequest(
   return requestData(session, {
     method: "POST",
     url: `/retirement-vault/internal/release-requests/${releaseRequestId}/reject`,
+    data: payload
+  });
+}
+
+export async function approveRetirementVaultRuleChangeRequest(
+  session: OperatorSession,
+  ruleChangeRequestId: string,
+  payload: {
+    note?: string;
+  }
+): Promise<InternalRetirementVaultRuleChangeDecisionResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/retirement-vault/internal/rule-change-requests/${ruleChangeRequestId}/approve`,
+    data: payload
+  });
+}
+
+export async function rejectRetirementVaultRuleChangeRequest(
+  session: OperatorSession,
+  ruleChangeRequestId: string,
+  payload: {
+    note?: string;
+  }
+): Promise<InternalRetirementVaultRuleChangeDecisionResult> {
+  return requestData(session, {
+    method: "POST",
+    url: `/retirement-vault/internal/rule-change-requests/${ruleChangeRequestId}/reject`,
     data: payload
   });
 }

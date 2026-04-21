@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import {
+  approveRetirementVaultRuleChangeRequest,
   approveRetirementVaultReleaseRequest,
   getRetirementVaultWorkspace,
   listRetirementVaults,
+  rejectRetirementVaultRuleChangeRequest,
   rejectRetirementVaultReleaseRequest,
   releaseRetirementVaultRestriction,
   restrictRetirementVault,
@@ -163,6 +165,22 @@ export function VaultsPage() {
     );
   }, [selectedVault]);
 
+  const selectedActionableRuleChangeRequest = useMemo(() => {
+    if (!selectedVault) {
+      return null;
+    }
+
+    return (
+      selectedVault.ruleChangeRequests.find(
+        (request) => request.status === "review_required",
+      ) ??
+      selectedVault.ruleChangeRequests.find((request) =>
+        ["cooldown_active", "ready_to_apply", "applying"].includes(request.status),
+      ) ??
+      null
+    );
+  }, [selectedVault]);
+
   const restrictMutation = useMutation({
     mutationFn: () =>
       restrictRetirementVault(session!, selectedVaultId!, {
@@ -231,6 +249,40 @@ export function VaultsPage() {
     },
   });
 
+  const approveRuleChangeMutation = useMutation({
+    mutationFn: () =>
+      approveRetirementVaultRuleChangeRequest(
+        session!,
+        selectedActionableRuleChangeRequest!.id,
+        { note: trimToUndefined(actionNote) },
+      ),
+    onMutate: clearActionState,
+    onSuccess: async () => {
+      setFlash("Retirement vault rule change approved into cooldown.");
+      await refreshWorkspace();
+    },
+    onError: (error) => {
+      setActionError(readApiErrorMessage(error, "Failed to approve rule change request."));
+    },
+  });
+
+  const rejectRuleChangeMutation = useMutation({
+    mutationFn: () =>
+      rejectRetirementVaultRuleChangeRequest(
+        session!,
+        selectedActionableRuleChangeRequest!.id,
+        { note: trimToUndefined(actionNote) },
+      ),
+    onMutate: clearActionState,
+    onSuccess: async () => {
+      setFlash("Retirement vault rule change rejected.");
+      await refreshWorkspace();
+    },
+    onError: (error) => {
+      setActionError(readApiErrorMessage(error, "Failed to reject rule change request."));
+    },
+  });
+
   if (fallback) {
     return fallback;
   }
@@ -258,6 +310,9 @@ export function VaultsPage() {
   const pendingReviewVaults = vaults.filter((vault) =>
     vault.releaseRequests.some((request) => request.status === "review_required"),
   );
+  const pendingRuleChangeVaults = vaults.filter((vault) =>
+    vault.ruleChangeRequests.some((request) => request.status === "review_required"),
+  );
   const cooldownVaults = vaults.filter((vault) =>
     vault.releaseRequests.some((request) => request.status === "cooldown_active"),
   );
@@ -265,7 +320,9 @@ export function VaultsPage() {
     restrictMutation.isPending ||
     releaseRestrictionMutation.isPending ||
     approveReleaseMutation.isPending ||
-    rejectReleaseMutation.isPending;
+    rejectReleaseMutation.isPending ||
+    approveRuleChangeMutation.isPending ||
+    rejectRuleChangeMutation.isPending;
 
   return (
     <div className="admin-page-grid">
@@ -321,8 +378,8 @@ export function VaultsPage() {
           />
           <MetricCard
             label="Pending review"
-            value={`${pendingReviewVaults.length}`}
-            detail="Vaults with early unlock requests still waiting for operator review."
+            value={`${pendingReviewVaults.length} / ${pendingRuleChangeVaults.length}`}
+            detail="Unlock review count versus rule-change review count."
           />
           <MetricCard
             label="Cooldown / restricted"
@@ -407,6 +464,47 @@ export function VaultsPage() {
                     <EmptyState
                       title="No pending unlock work"
                       description="Review-required and cooldown-active vaults will appear here."
+                    />
+                  ) : null}
+                </div>
+              </ListCard>
+
+              <ListCard title="Pending rule changes">
+                <div className="admin-list">
+                  {pendingRuleChangeVaults.slice(0, 12).map((vault) => {
+                    const ruleChangeRequest = vault.ruleChangeRequests.find(
+                      (request) => request.status === "review_required",
+                    );
+
+                    if (!ruleChangeRequest) {
+                      return null;
+                    }
+
+                    return (
+                      <button
+                        key={`${vault.id}:${ruleChangeRequest.id}`}
+                        type="button"
+                        className={`admin-list-row selectable ${
+                          selectedVaultId === vault.id ? "selected" : ""
+                        }`}
+                        onClick={() => setSearchParams({ vault: vault.id })}
+                      >
+                        <strong>{vault.asset.symbol}</strong>
+                        <span>{toTitleCase(ruleChangeRequest.status)}</span>
+                        <span>
+                          {formatDateTime(ruleChangeRequest.requestedUnlockAt)}
+                        </span>
+                        <AdminStatusBadge
+                          label={toTitleCase(ruleChangeRequest.status)}
+                          tone={mapStatusToTone(ruleChangeRequest.status)}
+                        />
+                      </button>
+                    );
+                  })}
+                  {pendingRuleChangeVaults.length === 0 ? (
+                    <EmptyState
+                      title="No pending rule changes"
+                      description="Protection-weakening rule changes awaiting review will appear here."
                     />
                   ) : null}
                 </div>
@@ -546,6 +644,37 @@ export function VaultsPage() {
                   )}
                 </ListCard>
 
+                <ListCard title="Rule governance">
+                  {selectedVault.ruleChangeRequests.length > 0 ? (
+                    <div className="admin-list">
+                      {selectedVault.ruleChangeRequests.map((request) => (
+                        <div key={request.id} className="admin-list-row">
+                          <strong>
+                            {formatDateTime(request.currentUnlockAt)} to{" "}
+                            {formatDateTime(request.requestedUnlockAt)}
+                          </strong>
+                          <span>
+                            {request.currentStrictMode ? "Strict" : "Standard"} to{" "}
+                            {request.requestedStrictMode ? "Strict" : "Standard"}
+                          </span>
+                          <span>
+                            {request.weakensProtection ? "Weakens protection" : "Strengthens protection"}
+                          </span>
+                          <AdminStatusBadge
+                            label={toTitleCase(request.status)}
+                            tone={mapStatusToTone(request.status)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState
+                      title="No rule changes"
+                      description="Governed lock-rule changes will appear here."
+                    />
+                  )}
+                </ListCard>
+
                 {workspaceQuery.isLoading ? (
                   <LoadingState
                     title="Loading vault workspace"
@@ -605,7 +734,7 @@ export function VaultsPage() {
           rail={
             <ActionRail
               title="Vault controls"
-              description="Use operator note and incident context before changing vault restriction posture or deciding an unlock request."
+              description="Use operator note and incident context before changing vault restriction posture or deciding an unlock or rule-change request."
             >
               {flash ? (
                 <InlineNotice title="Action recorded" description={flash} tone="positive" />
@@ -687,6 +816,32 @@ export function VaultsPage() {
                   Reject unlock
                 </button>
               </div>
+              <div className="admin-action-group">
+                <button
+                  type="button"
+                  className="admin-button admin-button--positive"
+                  disabled={
+                    !selectedActionableRuleChangeRequest ||
+                    railPending ||
+                    selectedActionableRuleChangeRequest.status !== "review_required"
+                  }
+                  onClick={() => void approveRuleChangeMutation.mutate()}
+                >
+                  Approve rule change
+                </button>
+                <button
+                  type="button"
+                  className="admin-button admin-button--critical"
+                  disabled={
+                    !selectedActionableRuleChangeRequest ||
+                    railPending ||
+                    selectedActionableRuleChangeRequest.status !== "review_required"
+                  }
+                  onClick={() => void rejectRuleChangeMutation.mutate()}
+                >
+                  Reject rule change
+                </button>
+              </div>
               {selectedActionableReleaseRequest ? (
                 <InlineNotice
                   title="Selected release posture"
@@ -694,6 +849,17 @@ export function VaultsPage() {
                     selectedVault?.asset.symbol ?? ""
                   } · ${toTitleCase(selectedActionableReleaseRequest.status)}`}
                   tone={mapStatusToTone(selectedActionableReleaseRequest.status)}
+                />
+              ) : null}
+              {selectedActionableRuleChangeRequest ? (
+                <InlineNotice
+                  title="Selected rule change posture"
+                  description={`${formatDateTime(
+                    selectedActionableRuleChangeRequest.currentUnlockAt,
+                  )} to ${formatDateTime(
+                    selectedActionableRuleChangeRequest.requestedUnlockAt,
+                  )} · ${toTitleCase(selectedActionableRuleChangeRequest.status)}`}
+                  tone={mapStatusToTone(selectedActionableRuleChangeRequest.status)}
                 />
               ) : null}
             </ActionRail>

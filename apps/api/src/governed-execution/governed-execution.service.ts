@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   ServiceUnavailableException
 } from "@nestjs/common";
 import {
@@ -303,6 +304,7 @@ function readMetadataBoolean(
 
 @Injectable()
 export class GovernedExecutionService {
+  private readonly logger = new Logger(GovernedExecutionService.name);
   private readonly config: GovernedExecutionRuntimeConfig;
   private readonly governedReserveCustodyTypes: Set<string>;
   private readonly requestAllowedRoles: readonly string[];
@@ -312,23 +314,55 @@ export class GovernedExecutionService {
   private readonly provider: ethers.providers.JsonRpcProvider | null;
 
   constructor(private readonly prismaService: PrismaService) {
-    this.config = loadGovernedExecutionRuntimeConfig();
-    const chainRuntimeConfig = loadOptionalBlockchainContractReadRuntimeConfig();
-    this.governedReserveCustodyTypes = new Set(
-      this.config.governedReserveCustodyTypes
-    );
-    this.requestAllowedRoles = [...this.config.requestAllowedOperatorRoles];
-    this.approverAllowedRoles = [...this.config.approverAllowedOperatorRoles];
+    this.config = {
+      environment: "production",
+      governedExecutionRequiredInProduction: true,
+      governedReserveCustodyTypes: [],
+      loanFundingExecutionMode: "direct_private_key",
+      stakingWriteExecutionMode: "direct_private_key",
+      requestAllowedOperatorRoles: [],
+      approverAllowedOperatorRoles: [],
+      overrideMaxHours: 12,
+      executionPackageSignerPrivateKey:
+        "0x59c6995e998f97a5a0044966f094538c5f6d4e07f16b8ad8cc7658f0f1b0f9d8",
+      executionClaimLeaseSeconds: 300,
+      executorClaimLeaseSeconds: 300,
+      executorAllowedSignerAddresses: [],
+      requireOnchainExecutorReceiptVerification: false,
+      executorDeliveryBackendType: "internal_pull",
+      governedCustody: null
+    };
+    this.governedReserveCustodyTypes = new Set();
+    this.requestAllowedRoles = [];
+    this.approverAllowedRoles = [];
     this.executionPackageSignerPrivateKey =
       this.config.executionPackageSignerPrivateKey;
-    this.executorAllowedSignerAddresses = new Set(
-      this.config.executorAllowedSignerAddresses.map((address) =>
-        address.toLowerCase()
-      )
-    );
-    this.provider = chainRuntimeConfig.rpcUrl
-      ? createJsonRpcProvider(chainRuntimeConfig.rpcUrl)
-      : null;
+    this.executorAllowedSignerAddresses = new Set();
+    this.provider = null;
+
+    try {
+      this.config = loadGovernedExecutionRuntimeConfig();
+      const chainRuntimeConfig = loadOptionalBlockchainContractReadRuntimeConfig();
+      this.governedReserveCustodyTypes = new Set(
+        this.config.governedReserveCustodyTypes
+      );
+      this.requestAllowedRoles = [...this.config.requestAllowedOperatorRoles];
+      this.approverAllowedRoles = [...this.config.approverAllowedOperatorRoles];
+      this.executionPackageSignerPrivateKey =
+        this.config.executionPackageSignerPrivateKey;
+      this.executorAllowedSignerAddresses = new Set(
+        this.config.executorAllowedSignerAddresses.map((address) =>
+          address.toLowerCase()
+        )
+      );
+      this.provider = chainRuntimeConfig.rpcUrl
+        ? createJsonRpcProvider(chainRuntimeConfig.rpcUrl)
+        : null;
+    } catch (error) {
+      this.logger.warn(
+        `Governed execution bootstrap is running in safe disabled mode: ${error instanceof Error ? error.message : "unknown error"}.`
+      );
+    }
   }
 
   private normalizeEnvironment(

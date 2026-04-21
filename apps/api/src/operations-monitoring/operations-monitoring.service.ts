@@ -35,6 +35,7 @@ import {
   ReviewCaseStatus,
   ReviewCaseType,
   RetirementVaultReleaseRequestStatus,
+  RetirementVaultRuleChangeRequestStatus,
   RetirementVaultStatus,
   TransactionIntentStatus,
   TransactionIntentType,
@@ -332,6 +333,15 @@ type OperationsStatusResult = {
     staleCooldownCount: number;
     staleReadyForReleaseCount: number;
     staleExecutingCount: number;
+    pendingRuleChangeReviewCount: number;
+    ruleChangeCooldownCount: number;
+    readyToApplyRuleChangeCount: number;
+    failedRuleChangeCount: number;
+    blockedRuleChangeCount: number;
+    staleRuleChangeReviewCount: number;
+    staleRuleChangeCooldownCount: number;
+    staleRuleChangeReadyCount: number;
+    staleRuleChangeApplyingCount: number;
   };
   recentAlerts: PlatformAlertProjection[];
 };
@@ -1610,6 +1620,52 @@ export class OperationsMonitoringService {
       });
     }
 
+    if (
+      snapshot.retirementVaultHealth.failedRuleChangeCount > 0 ||
+      snapshot.retirementVaultHealth.blockedRuleChangeCount > 0 ||
+      snapshot.retirementVaultHealth.staleRuleChangeCooldownCount > 0 ||
+      snapshot.retirementVaultHealth.staleRuleChangeReadyCount > 0 ||
+      snapshot.retirementVaultHealth.staleRuleChangeApplyingCount > 0 ||
+      snapshot.retirementVaultHealth.staleRuleChangeReviewCount > 0
+    ) {
+      alertCandidates.push({
+        dedupeKey: "operations:retirement-vault-rule-change-health",
+        category: PlatformAlertCategory.operations,
+        severity:
+          snapshot.retirementVaultHealth.failedRuleChangeCount > 0 ||
+          snapshot.retirementVaultHealth.blockedRuleChangeCount > 0 ||
+          snapshot.retirementVaultHealth.staleRuleChangeCooldownCount > 0 ||
+          snapshot.retirementVaultHealth.staleRuleChangeReadyCount > 0 ||
+          snapshot.retirementVaultHealth.staleRuleChangeApplyingCount > 0
+            ? PlatformAlertSeverity.critical
+            : PlatformAlertSeverity.warning,
+        code: "retirement_vault_rule_change_attention_required",
+        summary: "Retirement vault rule-change workflows require operator attention.",
+        detail: `Pending review: ${snapshot.retirementVaultHealth.pendingRuleChangeReviewCount}. Cooldown active: ${snapshot.retirementVaultHealth.ruleChangeCooldownCount}. Ready to apply: ${snapshot.retirementVaultHealth.readyToApplyRuleChangeCount}. Failed: ${snapshot.retirementVaultHealth.failedRuleChangeCount}. Blocked: ${snapshot.retirementVaultHealth.blockedRuleChangeCount}.`,
+        metadata: {
+          runbookPath: "docs/runbooks/operations-monitoring-and-alerts-api.md",
+          pendingRuleChangeReviewCount:
+            snapshot.retirementVaultHealth.pendingRuleChangeReviewCount,
+          ruleChangeCooldownCount:
+            snapshot.retirementVaultHealth.ruleChangeCooldownCount,
+          readyToApplyRuleChangeCount:
+            snapshot.retirementVaultHealth.readyToApplyRuleChangeCount,
+          failedRuleChangeCount:
+            snapshot.retirementVaultHealth.failedRuleChangeCount,
+          blockedRuleChangeCount:
+            snapshot.retirementVaultHealth.blockedRuleChangeCount,
+          staleRuleChangeReviewCount:
+            snapshot.retirementVaultHealth.staleRuleChangeReviewCount,
+          staleRuleChangeCooldownCount:
+            snapshot.retirementVaultHealth.staleRuleChangeCooldownCount,
+          staleRuleChangeReadyCount:
+            snapshot.retirementVaultHealth.staleRuleChangeReadyCount,
+          staleRuleChangeApplyingCount:
+            snapshot.retirementVaultHealth.staleRuleChangeApplyingCount,
+        } as PrismaJsonValue,
+      });
+    }
+
     for (const target of snapshot.deliveryTargetHealth.targets) {
       if (target.healthStatus === "healthy") {
         continue;
@@ -1899,6 +1955,15 @@ export class OperationsMonitoringService {
       staleVaultCooldownCount,
       staleVaultReadyCount,
       staleVaultExecutingCount,
+      pendingRuleChangeReviewCount,
+      cooldownActiveRuleChangeCount,
+      readyToApplyRuleChangeCount,
+      failedRuleChangeCount,
+      blockedRuleChangeCount,
+      staleRuleChangeReviewCount,
+      staleRuleChangeCooldownCount,
+      staleRuleChangeReadyCount,
+      staleRuleChangeApplyingCount,
       deliveryTargetHealth,
     ] = await Promise.all([
       this.prismaService.workerRuntimeHeartbeat.findMany({
@@ -2211,6 +2276,85 @@ export class OperationsMonitoringService {
           },
         },
       }),
+      this.prismaService.retirementVaultRuleChangeRequest.count({
+        where: {
+          status: RetirementVaultRuleChangeRequestStatus.review_required,
+        },
+      }),
+      this.prismaService.retirementVaultRuleChangeRequest.count({
+        where: {
+          status: RetirementVaultRuleChangeRequestStatus.cooldown_active,
+        },
+      }),
+      this.prismaService.retirementVaultRuleChangeRequest.count({
+        where: {
+          status: RetirementVaultRuleChangeRequestStatus.ready_to_apply,
+        },
+      }),
+      this.prismaService.retirementVaultRuleChangeRequest.count({
+        where: {
+          status: RetirementVaultRuleChangeRequestStatus.failed,
+        },
+      }),
+      this.prismaService.retirementVaultRuleChangeRequest.count({
+        where: {
+          status: {
+            in: [
+              RetirementVaultRuleChangeRequestStatus.cooldown_active,
+              RetirementVaultRuleChangeRequestStatus.ready_to_apply,
+              RetirementVaultRuleChangeRequestStatus.applying,
+            ],
+          },
+          OR: [
+            {
+              retirementVault: {
+                status: RetirementVaultStatus.restricted,
+              },
+            },
+            {
+              retirementVault: {
+                customerAccount: {
+                  status: {
+                    not: AccountLifecycleStatus.active,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      }),
+      this.prismaService.retirementVaultRuleChangeRequest.count({
+        where: {
+          status: RetirementVaultRuleChangeRequestStatus.review_required,
+          updatedAt: {
+            lte: retirementVaultReviewStaleBefore,
+          },
+        },
+      }),
+      this.prismaService.retirementVaultRuleChangeRequest.count({
+        where: {
+          status: RetirementVaultRuleChangeRequestStatus.cooldown_active,
+          cooldownEndsAt: {
+            lt: retirementVaultReleaseStaleBefore,
+          },
+        },
+      }),
+      this.prismaService.retirementVaultRuleChangeRequest.count({
+        where: {
+          status: RetirementVaultRuleChangeRequestStatus.ready_to_apply,
+          updatedAt: {
+            lte: retirementVaultReleaseStaleBefore,
+          },
+        },
+      }),
+      this.prismaService.retirementVaultRuleChangeRequest.count({
+        where: {
+          status: RetirementVaultRuleChangeRequestStatus.applying,
+          updatedAt: {
+            lte: retirementVaultExecutingStaleBefore,
+          },
+        },
+      }),
       this.listPlatformAlertDeliveryTargetHealthInternal(
         this.platformAlertDeliveryHealthSloRuntimeConfig.lookbackHours,
       ),
@@ -2381,7 +2525,12 @@ export class OperationsMonitoringService {
       blockedVaultReleaseCount > 0 ||
       staleVaultCooldownCount > 0 ||
       staleVaultReadyCount > 0 ||
-      staleVaultExecutingCount > 0
+      staleVaultExecutingCount > 0 ||
+      failedRuleChangeCount > 0 ||
+      blockedRuleChangeCount > 0 ||
+      staleRuleChangeCooldownCount > 0 ||
+      staleRuleChangeReadyCount > 0 ||
+      staleRuleChangeApplyingCount > 0
     ) {
       retirementVaultStatus = "critical";
     } else if (
@@ -2389,7 +2538,11 @@ export class OperationsMonitoringService {
       cooldownActiveVaultReleaseCount > 0 ||
       readyForReleaseVaultCount > 0 ||
       restrictedRetirementVaultCount > 0 ||
-      staleVaultReviewCount > 0
+      staleVaultReviewCount > 0 ||
+      pendingRuleChangeReviewCount > 0 ||
+      cooldownActiveRuleChangeCount > 0 ||
+      readyToApplyRuleChangeCount > 0 ||
+      staleRuleChangeReviewCount > 0
     ) {
       retirementVaultStatus = "warning";
     }
@@ -2408,6 +2561,15 @@ export class OperationsMonitoringService {
         staleCooldownCount: staleVaultCooldownCount,
         staleReadyForReleaseCount: staleVaultReadyCount,
         staleExecutingCount: staleVaultExecutingCount,
+        pendingRuleChangeReviewCount,
+        ruleChangeCooldownCount: cooldownActiveRuleChangeCount,
+        readyToApplyRuleChangeCount,
+        failedRuleChangeCount,
+        blockedRuleChangeCount,
+        staleRuleChangeReviewCount,
+        staleRuleChangeCooldownCount,
+        staleRuleChangeReadyCount,
+        staleRuleChangeApplyingCount,
       };
 
     return {
@@ -3663,6 +3825,55 @@ export class OperationsMonitoringService {
         "stb_operations_retirement_vault_stale_total",
         snapshot.retirementVaultHealth.staleExecutingCount,
         { state: "executing" },
+      ),
+      "# HELP stb_operations_retirement_vault_rule_change_total Current retirement vault rule-change workflow counts by state.",
+      "# TYPE stb_operations_retirement_vault_rule_change_total gauge",
+      formatPrometheusLine(
+        "stb_operations_retirement_vault_rule_change_total",
+        snapshot.retirementVaultHealth.pendingRuleChangeReviewCount,
+        { state: "review_required" },
+      ),
+      formatPrometheusLine(
+        "stb_operations_retirement_vault_rule_change_total",
+        snapshot.retirementVaultHealth.ruleChangeCooldownCount,
+        { state: "cooldown_active" },
+      ),
+      formatPrometheusLine(
+        "stb_operations_retirement_vault_rule_change_total",
+        snapshot.retirementVaultHealth.readyToApplyRuleChangeCount,
+        { state: "ready_to_apply" },
+      ),
+      formatPrometheusLine(
+        "stb_operations_retirement_vault_rule_change_total",
+        snapshot.retirementVaultHealth.failedRuleChangeCount,
+        { state: "failed" },
+      ),
+      formatPrometheusLine(
+        "stb_operations_retirement_vault_rule_change_total",
+        snapshot.retirementVaultHealth.blockedRuleChangeCount,
+        { state: "blocked" },
+      ),
+      "# HELP stb_operations_retirement_vault_rule_change_stale_total Current stale retirement vault rule-change workflow counts by state.",
+      "# TYPE stb_operations_retirement_vault_rule_change_stale_total gauge",
+      formatPrometheusLine(
+        "stb_operations_retirement_vault_rule_change_stale_total",
+        snapshot.retirementVaultHealth.staleRuleChangeReviewCount,
+        { state: "review_required" },
+      ),
+      formatPrometheusLine(
+        "stb_operations_retirement_vault_rule_change_stale_total",
+        snapshot.retirementVaultHealth.staleRuleChangeCooldownCount,
+        { state: "cooldown_active" },
+      ),
+      formatPrometheusLine(
+        "stb_operations_retirement_vault_rule_change_stale_total",
+        snapshot.retirementVaultHealth.staleRuleChangeReadyCount,
+        { state: "ready_to_apply" },
+      ),
+      formatPrometheusLine(
+        "stb_operations_retirement_vault_rule_change_stale_total",
+        snapshot.retirementVaultHealth.staleRuleChangeApplyingCount,
+        { state: "applying" },
       ),
       "# HELP stb_platform_alerts_open_total Current open platform alerts by category and severity.",
       "# TYPE stb_platform_alerts_open_total gauge",

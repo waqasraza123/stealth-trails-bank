@@ -59,6 +59,9 @@ function createEmptyIterationMetrics(): WorkerIterationMetrics {
     retirementVaultCooldownCompletedCount: 0,
     retirementVaultReleasedCount: 0,
     retirementVaultReleaseFailureCount: 0,
+    retirementVaultRuleChangeReadyCount: 0,
+    retirementVaultRuleChangeAppliedCount: 0,
+    retirementVaultRuleChangeFailureCount: 0,
     claimableGovernedExecutionRequestCount: 0,
     claimedGovernedExecutionRequestCount: 0,
     dispatchedGovernedExecutionRequestCount: 0,
@@ -197,6 +200,42 @@ export class WorkerOrchestrator {
           retirementVaultSweep.staleReadyForReleaseCount,
         staleExecutingCount: retirementVaultSweep.staleExecutingCount,
         releaseRequestIds: retirementVaultSweep.processedReleaseRequestIds,
+      });
+    }
+
+    const retirementVaultRuleChangeSweep =
+      await this.deps.internalApiClient.sweepRetirementVaultRuleChangeRequests(
+        this.deps.runtime.batchLimit
+      );
+    metrics.retirementVaultRuleChangeReadyCount =
+      retirementVaultRuleChangeSweep.readyToApplyCount;
+    metrics.retirementVaultRuleChangeAppliedCount =
+      retirementVaultRuleChangeSweep.appliedCount;
+    metrics.retirementVaultRuleChangeFailureCount =
+      retirementVaultRuleChangeSweep.failedCount;
+
+    if (
+      retirementVaultRuleChangeSweep.processedRuleChangeRequestIds.length > 0 ||
+      retirementVaultRuleChangeSweep.blockedRuleChangeCount > 0 ||
+      retirementVaultRuleChangeSweep.staleReviewRequiredCount > 0 ||
+      retirementVaultRuleChangeSweep.staleCooldownCount > 0 ||
+      retirementVaultRuleChangeSweep.staleReadyToApplyCount > 0 ||
+      retirementVaultRuleChangeSweep.staleApplyingCount > 0
+    ) {
+      this.deps.logger.info("retirement_vault_rule_change_sweep_completed", {
+        readyToApplyCount: retirementVaultRuleChangeSweep.readyToApplyCount,
+        appliedCount: retirementVaultRuleChangeSweep.appliedCount,
+        failedCount: retirementVaultRuleChangeSweep.failedCount,
+        blockedRuleChangeCount:
+          retirementVaultRuleChangeSweep.blockedRuleChangeCount,
+        staleReviewRequiredCount:
+          retirementVaultRuleChangeSweep.staleReviewRequiredCount,
+        staleCooldownCount: retirementVaultRuleChangeSweep.staleCooldownCount,
+        staleReadyToApplyCount:
+          retirementVaultRuleChangeSweep.staleReadyToApplyCount,
+        staleApplyingCount: retirementVaultRuleChangeSweep.staleApplyingCount,
+        ruleChangeRequestIds:
+          retirementVaultRuleChangeSweep.processedRuleChangeRequestIds,
       });
     }
 

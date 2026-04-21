@@ -10,32 +10,39 @@ import { PrismaService } from "../prisma/prisma.service";
 @Injectable()
 export class EthereumService implements OnModuleInit {
   private readonly logger = new Logger(EthereumService.name);
-  private readonly provider: ethers.providers.JsonRpcProvider;
+  private readonly provider: ethers.providers.JsonRpcProvider | null;
   private readonly stakingContract: ethers.Contract | null;
 
   constructor(private readonly prismaService: PrismaService) {
-    const runtimeConfig = loadOptionalBlockchainContractReadRuntimeConfig();
+    try {
+      const runtimeConfig = loadOptionalBlockchainContractReadRuntimeConfig();
+      this.provider = createJsonRpcProvider(runtimeConfig.rpcUrl);
 
-    this.provider = createJsonRpcProvider(runtimeConfig.rpcUrl);
+      if (!runtimeConfig.stakingContractAddress) {
+        if (runtimeConfig.environment === "production") {
+          throw new Error(
+            "STAKING_CONTRACT_ADDRESS is required in production when Ethereum event listeners are enabled."
+          );
+        }
 
-    if (!runtimeConfig.stakingContractAddress) {
-      if (runtimeConfig.environment === "production") {
-        throw new Error(
-          "STAKING_CONTRACT_ADDRESS is required in production when Ethereum event listeners are enabled."
+        this.stakingContract = null;
+        this.logger.warn(
+          "Ethereum staking event listeners are disabled because STAKING_CONTRACT_ADDRESS is not configured."
         );
+        return;
       }
 
+      this.stakingContract = createStakingEventContract(
+        runtimeConfig.stakingContractAddress,
+        this.provider
+      );
+    } catch (error) {
+      this.provider = null;
       this.stakingContract = null;
       this.logger.warn(
-        "Ethereum staking event listeners are disabled because STAKING_CONTRACT_ADDRESS is not configured."
+        `Ethereum event listeners are disabled during bootstrap: ${error instanceof Error ? error.message : "unknown error"}.`
       );
-      return;
     }
-
-    this.stakingContract = createStakingEventContract(
-      runtimeConfig.stakingContractAddress,
-      this.provider
-    );
   }
 
   onModuleInit(): void {

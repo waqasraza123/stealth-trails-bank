@@ -186,4 +186,52 @@ export class RetirementVaultInternalController {
       data: result,
     };
   }
+
+  @Post("rule-change-requests/:ruleChangeRequestId/approve")
+  async approveRuleChangeRequest(
+    @Param("ruleChangeRequestId") ruleChangeRequestId: string,
+    @Body(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
+    dto: RetirementVaultOperatorNoteDto,
+    @Request() request: InternalOperatorRequest
+  ): Promise<CustomJsonResponse> {
+    const result =
+      await this.retirementVaultService.approveInternalRuleChangeRequest(
+        ruleChangeRequestId,
+        request.internalOperator.operatorId,
+        request.internalOperator.operatorRole,
+        dto.note
+      );
+
+    return {
+      status: "success",
+      message: result.stateReused
+        ? "Retirement vault rule change approval state reused successfully."
+        : "Retirement vault rule change request approved successfully.",
+      data: result,
+    };
+  }
+
+  @Post("rule-change-requests/:ruleChangeRequestId/reject")
+  async rejectRuleChangeRequest(
+    @Param("ruleChangeRequestId") ruleChangeRequestId: string,
+    @Body(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
+    dto: RetirementVaultOperatorNoteDto,
+    @Request() request: InternalOperatorRequest
+  ): Promise<CustomJsonResponse> {
+    const result =
+      await this.retirementVaultService.rejectInternalRuleChangeRequest(
+        ruleChangeRequestId,
+        request.internalOperator.operatorId,
+        request.internalOperator.operatorRole,
+        dto.note
+      );
+
+    return {
+      status: "success",
+      message: result.stateReused
+        ? "Retirement vault rule change rejection state reused successfully."
+        : "Retirement vault rule change request rejected successfully.",
+      data: result,
+    };
+  }
 }

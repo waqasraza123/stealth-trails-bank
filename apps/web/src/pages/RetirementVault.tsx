@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   Landmark,
@@ -26,8 +26,10 @@ import {
   type FundMyRetirementVaultResult
 } from "@/hooks/retirement-vault/useFundRetirementVault";
 import { useCancelRetirementVaultRelease } from "@/hooks/retirement-vault/useCancelRetirementVaultRelease";
+import { useCancelRetirementVaultRuleChange } from "@/hooks/retirement-vault/useCancelRetirementVaultRuleChange";
 import { useMyRetirementVaults } from "@/hooks/retirement-vault/useMyRetirementVaults";
 import { useRequestRetirementVaultRelease } from "@/hooks/retirement-vault/useRequestRetirementVaultRelease";
+import { useRequestRetirementVaultRuleChange } from "@/hooks/retirement-vault/useRequestRetirementVaultRuleChange";
 import { useLocale } from "@/i18n/use-locale";
 import {
   buildRequestIdempotencyKey,
@@ -68,6 +70,19 @@ function canCancelReleaseStatus(status: string): boolean {
   );
 }
 
+function isActiveRuleChangeStatus(status: string): boolean {
+  return [
+    "review_required",
+    "cooldown_active",
+    "ready_to_apply",
+    "applying",
+  ].includes(status);
+}
+
+function canCancelRuleChangeStatus(status: string): boolean {
+  return ["review_required", "cooldown_active"].includes(status);
+}
+
 const RetirementVault = () => {
   const { locale } = useLocale();
   const balancesQuery = useMyBalances();
@@ -77,6 +92,8 @@ const RetirementVault = () => {
   const fundRetirementVault = useFundRetirementVault();
   const requestRetirementVaultRelease = useRequestRetirementVaultRelease();
   const cancelRetirementVaultRelease = useCancelRetirementVaultRelease();
+  const requestRetirementVaultRuleChange = useRequestRetirementVaultRuleChange();
+  const cancelRetirementVaultRuleChange = useCancelRetirementVaultRuleChange();
   const [createAssetSymbol, setCreateAssetSymbol] = useState("");
   const [fundAssetSymbol, setFundAssetSymbol] = useState("");
   const [releaseAssetSymbol, setReleaseAssetSymbol] = useState("");
@@ -84,12 +101,18 @@ const RetirementVault = () => {
   const [strictMode, setStrictMode] = useState(true);
   const [fundAmount, setFundAmount] = useState("");
   const [releaseAmount, setReleaseAmount] = useState("");
+  const [ruleChangeAssetSymbol, setRuleChangeAssetSymbol] = useState("");
+  const [ruleChangeUnlockDate, setRuleChangeUnlockDate] = useState("");
+  const [ruleChangeStrictMode, setRuleChangeStrictMode] = useState(true);
+  const [ruleChangeReasonCode, setRuleChangeReasonCode] = useState("future_lock_reset");
+  const [ruleChangeReasonNote, setRuleChangeReasonNote] = useState("");
   const [releaseReasonCode, setReleaseReasonCode] = useState("hardship");
   const [releaseReasonNote, setReleaseReasonNote] = useState("");
   const [releaseEvidenceNote, setReleaseEvidenceNote] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const [fundError, setFundError] = useState<string | null>(null);
   const [releaseError, setReleaseError] = useState<string | null>(null);
+  const [ruleChangeError, setRuleChangeError] = useState<string | null>(null);
   const [latestCreatedVault, setLatestCreatedVault] =
     useState<CreateMyRetirementVaultResult | null>(null);
   const [latestFunding, setLatestFunding] =
@@ -119,6 +142,12 @@ const RetirementVault = () => {
     null;
   const selectedReleaseVault =
     vaults.find((vault) => vault.asset.symbol === selectedReleaseAssetSymbol) ?? null;
+  const selectedRuleChangeAssetSymbol =
+    vaults.find((vault) => vault.asset.symbol === ruleChangeAssetSymbol)?.asset.symbol ??
+    vaults[0]?.asset.symbol ??
+    "";
+  const selectedRuleChangeVault =
+    vaults.find((vault) => vault.asset.symbol === selectedRuleChangeAssetSymbol) ?? null;
   const totalLockedBalance = useMemo(
     () =>
       vaults.reduce(
@@ -146,6 +175,31 @@ const RetirementVault = () => {
         ),
     [vaults]
   );
+  const activeRuleChangeRequests = useMemo(
+    () =>
+      vaults
+        .flatMap((vault) =>
+          vault.ruleChangeRequests.map((request) => ({
+            ...request,
+            asset: vault.asset,
+          })),
+        )
+        .filter((request) => isActiveRuleChangeStatus(request.status))
+        .sort(
+          (left, right) =>
+            Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
+        ),
+    [vaults],
+  );
+
+  useEffect(() => {
+    if (!selectedRuleChangeVault) {
+      return;
+    }
+
+    setRuleChangeUnlockDate(selectedRuleChangeVault.unlockAt.slice(0, 10));
+    setRuleChangeStrictMode(selectedRuleChangeVault.strictMode);
+  }, [selectedRuleChangeVault?.id]);
 
   function getFundingIdempotencyKey(signature: string): string {
     if (lastFundingRef.current?.signature === signature) {
@@ -408,6 +462,93 @@ const RetirementVault = () => {
             : "Could not cancel the unlock request."
         ),
         variant: "destructive"
+      });
+    }
+  }
+
+  async function handleRequestRuleChange(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!selectedRuleChangeVault) {
+      setRuleChangeError(
+        locale === "ar"
+          ? "أنشئ قبو تقاعد أولاً."
+          : "Create a retirement vault first.",
+      );
+      return;
+    }
+
+    const nextUnlockAt = ruleChangeUnlockDate
+      ? dateValueToIsoString(ruleChangeUnlockDate)
+      : undefined;
+    const weakensProtection =
+      (nextUnlockAt &&
+        new Date(nextUnlockAt).getTime() <
+          new Date(selectedRuleChangeVault.unlockAt).getTime()) ||
+      (selectedRuleChangeVault.strictMode && !ruleChangeStrictMode);
+
+    setRuleChangeError(null);
+
+    try {
+      const result = await requestRetirementVaultRuleChange.mutateAsync({
+        assetSymbol: selectedRuleChangeVault.asset.symbol,
+        unlockAt: nextUnlockAt,
+        strictMode: ruleChangeStrictMode,
+        reasonCode: weakensProtection ? ruleChangeReasonCode : undefined,
+        reasonNote: ruleChangeReasonNote.trim() || undefined,
+      });
+
+      toast({
+        title:
+          locale === "ar"
+            ? "تم تسجيل تعديل القاعدة"
+            : "Rule change recorded",
+        description: result.appliedImmediately
+          ? locale === "ar"
+            ? "تم تطبيق التشديد الوقائي فوراً على القبو."
+            : "The protective strengthening was applied immediately."
+          : locale === "ar"
+            ? "تعديل القاعدة المُضعِف للحماية دخل مسار مراجعة وتهدئة محكوم."
+            : "The protection-weakening change entered governed review and cooldown.",
+      });
+    } catch (error) {
+      setRuleChangeError(
+        readApiErrorMessage(
+          error,
+          locale === "ar"
+            ? "تعذر تسجيل تعديل القاعدة."
+            : "Failed to request the vault rule change.",
+        ),
+      );
+    }
+  }
+
+  async function handleCancelRuleChange(ruleChangeRequestId: string) {
+    try {
+      await cancelRetirementVaultRuleChange.mutateAsync(ruleChangeRequestId);
+      toast({
+        title:
+          locale === "ar" ? "تم إلغاء تعديل القاعدة" : "Rule change cancelled",
+        description:
+          locale === "ar"
+            ? "تمت إزالة تعديل القاعدة من المسار النشط."
+            : "The rule change was removed from the active governance workflow.",
+      });
+    } catch (error) {
+      toast({
+        title:
+          locale === "ar"
+            ? "فشل إلغاء تعديل القاعدة"
+            : "Failed to cancel rule change",
+        description: readApiErrorMessage(
+          error,
+          locale === "ar"
+            ? "تعذر إلغاء تعديل القاعدة."
+            : "Could not cancel the rule change request.",
+        ),
+        variant: "destructive",
       });
     }
   }
@@ -976,6 +1117,231 @@ const RetirementVault = () => {
                     {locale === "ar"
                       ? "لا يوجد طلب إفراج نشط الآن."
                       : "No active governed release request is open right now."}
+                  </div>
+                )}
+              </div>
+            </Card>
+          </MotionSurface>
+        </section>
+
+        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+          <MotionSurface className="stb-pressable-shell">
+            <Card className="stb-surface stb-reveal rounded-[2rem] border-0 p-6" data-delay="6">
+              <form className="space-y-5" onSubmit={handleRequestRuleChange}>
+                <div>
+                  <p className="stb-section-kicker">
+                    {locale === "ar" ? "حوكمة القواعد" : "Rule governance"}
+                  </p>
+                  <h2 className="mt-2 text-2xl font-semibold text-slate-950">
+                    {locale === "ar"
+                      ? "تعديل القاعدة عبر مسار محكوم"
+                      : "Change the lock rule through a governed path"}
+                  </h2>
+                </div>
+
+                <label className="block space-y-2">
+                  <span className="text-sm font-semibold text-slate-700">
+                    {locale === "ar" ? "القبو" : "Vault asset"}
+                  </span>
+                  <select
+                    className="stb-premium-input"
+                    value={selectedRuleChangeAssetSymbol}
+                    onChange={(event) => setRuleChangeAssetSymbol(event.target.value)}
+                  >
+                    {vaults.length > 0 ? (
+                      vaults.map((vault) => (
+                        <option key={vault.id} value={vault.asset.symbol}>
+                          {vault.asset.symbol} · {formatDateLabel(vault.unlockAt, locale)}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">
+                        {locale === "ar" ? "أنشئ قبو أولاً" : "Create a vault first"}
+                      </option>
+                    )}
+                  </select>
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm font-semibold text-slate-700">
+                    {locale === "ar" ? "تاريخ الإفراج الجديد" : "New release date"}
+                  </span>
+                  <Input
+                    min={new Date().toISOString().slice(0, 10)}
+                    type="date"
+                    value={ruleChangeUnlockDate}
+                    onChange={(event) => setRuleChangeUnlockDate(event.target.value)}
+                  />
+                </label>
+
+                <div className="space-y-2">
+                  <span className="text-sm font-semibold text-slate-700">
+                    {locale === "ar" ? "وضع الحماية الجديد" : "New protection mode"}
+                  </span>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      className={`rounded-[1.2rem] border px-4 py-4 text-left transition-colors ${
+                        ruleChangeStrictMode
+                          ? "border-slate-950 bg-slate-950 text-white"
+                          : "border-slate-200 bg-white text-slate-800"
+                      }`}
+                      onClick={() => setRuleChangeStrictMode(true)}
+                    >
+                      <p className="text-sm font-semibold">
+                        {locale === "ar" ? "صارم" : "Strict"}
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded-[1.2rem] border px-4 py-4 text-left transition-colors ${
+                        !ruleChangeStrictMode
+                          ? "border-slate-950 bg-slate-950 text-white"
+                          : "border-slate-200 bg-white text-slate-800"
+                      }`}
+                      onClick={() => setRuleChangeStrictMode(false)}
+                    >
+                      <p className="text-sm font-semibold">
+                        {locale === "ar" ? "قياسي" : "Standard"}
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                <label className="block space-y-2">
+                  <span className="text-sm font-semibold text-slate-700">
+                    {locale === "ar" ? "سبب الإضعاف" : "Weakening reason"}
+                  </span>
+                  <select
+                    className="stb-premium-input"
+                    value={ruleChangeReasonCode}
+                    onChange={(event) => setRuleChangeReasonCode(event.target.value)}
+                  >
+                    <option value="future_lock_reset">
+                      {locale === "ar" ? "إعادة ضبط الخطة" : "Future lock reset"}
+                    </option>
+                    <option value="household_replan">
+                      {locale === "ar" ? "إعادة تخطيط أسري" : "Household replan"}
+                    </option>
+                    <option value="protection_rebalance">
+                      {locale === "ar" ? "إعادة موازنة الحماية" : "Protection rebalance"}
+                    </option>
+                  </select>
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm font-semibold text-slate-700">
+                    {locale === "ar" ? "مذكرة الحوكمة" : "Governance note"}
+                  </span>
+                  <Input
+                    value={ruleChangeReasonNote}
+                    onChange={(event) => setRuleChangeReasonNote(event.target.value)}
+                  />
+                </label>
+
+                <div className="stb-trust-note text-sm text-amber-900" data-tone="warning">
+                  {locale === "ar"
+                    ? "أي تعديل يضعف الحماية أو يقرب تاريخ الإفراج لا يُطبق فوراً. يدخل مراجعة مشغّل ثم تهدئة محكومة."
+                    : "Any change that weakens protection or pulls the date forward does not apply instantly. It enters operator review and governed cooldown."}
+                </div>
+
+                {ruleChangeError ? (
+                  <div className="stb-trust-note text-sm text-red-700" data-tone="critical">
+                    {ruleChangeError}
+                  </div>
+                ) : null}
+
+                <LoadingButton
+                  className="w-full rounded-[1rem]"
+                  disabled={vaults.length === 0}
+                  isLoading={requestRetirementVaultRuleChange.isPending}
+                  type="submit"
+                >
+                  {locale === "ar" ? "طلب تعديل القاعدة" : "Request rule change"}
+                </LoadingButton>
+              </form>
+            </Card>
+          </MotionSurface>
+
+          <MotionSurface className="stb-pressable-shell">
+            <Card className="stb-surface stb-reveal rounded-[2rem] border-0 p-6" data-delay="7">
+              <div className="space-y-4">
+                <div>
+                  <p className="stb-section-kicker">
+                    {locale === "ar" ? "تعديلات نشطة" : "Active rule changes"}
+                  </p>
+                  <h2 className="mt-2 text-2xl font-semibold text-slate-950">
+                    {locale === "ar"
+                      ? "المراجعة والتهدئة ثم التطبيق"
+                      : "Review, cooldown, then apply"}
+                  </h2>
+                </div>
+
+                {activeRuleChangeRequests.length > 0 ? (
+                  activeRuleChangeRequests.map((request) => (
+                    <div
+                      key={request.id}
+                      className="rounded-[1.4rem] border border-slate-200 bg-white/80 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-950">
+                            {request.asset.displayName}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-600">
+                            {formatDateLabel(request.currentUnlockAt, locale)} to{" "}
+                            {formatDateLabel(request.requestedUnlockAt, locale)}
+                          </p>
+                        </div>
+                        <StatusBadge
+                          label={request.status.replaceAll("_", " ")}
+                          tone={
+                            request.status === "review_required" ||
+                            request.status === "cooldown_active"
+                              ? "warning"
+                              : request.status === "ready_to_apply" ||
+                                  request.status === "applying"
+                                ? "technical"
+                                : "positive"
+                          }
+                        />
+                      </div>
+                      <div className="mt-4 grid gap-2 text-sm text-slate-600">
+                        <p>
+                          {locale === "ar" ? "الوضع" : "Mode"}{" "}
+                          <span className="font-semibold text-slate-950">
+                            {request.currentStrictMode ? "Strict" : "Standard"} to{" "}
+                            {request.requestedStrictMode ? "Strict" : "Standard"}
+                          </span>
+                        </p>
+                        {request.cooldownEndsAt ? (
+                          <p>
+                            {locale === "ar" ? "تنتهي التهدئة" : "Cooldown ends"}{" "}
+                            <span className="font-semibold text-slate-950">
+                              {formatDateLabel(request.cooldownEndsAt, locale)}
+                            </span>
+                          </p>
+                        ) : null}
+                      </div>
+                      {canCancelRuleChangeStatus(request.status) ? (
+                        <LoadingButton
+                          className="mt-4 w-full rounded-[1rem]"
+                          isLoading={cancelRetirementVaultRuleChange.isPending}
+                          type="button"
+                          onClick={() => {
+                            void handleCancelRuleChange(request.id);
+                          }}
+                        >
+                          {locale === "ar" ? "إلغاء التعديل" : "Cancel rule change"}
+                        </LoadingButton>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-[1.4rem] border border-dashed border-slate-200 p-5 text-sm text-slate-600">
+                    {locale === "ar"
+                      ? "لا يوجد تعديل قواعد نشط الآن."
+                      : "No governed rule change is active right now."}
                   </div>
                 )}
               </div>

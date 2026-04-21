@@ -12,6 +12,7 @@ import type {
   CreateMyRetirementVaultResult,
   CreateWithdrawalIntentResult,
   CancelMyRetirementVaultReleaseResult,
+  CancelMyRetirementVaultRuleChangeResult,
   FundMyRetirementVaultResult,
   CustomerLoansDashboard,
   CustomerStakingSnapshot,
@@ -26,6 +27,7 @@ import type {
   MfaStatusResponseData,
   ProfileProjection,
   RequestMyRetirementVaultReleaseResult,
+  RequestMyRetirementVaultRuleChangeResult,
   RotatePasswordResult,
   StartEmailEnrollmentResult,
   StartEmailRecoveryResult,
@@ -327,6 +329,60 @@ export function useCancelRetirementVaultReleaseMutation() {
         throw new Error(
           response.data.message ||
             "Failed to cancel retirement vault unlock request."
+        );
+      }
+
+      return response.data.data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["retirement-vaults"] });
+    },
+  });
+}
+
+export function useRequestRetirementVaultRuleChangeMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      assetSymbol: string;
+      unlockAt?: string;
+      strictMode?: boolean;
+      reasonCode?: string;
+      reasonNote?: string;
+    }) => {
+      const response = await apiClient.post<
+        ApiEnvelope<RequestMyRetirementVaultRuleChangeResult>
+      >("/retirement-vault/me/rule-change-requests", input);
+
+      if (response.data.status !== "success" || !response.data.data) {
+        throw new Error(
+          response.data.message ||
+            "Failed to request retirement vault rule change."
+        );
+      }
+
+      return response.data.data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["retirement-vaults"] });
+    },
+  });
+}
+
+export function useCancelRetirementVaultRuleChangeMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (ruleChangeRequestId: string) => {
+      const response = await apiClient.post<
+        ApiEnvelope<CancelMyRetirementVaultRuleChangeResult>
+      >(`/retirement-vault/me/rule-change-requests/${ruleChangeRequestId}/cancel`, {});
+
+      if (response.data.status !== "success" || !response.data.data) {
+        throw new Error(
+          response.data.message ||
+            "Failed to cancel retirement vault rule change request."
         );
       }
 

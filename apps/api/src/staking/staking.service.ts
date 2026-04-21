@@ -123,7 +123,7 @@ export type GovernedPoolCreationExecutionResult =
 @Injectable()
 export class StakingService {
   private readonly logger = new Logger(StakingService.name);
-  private readonly provider: ethers.providers.JsonRpcProvider;
+  private readonly provider: ethers.providers.JsonRpcProvider | null;
   private readonly stakingContractVersion: string | null;
   private readonly readContract: ethers.Contract | null;
   private readonly writeWallet: ethers.Wallet | null;
@@ -140,59 +140,65 @@ export class StakingService {
       "assertStakingWriteExecutionAllowed"
     >
   ) {
-    const runtimeConfig = loadOptionalBlockchainContractWriteRuntimeConfig();
-    this.stakingContractVersion = runtimeConfig.stakingContractVersion;
+    this.provider = null;
+    this.stakingContractVersion = null;
+    this.readContract = null;
+    this.writeWallet = null;
+    this.writeContract = null;
 
-    this.provider = createJsonRpcProvider(runtimeConfig.rpcUrl);
+    try {
+      const runtimeConfig = loadOptionalBlockchainContractWriteRuntimeConfig();
+      this.stakingContractVersion = runtimeConfig.stakingContractVersion;
+      this.provider = createJsonRpcProvider(runtimeConfig.rpcUrl);
 
-    if (!runtimeConfig.stakingContractAddress) {
-      if (runtimeConfig.environment === "production") {
-        throw new Error(
-          "STAKING_CONTRACT_ADDRESS is required in production when staking integration is enabled."
+      if (!runtimeConfig.stakingContractAddress) {
+        if (runtimeConfig.environment === "production") {
+          throw new Error(
+            "STAKING_CONTRACT_ADDRESS is required in production when staking integration is enabled."
+          );
+        }
+
+        this.logger.warn(
+          "Staking contract integration is disabled because STAKING_CONTRACT_ADDRESS is not configured."
         );
+        return;
       }
 
-      this.readContract = null;
-      this.writeWallet = null;
-      this.writeContract = null;
-      this.logger.warn(
-        "Staking contract integration is disabled because STAKING_CONTRACT_ADDRESS is not configured."
-      );
-      return;
-    }
+      this.readContract = this.isStakingV1Contract()
+        ? createStakingV1Contract(
+            runtimeConfig.stakingContractAddress,
+            this.provider
+          )
+        : createStakingReadContract(
+            runtimeConfig.stakingContractAddress,
+            this.provider
+          );
 
-    this.readContract = this.isStakingV1Contract()
-      ? createStakingV1Contract(
-          runtimeConfig.stakingContractAddress,
-          this.provider
-        )
-      : createStakingReadContract(
-          runtimeConfig.stakingContractAddress,
-          this.provider
+      if (!runtimeConfig.ethereumPrivateKey) {
+        this.logger.warn(
+          "Staking write operations are disabled because ETHEREUM_PRIVATE_KEY is not configured."
         );
+        return;
+      }
 
-    if (!runtimeConfig.ethereumPrivateKey) {
-      this.writeWallet = null;
-      this.writeContract = null;
-      this.logger.warn(
-        "Staking write operations are disabled because ETHEREUM_PRIVATE_KEY is not configured."
+      this.writeWallet = createStakingWriteWallet(
+        runtimeConfig.ethereumPrivateKey,
+        this.provider
       );
-      return;
+      this.writeContract = this.isStakingV1Contract()
+        ? createStakingV1Contract(
+            runtimeConfig.stakingContractAddress,
+            this.writeWallet
+          )
+        : createStakingWriteContract(
+            runtimeConfig.stakingContractAddress,
+            this.writeWallet
+          );
+    } catch (error) {
+      this.logger.warn(
+        `Staking contract integration is disabled during bootstrap: ${error instanceof Error ? error.message : "unknown error"}.`
+      );
     }
-
-    this.writeWallet = createStakingWriteWallet(
-      runtimeConfig.ethereumPrivateKey,
-      this.provider
-    );
-    this.writeContract = this.isStakingV1Contract()
-      ? createStakingV1Contract(
-          runtimeConfig.stakingContractAddress,
-          this.writeWallet
-        )
-      : createStakingWriteContract(
-          runtimeConfig.stakingContractAddress,
-          this.writeWallet
-        );
   }
 
   private isStakingV1Contract(): boolean {
