@@ -162,13 +162,25 @@ export function normalizeNotificationPreferenceMatrix(
   return buildNotificationPreferenceMatrix({
     audience,
     rows: matrix.entries.flatMap((entry: NotificationPreferenceMatrix["entries"][number]) =>
-      entry.channels.map((channel: NotificationPreferenceMatrix["entries"][number]["channels"][number]) => ({
-        category: entry.category,
-        channel: channel.channel,
-        enabled: channel.enabled,
-        mandatory: channel.mandatory,
-        updatedAt: new Date(),
-      })),
+      entry.channels.map(
+        (
+          channel: NotificationPreferenceMatrix["entries"][number]["channels"][number],
+        ) => {
+          const mandatory = isMandatoryNotificationPreference(
+            audience,
+            entry.category,
+            channel.channel,
+          );
+
+          return {
+            category: entry.category,
+            channel: channel.channel,
+            enabled: mandatory ? true : channel.enabled,
+            mandatory: mandatory || channel.mandatory,
+            updatedAt: new Date(),
+          };
+        },
+      ),
     ),
   });
 }

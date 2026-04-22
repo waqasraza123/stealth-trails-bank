@@ -6,6 +6,7 @@ import { MobileI18nProvider } from "../i18n/provider";
 import { useLocaleStore } from "../stores/locale-store";
 import { useSessionStore } from "../stores/session-store";
 import type { SessionUser } from "../lib/api/types";
+import { AppFeedbackProvider } from "../components/system/AppFeedbackProvider";
 
 type RenderMobileOptions = {
   locale?: SupportedLocale;
@@ -35,7 +36,9 @@ export function renderMobile(
 
   return render(
     <SafeAreaProvider>
-      <MobileI18nProvider>{component}</MobileI18nProvider>
+      <MobileI18nProvider>
+        <AppFeedbackProvider>{component}</AppFeedbackProvider>
+      </MobileI18nProvider>
     </SafeAreaProvider>
   );
 }

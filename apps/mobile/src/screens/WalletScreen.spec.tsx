@@ -1,4 +1,3 @@
-import { Alert } from "react-native";
 import { fireEvent, waitFor } from "@testing-library/react-native";
 import { WalletScreen } from "./WalletScreen";
 import { renderMobile } from "../test/test-utils";
@@ -11,11 +10,17 @@ jest.mock("@react-navigation/native", () => ({
   })
 }));
 
+jest.mock("../components/ui/ScreenHeaderActions", () => ({
+  ScreenHeaderActions: () => null
+}));
+
 jest.mock("../hooks/use-customer-queries", () => ({
   useSupportedAssetsQuery: jest.fn(),
   useBalancesQuery: jest.fn(),
   useRetirementVaultsQuery: jest.fn(),
   useCreateDepositIntentMutation: jest.fn(),
+  useCreateBalanceTransferMutation: jest.fn(),
+  usePreviewBalanceTransferRecipientMutation: jest.fn(),
   useCreateWithdrawalIntentMutation: jest.fn(),
   useCreateRetirementVaultMutation: jest.fn(),
   useFundRetirementVaultMutation: jest.fn(),
@@ -28,6 +33,8 @@ const {
   useBalancesQuery,
   useRetirementVaultsQuery,
   useCreateDepositIntentMutation,
+  useCreateBalanceTransferMutation,
+  usePreviewBalanceTransferRecipientMutation,
   useCreateWithdrawalIntentMutation,
   useCreateRetirementVaultMutation,
   useFundRetirementVaultMutation,
@@ -38,6 +45,8 @@ const {
   useBalancesQuery: jest.Mock;
   useRetirementVaultsQuery: jest.Mock;
   useCreateDepositIntentMutation: jest.Mock;
+  useCreateBalanceTransferMutation: jest.Mock;
+  usePreviewBalanceTransferRecipientMutation: jest.Mock;
   useCreateWithdrawalIntentMutation: jest.Mock;
   useCreateRetirementVaultMutation: jest.Mock;
   useFundRetirementVaultMutation: jest.Mock;
@@ -47,6 +56,8 @@ const {
 
 describe("WalletScreen", () => {
   const depositMutateAsync = jest.fn();
+  const sendMutateAsync = jest.fn();
+  const previewSendRecipientMutateAsync = jest.fn();
   const withdrawalMutateAsync = jest.fn();
   const createVaultMutateAsync = jest.fn();
   const fundVaultMutateAsync = jest.fn();
@@ -66,8 +77,9 @@ describe("WalletScreen", () => {
 
   beforeEach(() => {
     mockNavigate.mockReset();
-    jest.spyOn(Alert, "alert").mockImplementation(jest.fn());
     depositMutateAsync.mockReset();
+    sendMutateAsync.mockReset();
+    previewSendRecipientMutateAsync.mockReset();
     withdrawalMutateAsync.mockReset();
     createVaultMutateAsync.mockReset();
     fundVaultMutateAsync.mockReset();
@@ -137,6 +149,14 @@ describe("WalletScreen", () => {
       mutateAsync: depositMutateAsync,
       isPending: false
     });
+    useCreateBalanceTransferMutation.mockReturnValue({
+      mutateAsync: sendMutateAsync,
+      isPending: false
+    });
+    usePreviewBalanceTransferRecipientMutation.mockReturnValue({
+      mutateAsync: previewSendRecipientMutateAsync,
+      isPending: false
+    });
     useCreateWithdrawalIntentMutation.mockReturnValue({
       mutateAsync: withdrawalMutateAsync,
       isPending: false
@@ -157,10 +177,6 @@ describe("WalletScreen", () => {
       mutateAsync: jest.fn(),
       isPending: false
     });
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
   });
 
   it("submits a deposit request and renders the latest request card", async () => {
@@ -224,10 +240,9 @@ describe("WalletScreen", () => {
         "This deposit is paused for operator review before custody execution or final settlement continues."
       )
     ).toBeTruthy();
-    expect(Alert.alert).toHaveBeenCalledWith(
-      "Deposit",
-      "Deposit request recorded and routed for operator review."
-    );
+    expect(
+      screen.getByText("Deposit request recorded and routed for operator review.")
+    ).toBeTruthy();
   });
 
   it("rejects self-directed withdrawals before calling the mutation", async () => {
@@ -254,10 +269,11 @@ describe("WalletScreen", () => {
 
     await waitFor(() => {
       expect(withdrawalMutateAsync).not.toHaveBeenCalled();
-      expect(Alert.alert).toHaveBeenCalledWith(
-        "Withdraw",
-        "Destination address must be different from your managed wallet address."
-      );
+      expect(
+        screen.getByText(
+          "Destination address must be different from your managed wallet address."
+        )
+      ).toBeTruthy();
     });
   });
 });

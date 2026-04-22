@@ -1,4 +1,4 @@
-import { Alert, Switch, View } from "react-native";
+import { Switch, View } from "react-native";
 import { useEffect, useState } from "react";
 import QRCode from "react-native-qrcode-svg";
 import type {
@@ -40,6 +40,7 @@ import {
   useVerifySessionTrustMutation,
   useVerifyTotpEnrollmentMutation,
 } from "../hooks/use-customer-queries";
+import { useScreenFeedback } from "../hooks/use-app-feedback";
 import { useLocale } from "../i18n/use-locale";
 import { useT } from "../i18n/use-t";
 import { formatAccountStatusLabel, getAccountStatusTone } from "../lib/account";
@@ -187,6 +188,7 @@ function formatTrustedContactKindLabel(
 export function ProfileScreen() {
   const t = useT();
   const { locale } = useLocale();
+  const feedback = useScreenFeedback();
   const profileQuery = useProfileQuery();
   useMfaStatusQuery();
   const customerSessionsQuery = useCustomerSessionsQuery();
@@ -268,21 +270,31 @@ export function ProfileScreen() {
   const trustedContacts = profile?.trustedContacts ?? [];
   const customerSessions = customerSessionsQuery.data?.sessions ?? [];
   const securityActivity = securityActivityQuery.data?.events ?? [];
+  const passwordManagementTitle = t("profile.passwordManagement");
+  const sessionSecurityTitle = t("profile.sessionSecurity");
+  const notificationsTitle = t("profile.notifications");
+  const mfaTitle = t("profile.mfaTitle");
+
+  function showSuccess(title: string, message: string) {
+    feedback.success(message, { title });
+  }
+
+  function showWarning(title: string, message: string) {
+    feedback.warning(message, { title });
+  }
+
+  function showError(title: string, error: unknown, fallbackMessage?: string) {
+    feedback.errorFrom(error, fallbackMessage, { title });
+  }
 
   async function handlePasswordUpdate() {
     if (sessionSecurity?.currentSessionRequiresVerification) {
-      Alert.alert(
-        t("profile.passwordManagement"),
-        t("profile.sessionVerificationRequired"),
-      );
+      showWarning(passwordManagementTitle, t("profile.sessionVerificationRequired"));
       return;
     }
 
     if (!stepUpFresh) {
-      Alert.alert(
-        t("profile.passwordManagement"),
-        t("profile.mfaPasswordStepUp"),
-      );
+      showWarning(passwordManagementTitle, t("profile.mfaPasswordStepUp"));
       return;
     }
 
@@ -291,20 +303,17 @@ export function ProfileScreen() {
       !isNonEmptyValue(passwordForm.newPassword) ||
       !isNonEmptyValue(passwordForm.confirmPassword)
     ) {
-      Alert.alert(t("profile.passwordManagement"), t("common.requiredField"));
+      showWarning(passwordManagementTitle, t("common.requiredField"));
       return;
     }
 
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      Alert.alert(
-        t("profile.passwordManagement"),
-        t("profile.passwordsMustMatch"),
-      );
+      showWarning(passwordManagementTitle, t("profile.passwordsMustMatch"));
       return;
     }
 
     if (!hasMinimumLength(passwordForm.newPassword, 8)) {
-      Alert.alert(t("profile.passwordManagement"), t("auth.passwordTooShort"));
+      showWarning(passwordManagementTitle, t("auth.passwordTooShort"));
       return;
     }
 
@@ -314,17 +323,9 @@ export function ProfileScreen() {
         newPassword: passwordForm.newPassword.trim(),
       });
       setPasswordForm(emptyPasswordForm);
-      Alert.alert(
-        t("profile.passwordManagement"),
-        t("profile.passwordUpdated"),
-      );
+      showSuccess(passwordManagementTitle, t("profile.passwordUpdated"));
     } catch (requestError) {
-      Alert.alert(
-        t("profile.passwordManagement"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(passwordManagementTitle, requestError);
     }
   }
 
@@ -333,15 +334,9 @@ export function ProfileScreen() {
       const result = await startSessionTrustChallengeMutation.mutateAsync();
       setSessionTrustCode("");
       setSessionTrustPreviewCode(result.previewCode);
-      Alert.alert(
-        t("profile.sessionSecurity"),
-        t("profile.sessionTrustCodeSent"),
-      );
+      showSuccess(sessionSecurityTitle, t("profile.sessionTrustCodeSent"));
     } catch (error) {
-      Alert.alert(
-        t("profile.sessionSecurity"),
-        error instanceof Error ? error.message : t("common.notAvailable"),
-      );
+      showError(sessionSecurityTitle, error, t("common.notAvailable"));
     }
   }
 
@@ -350,43 +345,27 @@ export function ProfileScreen() {
       await verifySessionTrustMutation.mutateAsync(sessionTrustCode.trim());
       setSessionTrustCode("");
       setSessionTrustPreviewCode(null);
-      Alert.alert(
-        t("profile.sessionSecurity"),
-        t("profile.sessionTrustVerified"),
-      );
+      showSuccess(sessionSecurityTitle, t("profile.sessionTrustVerified"));
     } catch (error) {
-      Alert.alert(
-        t("profile.sessionSecurity"),
-        error instanceof Error ? error.message : t("common.notAvailable"),
-      );
+      showError(sessionSecurityTitle, error, t("common.notAvailable"));
     }
   }
 
   async function handleRevokeSessions() {
     try {
       await revokeSessionsMutation.mutateAsync();
-      Alert.alert(t("profile.sessionSecurity"), t("profile.sessionsRevoked"));
+      showSuccess(sessionSecurityTitle, t("profile.sessionsRevoked"));
     } catch (error) {
-      Alert.alert(
-        t("profile.sessionSecurity"),
-        error instanceof Error
-          ? error.message
-          : t("profile.sessionsRevokeFailed"),
-      );
+      showError(sessionSecurityTitle, error, t("profile.sessionsRevokeFailed"));
     }
   }
 
   async function handleRevokeSession(sessionId: string) {
     try {
       await revokeCustomerSessionMutation.mutateAsync(sessionId);
-      Alert.alert(t("profile.sessionSecurity"), t("profile.sessionRevoked"));
+      showSuccess(sessionSecurityTitle, t("profile.sessionRevoked"));
     } catch (error) {
-      Alert.alert(
-        t("profile.sessionSecurity"),
-        error instanceof Error
-          ? error.message
-          : t("profile.sessionsRevokeFailed"),
-      );
+      showError(sessionSecurityTitle, error, t("profile.sessionsRevokeFailed"));
     }
   }
 
@@ -397,14 +376,9 @@ export function ProfileScreen() {
 
     try {
       await updatePreferencesMutation.mutateAsync(notificationDraft);
-      Alert.alert(t("profile.notifications"), t("profile.preferencesSaved"));
+      showSuccess(notificationsTitle, t("profile.preferencesSaved"));
     } catch (requestError) {
-      Alert.alert(
-        t("profile.notifications"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(notificationsTitle, requestError);
     }
   }
 
@@ -413,19 +387,14 @@ export function ProfileScreen() {
       await updateAgeProfileMutation.mutateAsync({
         dateOfBirth: ageDateOfBirthDraft.trim() || null,
       });
-      Alert.alert(
+      showSuccess(
         "Age foundation",
         ageDateOfBirthDraft.trim()
           ? "Date of birth saved as a self-attested age record."
-          : "Age record cleared.",
+          : "Age record cleared."
       );
     } catch (requestError) {
-      Alert.alert(
-        "Age foundation",
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError("Age foundation", requestError);
     }
   }
 
@@ -436,21 +405,16 @@ export function ProfileScreen() {
           contactId: editingTrustedContactId,
           ...trustedContactDraft,
         });
-        Alert.alert("Trusted contacts", "Trusted contact updated.");
+        showSuccess("Trusted contacts", "Trusted contact updated.");
       } else {
         await createTrustedContactMutation.mutateAsync(trustedContactDraft);
-        Alert.alert("Trusted contacts", "Trusted contact added.");
+        showSuccess("Trusted contacts", "Trusted contact added.");
       }
 
       setTrustedContactDraft(emptyTrustedContactDraft);
       setEditingTrustedContactId(null);
     } catch (requestError) {
-      Alert.alert(
-        "Trusted contacts",
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError("Trusted contacts", requestError);
     }
   }
 
@@ -461,14 +425,9 @@ export function ProfileScreen() {
         setEditingTrustedContactId(null);
         setTrustedContactDraft(emptyTrustedContactDraft);
       }
-      Alert.alert("Trusted contacts", "Trusted contact removed.");
+      showSuccess("Trusted contacts", "Trusted contact removed.");
     } catch (requestError) {
-      Alert.alert(
-        "Trusted contacts",
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError("Trusted contacts", requestError);
     }
   }
 
@@ -478,13 +437,12 @@ export function ProfileScreen() {
       setTotpSecret(result.secret);
       setTotpOtpAuthUri(result.otpAuthUri);
       setTotpCode("");
-    } catch (requestError) {
-      Alert.alert(
-        t("profile.mfaTitle"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
+      showSuccess(
+        mfaTitle,
+        "Authenticator setup started. Scan the QR code and confirm with a one-time code."
       );
+    } catch (requestError) {
+      showError(mfaTitle, requestError);
     }
   }
 
@@ -496,14 +454,9 @@ export function ProfileScreen() {
       setTotpSecret(null);
       setTotpOtpAuthUri(null);
       setTotpCode("");
-      Alert.alert(t("profile.mfaTitle"), t("profile.mfaTotpReady"));
+      showSuccess(mfaTitle, t("profile.mfaTotpReady"));
     } catch (requestError) {
-      Alert.alert(
-        t("profile.mfaTitle"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(mfaTitle, requestError);
     }
   }
 
@@ -513,13 +466,12 @@ export function ProfileScreen() {
       setEmailChallengeId(result.challengeId);
       setEmailCode("");
       setEmailPreviewCode(result.previewCode);
-    } catch (requestError) {
-      Alert.alert(
-        t("profile.mfaTitle"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
+      showSuccess(
+        mfaTitle,
+        "Backup email verification started. Enter the code we sent to finish enrollment."
       );
+    } catch (requestError) {
+      showError(mfaTitle, requestError);
     }
   }
 
@@ -536,14 +488,9 @@ export function ProfileScreen() {
       setEmailChallengeId(null);
       setEmailCode("");
       setEmailPreviewCode(null);
-      Alert.alert(t("profile.mfaTitle"), t("profile.mfaEmailReady"));
+      showSuccess(mfaTitle, t("profile.mfaEmailReady"));
     } catch (requestError) {
-      Alert.alert(
-        t("profile.mfaTitle"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(mfaTitle, requestError);
     }
   }
 
@@ -557,13 +504,12 @@ export function ProfileScreen() {
       setPasswordChallengeId(result.challengeId);
       setPasswordChallengeCode("");
       setPasswordPreviewCode(result.previewCode);
-    } catch (requestError) {
-      Alert.alert(
-        t("profile.passwordManagement"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
+      showSuccess(
+        passwordManagementTitle,
+        "Password reset verification started. Complete the challenge to continue."
       );
+    } catch (requestError) {
+      showError(passwordManagementTitle, requestError);
     }
   }
 
@@ -573,13 +519,12 @@ export function ProfileScreen() {
       setRecoveryChallengeId(result.challengeId);
       setRecoveryCode("");
       setRecoveryPreviewCode(result.previewCode);
-    } catch (requestError) {
-      Alert.alert(
-        t("profile.mfaTitle"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
+      showSuccess(
+        mfaTitle,
+        "Recovery verification started. Enter the code to finish your MFA recovery."
       );
+    } catch (requestError) {
+      showError(mfaTitle, requestError);
     }
   }
 
@@ -596,14 +541,9 @@ export function ProfileScreen() {
       setRecoveryChallengeId(null);
       setRecoveryCode("");
       setRecoveryPreviewCode(null);
-      Alert.alert(t("profile.mfaTitle"), t("profile.mfaRecoveryComplete"));
+      showSuccess(mfaTitle, t("profile.mfaRecoveryComplete"));
     } catch (requestError) {
-      Alert.alert(
-        t("profile.mfaTitle"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(mfaTitle, requestError);
     }
   }
 
@@ -622,14 +562,9 @@ export function ProfileScreen() {
       setPasswordChallengeId(null);
       setPasswordChallengeCode("");
       setPasswordPreviewCode(null);
-      Alert.alert(t("profile.passwordManagement"), t("profile.mfaStepUpReady"));
+      showSuccess(passwordManagementTitle, t("profile.mfaStepUpReady"));
     } catch (requestError) {
-      Alert.alert(
-        t("profile.passwordManagement"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(passwordManagementTitle, requestError);
     }
   }
 

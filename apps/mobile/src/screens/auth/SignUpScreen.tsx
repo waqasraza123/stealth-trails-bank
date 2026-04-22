@@ -1,4 +1,4 @@
-import { Alert, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { useState } from "react";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -9,6 +9,7 @@ import { FieldInput } from "../../components/ui/FieldInput";
 import { InlineNotice } from "../../components/ui/InlineNotice";
 import { LanguageToggle } from "../../components/ui/LanguageToggle";
 import { useAuthActions } from "../../hooks/use-session";
+import { useScreenFeedback } from "../../hooks/use-app-feedback";
 import { useT } from "../../i18n/use-t";
 import {
   hasMinimumLength,
@@ -22,6 +23,7 @@ export function SignUpScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
   const { signUp, loading, error } = useAuthActions();
+  const feedback = useScreenFeedback(t("auth.signUp"));
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -34,17 +36,17 @@ export function SignUpScreen() {
       !isNonEmptyValue(email) ||
       !isNonEmptyValue(password)
     ) {
-      Alert.alert(t("auth.signUp"), t("common.requiredField"));
+      feedback.warning(t("common.requiredField"));
       return;
     }
 
     if (!isEmailAddress(email)) {
-      Alert.alert(t("auth.signUp"), t("auth.emailInvalid"));
+      feedback.warning(t("auth.emailInvalid"));
       return;
     }
 
     if (!hasMinimumLength(password, 8)) {
-      Alert.alert(t("auth.signUp"), t("auth.passwordTooShort"));
+      feedback.warning(t("auth.passwordTooShort"));
       return;
     }
 
@@ -55,13 +57,10 @@ export function SignUpScreen() {
         email: email.trim(),
         password: password.trim()
       });
-      Alert.alert(t("auth.signUp"), t("auth.switchToSignIn"));
+      feedback.success(t("auth.switchToSignIn"));
       navigation.navigate("SignIn");
     } catch (requestError) {
-      Alert.alert(
-        t("auth.signUp"),
-        requestError instanceof Error ? requestError.message : String(requestError)
-      );
+      feedback.errorFrom(requestError);
     }
   }
 

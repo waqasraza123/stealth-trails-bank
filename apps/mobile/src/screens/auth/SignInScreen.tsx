@@ -1,4 +1,4 @@
-import { Alert, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { useState } from "react";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -11,6 +11,7 @@ import { LanguageToggle } from "../../components/ui/LanguageToggle";
 import { EthereumBrandPanel } from "../../components/ui/EthereumBrandPanel";
 import { AnimatedSection } from "../../components/ui/AnimatedSection";
 import { useAuthActions } from "../../hooks/use-session";
+import { useScreenFeedback } from "../../hooks/use-app-feedback";
 import { useT } from "../../i18n/use-t";
 import {
   hasMinimumLength,
@@ -29,34 +30,30 @@ export function SignInScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
   const { signIn, loading, error } = useAuthActions();
+  const feedback = useScreenFeedback(t("auth.signIn"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   async function handleSubmit() {
     if (!isEmailAddress(email)) {
-      Alert.alert(t("auth.signIn"), t("auth.emailInvalid"));
+      feedback.warning(t("auth.emailInvalid"));
       return;
     }
 
     if (!isNonEmptyValue(password)) {
-      Alert.alert(t("auth.signIn"), t("common.requiredField"));
+      feedback.warning(t("common.requiredField"));
       return;
     }
 
     if (!hasMinimumLength(password, 8)) {
-      Alert.alert(t("auth.signIn"), t("auth.passwordTooShort"));
+      feedback.warning(t("auth.passwordTooShort"));
       return;
     }
 
     try {
       await signIn({ email: email.trim(), password: password.trim() });
     } catch (requestError) {
-      Alert.alert(
-        t("auth.signIn"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      feedback.errorFrom(requestError);
     }
   }
 

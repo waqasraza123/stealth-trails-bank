@@ -1,4 +1,4 @@
-import { Alert, View } from "react-native";
+import { View } from "react-native";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -22,6 +22,7 @@ import {
   useRetirementVaultsQuery,
   useSupportedAssetsQuery,
 } from "../hooks/use-customer-queries";
+import { useScreenFeedback } from "../hooks/use-app-feedback";
 import { useLocale } from "../i18n/use-locale";
 import {
   buildRequestIdempotencyKey,
@@ -98,6 +99,7 @@ export function RetirementVaultScreen({
   initialFocus = "fund",
 }: RetirementVaultScreenProps) {
   const { locale } = useLocale();
+  const feedback = useScreenFeedback();
   const navigation = useNavigation<any>();
   const rememberRequestKey = useSessionStore(
     (state) => state.rememberRequestKey,
@@ -139,6 +141,20 @@ export function RetirementVaultScreen({
   const [releaseReasonCode, setReleaseReasonCode] = useState("hardship");
   const [releaseReasonNote, setReleaseReasonNote] = useState("");
   const [releaseEvidenceNote, setReleaseEvidenceNote] = useState("");
+  const retirementVaultTitle =
+    locale === "ar" ? "قبو التقاعد" : "Retirement Vault";
+
+  function showSuccess(message: string) {
+    feedback.success(message, { title: retirementVaultTitle });
+  }
+
+  function showWarning(message: string) {
+    feedback.warning(message, { title: retirementVaultTitle });
+  }
+
+  function showError(error: unknown) {
+    feedback.errorFrom(error, undefined, { title: retirementVaultTitle });
+  }
 
   useEffect(() => {
     setFocus(initialFocus);
@@ -208,21 +224,19 @@ export function RetirementVaultScreen({
 
   async function handleCreateVault() {
     if (!activeCreateAsset) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showWarning(
         locale === "ar"
           ? "اختر أصلاً قبل إنشاء القبو."
-          : "Select an asset before creating the vault.",
+          : "Select an asset before creating the vault."
       );
       return;
     }
 
     if (!isPositiveIntegerString(unlockYears)) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showWarning(
         locale === "ar"
           ? "أدخل عدداً صحيحاً من السنوات."
-          : "Enter a whole number of years.",
+          : "Enter a whole number of years."
       );
       return;
     }
@@ -241,43 +255,35 @@ export function RetirementVaultScreen({
       setFundAsset(result.vault.asset.symbol);
       setReleaseAsset(result.vault.asset.symbol);
       setFocus("fund");
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showSuccess(
         result.created
           ? locale === "ar"
             ? "تم إنشاء القبو. يمكنك تمويله الآن."
             : "The vault was created. You can fund it now."
           : locale === "ar"
             ? "القبو موجود بالفعل لهذا الأصل."
-            : "A vault already exists for this asset.",
+            : "A vault already exists for this asset."
       );
     } catch (requestError) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(requestError);
     }
   }
 
   async function handleFundVault() {
     if (!activeFundAsset) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showWarning(
         locale === "ar"
           ? "أنشئ قبو تقاعد أولاً."
-          : "Create a retirement vault first.",
+          : "Create a retirement vault first."
       );
       return;
     }
 
     if (!isPositiveDecimalString(fundAmount)) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showWarning(
         locale === "ar"
           ? "أدخل مبلغاً موجباً صالحاً."
-          : "Enter a valid positive amount.",
+          : "Enter a valid positive amount."
       );
       return;
     }
@@ -289,11 +295,10 @@ export function RetirementVaultScreen({
         selectedFundBalance.availableBalance,
       ) === 1
     ) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showWarning(
         locale === "ar"
           ? "المبلغ يتجاوز الرصيد المتاح."
-          : "Amount exceeds the available balance.",
+          : "Amount exceeds the available balance."
       );
       return;
     }
@@ -311,37 +316,29 @@ export function RetirementVaultScreen({
       });
       clearRequestKey(signature);
       setFundAmount("");
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showSuccess(
         locale === "ar"
           ? "تم نقل الأموال إلى الرصيد المقفل."
-          : "Funds were moved into the locked vault balance.",
+          : "Funds were moved into the locked vault balance."
       );
     } catch (requestError) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(requestError);
     }
   }
 
   async function handleRequestRelease() {
     if (!selectedReleaseVault) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showWarning(
         locale === "ar"
           ? "أنشئ أو اختر قبو تقاعد أولاً."
-          : "Create or select a retirement vault first.",
+          : "Create or select a retirement vault first."
       );
       return;
     }
 
     if (!isPositiveDecimalString(releaseAmount)) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
-        locale === "ar" ? "أدخل مبلغ إفراج صالحاً." : "Enter a valid release amount.",
+      showWarning(
+        locale === "ar" ? "أدخل مبلغ إفراج صالحاً." : "Enter a valid release amount."
       );
       return;
     }
@@ -350,11 +347,10 @@ export function RetirementVaultScreen({
       compareDecimalStrings(releaseAmount.trim(), selectedReleaseVault.lockedBalance) ===
       1
     ) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showWarning(
         locale === "ar"
           ? "المبلغ يتجاوز الرصيد المقفل داخل القبو."
-          : "Amount exceeds the locked balance in the vault.",
+          : "Amount exceeds the locked balance in the vault."
       );
       return;
     }
@@ -373,62 +369,48 @@ export function RetirementVaultScreen({
       setReleaseAmount("");
       setReleaseReasonNote("");
       setReleaseEvidenceNote("");
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showSuccess(
         result.releaseRequest.status === "review_required"
           ? locale === "ar"
             ? "تم تسجيل الإفراج المبكر ودخل الآن مسار مراجعة إلزامي."
             : "Early unlock was recorded and has entered mandatory review."
           : locale === "ar"
             ? "تم فتح نافذة التهدئة قبل إعادة المال إلى الرصيد السائل."
-            : "A cooldown window is now open before funds return to liquid balance.",
+            : "A cooldown window is now open before funds return to liquid balance."
       );
     } catch (requestError) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(requestError);
     }
   }
 
   async function handleCancelRelease(releaseRequestId: string) {
     try {
       await cancelRetirementVaultReleaseMutation.mutateAsync(releaseRequestId);
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showSuccess(
         locale === "ar"
           ? "تم إلغاء طلب الإفراج."
-          : "The unlock request was cancelled.",
+          : "The unlock request was cancelled."
       );
     } catch (requestError) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(requestError);
     }
   }
 
   async function handleRequestRuleChange() {
     if (!selectedRuleChangeVault) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showWarning(
         locale === "ar"
           ? "أنشئ أو اختر قبو تقاعد أولاً."
-          : "Create or select a retirement vault first.",
+          : "Create or select a retirement vault first."
       );
       return;
     }
 
     if (!isPositiveIntegerString(ruleChangeUnlockYears)) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showWarning(
         locale === "ar"
           ? "أدخل عدداً صحيحاً من السنوات."
-          : "Enter a whole number of years.",
+          : "Enter a whole number of years."
       );
       return;
     }
@@ -451,42 +433,30 @@ export function RetirementVaultScreen({
         reasonNote: ruleChangeReasonNote.trim() || undefined,
       });
 
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showSuccess(
         result.appliedImmediately
           ? locale === "ar"
             ? "تم تطبيق تشديد القاعدة فوراً."
             : "The rule strengthening was applied immediately."
           : locale === "ar"
             ? "دخل تعديل القاعدة مسار مراجعة وتهدئة محكوم."
-            : "The rule change entered governed review and cooldown.",
+            : "The rule change entered governed review and cooldown."
       );
     } catch (requestError) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(requestError);
     }
   }
 
   async function handleCancelRuleChange(ruleChangeRequestId: string) {
     try {
       await cancelRetirementVaultRuleChangeMutation.mutateAsync(ruleChangeRequestId);
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showSuccess(
         locale === "ar"
           ? "تم إلغاء تعديل القاعدة."
-          : "The rule change was cancelled.",
+          : "The rule change was cancelled."
       );
     } catch (requestError) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(requestError);
     }
   }
 

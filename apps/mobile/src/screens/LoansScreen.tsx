@@ -1,4 +1,4 @@
-import { Alert, ScrollView, Switch, View } from "react-native";
+import { ScrollView, Switch, View } from "react-native";
 import { useEffect, useState } from "react";
 import { AppScreen } from "../components/ui/AppScreen";
 import { AppButton } from "../components/ui/AppButton";
@@ -14,6 +14,7 @@ import {
   useLoansDashboardQuery,
   useQuotePreviewMutation
 } from "../hooks/use-customer-queries";
+import { useScreenFeedback } from "../hooks/use-app-feedback";
 import { useLocale } from "../i18n/use-locale";
 import { useT } from "../i18n/use-t";
 import {
@@ -26,6 +27,7 @@ import {
 export function LoansScreen() {
   const t = useT();
   const { locale } = useLocale();
+  const feedback = useScreenFeedback();
   const dashboardQuery = useLoansDashboardQuery();
   const quotePreviewMutation = useQuotePreviewMutation();
   const applicationMutation = useCreateLoanApplicationMutation();
@@ -60,17 +62,23 @@ export function LoansScreen() {
 
   async function previewQuote() {
     if (!isPositiveDecimalString(borrowAmount)) {
-      Alert.alert(t("loans.quotePreview"), t("wallet.amountInvalid"));
+      feedback.warning(t("wallet.amountInvalid"), {
+        title: t("loans.quotePreview")
+      });
       return;
     }
 
     if (!isPositiveDecimalString(collateralAmount)) {
-      Alert.alert(t("loans.quotePreview"), t("wallet.amountInvalid"));
+      feedback.warning(t("wallet.amountInvalid"), {
+        title: t("loans.quotePreview")
+      });
       return;
     }
 
     if (!isPositiveIntegerString(termMonths)) {
-      Alert.alert(t("loans.quotePreview"), t("loans.termInvalid"));
+      feedback.warning(t("loans.termInvalid"), {
+        title: t("loans.quotePreview")
+      });
       return;
     }
 
@@ -85,39 +93,45 @@ export function LoansScreen() {
         termMonths
       });
     } catch (requestError) {
-      Alert.alert(
-        t("loans.quotePreview"),
-        requestError instanceof Error ? requestError.message : String(requestError)
-      );
+      feedback.errorFrom(requestError, undefined, {
+        title: t("loans.quotePreview")
+      });
     }
   }
 
   async function submitApplication() {
     if (!dashboard?.eligibility.eligible) {
-      Alert.alert(t("loans.submitApplication"), t("loans.noEligibility"));
+      feedback.warning(t("loans.noEligibility"), {
+        title: t("loans.submitApplication")
+      });
       return;
     }
 
     if (!acknowledged) {
-      Alert.alert(
-        t("loans.submitApplication"),
-        t("loans.acknowledgementRequired")
-      );
+      feedback.warning(t("loans.acknowledgementRequired"), {
+        title: t("loans.submitApplication")
+      });
       return;
     }
 
     if (!isPositiveDecimalString(borrowAmount)) {
-      Alert.alert(t("loans.submitApplication"), t("wallet.amountInvalid"));
+      feedback.warning(t("wallet.amountInvalid"), {
+        title: t("loans.submitApplication")
+      });
       return;
     }
 
     if (!isPositiveDecimalString(collateralAmount)) {
-      Alert.alert(t("loans.submitApplication"), t("wallet.amountInvalid"));
+      feedback.warning(t("wallet.amountInvalid"), {
+        title: t("loans.submitApplication")
+      });
       return;
     }
 
     if (!isPositiveIntegerString(termMonths)) {
-      Alert.alert(t("loans.submitApplication"), t("loans.termInvalid"));
+      feedback.warning(t("loans.termInvalid"), {
+        title: t("loans.submitApplication")
+      });
       return;
     }
 
@@ -134,12 +148,13 @@ export function LoansScreen() {
         acceptServiceFeeDisclosure: acknowledged,
         supportNote: supportNote || undefined
       });
-      Alert.alert(t("loans.submitApplication"), t("loans.applicationSubmitted"));
+      feedback.success(t("loans.applicationSubmitted"), {
+        title: t("loans.submitApplication")
+      });
     } catch (requestError) {
-      Alert.alert(
-        t("loans.submitApplication"),
-        requestError instanceof Error ? requestError.message : String(requestError)
-      );
+      feedback.errorFrom(requestError, undefined, {
+        title: t("loans.submitApplication")
+      });
     }
   }
 
@@ -157,10 +172,9 @@ export function LoansScreen() {
         }`
       });
     } catch (requestError) {
-      Alert.alert(
-        t("loans.autopay"),
-        requestError instanceof Error ? requestError.message : String(requestError)
-      );
+      feedback.errorFrom(requestError, undefined, {
+        title: t("loans.autopay")
+      });
     }
   }
 

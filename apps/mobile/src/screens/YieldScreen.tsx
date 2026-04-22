@@ -1,4 +1,4 @@
-import { Alert, View } from "react-native";
+import { View } from "react-native";
 import { useEffect, useMemo, useState } from "react";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { AppScreen } from "../components/ui/AppScreen";
@@ -18,6 +18,7 @@ import {
   useStakingSnapshotQuery,
   useStakeWithdrawalMutation
 } from "../hooks/use-customer-queries";
+import { useScreenFeedback } from "../hooks/use-app-feedback";
 import { useLocale } from "../i18n/use-locale";
 import { useT } from "../i18n/use-t";
 import {
@@ -37,6 +38,7 @@ export function YieldScreen({ initialFocus }: YieldScreenProps = {}) {
   const t = useT();
   const { locale } = useLocale();
   const user = useSessionStore((state) => state.user);
+  const feedback = useScreenFeedback(t("yield.title"));
   const snapshotQuery = useStakingSnapshotQuery();
   const depositMutation = useStakeDepositMutation();
   const withdrawMutation = useStakeWithdrawalMutation();
@@ -93,12 +95,9 @@ export function YieldScreen({ initialFocus }: YieldScreenProps = {}) {
     try {
       const result = await action();
       onSuccess?.();
-      Alert.alert(t("yield.title"), result.transactionHash);
+      feedback.success(result.transactionHash);
     } catch (requestError) {
-      Alert.alert(
-        t("yield.title"),
-        requestError instanceof Error ? requestError.message : String(requestError)
-      );
+      feedback.errorFrom(requestError);
     }
   }
 
@@ -297,7 +296,7 @@ export function YieldScreen({ initialFocus }: YieldScreenProps = {}) {
                     label={t("yield.deposit")}
                     onPress={() => {
                       if (!isPositiveDecimalString(depositAmount)) {
-                        Alert.alert(t("yield.title"), t("wallet.amountInvalid"));
+                        feedback.warning(t("wallet.amountInvalid"));
                         return;
                       }
 
@@ -327,7 +326,7 @@ export function YieldScreen({ initialFocus }: YieldScreenProps = {}) {
                     label={t("yield.withdraw")}
                     onPress={() => {
                       if (!isPositiveDecimalString(withdrawAmount)) {
-                        Alert.alert(t("yield.title"), t("wallet.amountInvalid"));
+                        feedback.warning(t("wallet.amountInvalid"));
                         return;
                       }
 

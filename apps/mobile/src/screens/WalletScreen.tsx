@@ -1,5 +1,5 @@
 import * as Clipboard from "expo-clipboard";
-import { Alert, View } from "react-native";
+import { View } from "react-native";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigation } from "@react-navigation/native";
 import QRCode from "react-native-qrcode-svg";
@@ -37,6 +37,7 @@ import {
   useSupportedAssetsQuery,
   useVerifyMfaChallengeMutation,
 } from "../hooks/use-customer-queries";
+import { useScreenFeedback } from "../hooks/use-app-feedback";
 import { useLocale } from "../i18n/use-locale";
 import { useT } from "../i18n/use-t";
 import {
@@ -62,6 +63,7 @@ type WalletScreenProps = {
 export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
   const t = useT();
   const { locale } = useLocale();
+  const feedback = useScreenFeedback();
   const navigation = useNavigation<any>();
   const user = useSessionStore((state) => state.user);
   const rememberRequestKey = useSessionStore(
@@ -205,6 +207,30 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
     !sendAmountValid ||
     sendAmountExceedsAvailable ||
     !sendPreviewMatchesCurrentInput;
+  const walletTitle = t("wallet.title");
+  const depositTitle = t("wallet.deposit");
+  const withdrawTitle = t("wallet.withdraw");
+  const sendTitle = t("wallet.send");
+  const retirementVaultTitle =
+    locale === "ar" ? "قبو التقاعد" : "Retirement Vault";
+  const recipientEmailMessage =
+    locale === "ar" ? "أدخل بريد المستلم." : "Enter the recipient email.";
+
+  function showInfo(title: string, message: string) {
+    feedback.info(message, { title });
+  }
+
+  function showSuccess(title: string, message: string) {
+    feedback.success(message, { title });
+  }
+
+  function showWarning(title: string, message: string) {
+    feedback.warning(message, { title });
+  }
+
+  function showError(title: string, error: unknown) {
+    feedback.errorFrom(error, undefined, { title });
+  }
 
   function getIdempotencyKey(signature: string, prefix: string) {
     const existing = consumeRequestKey(signature);
@@ -233,17 +259,17 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
     }
 
     await Clipboard.setStringAsync(user.ethereumAddress);
-    Alert.alert(t("wallet.title"), t("wallet.depositAddressCopied"));
+    showInfo(walletTitle, t("wallet.depositAddressCopied"));
   }
 
   async function handleDeposit() {
     if (!activeDepositAsset) {
-      Alert.alert(t("wallet.deposit"), t("wallet.selectAsset"));
+      showWarning(depositTitle, t("wallet.selectAsset"));
       return;
     }
 
     if (!isPositiveDecimalString(depositAmount)) {
-      Alert.alert(t("wallet.deposit"), t("wallet.amountInvalid"));
+      showWarning(depositTitle, t("wallet.amountInvalid"));
       return;
     }
 
@@ -261,48 +287,40 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
       clearRequestKey(signature);
       setLatestDeposit(result);
       setDepositAmount("");
-      Alert.alert(
-        t("wallet.deposit"),
+      showSuccess(
+        depositTitle,
         result.intent.status === "review_required"
           ? t("wallet.depositReviewRecorded")
-          : t("wallet.depositRecorded"),
+          : t("wallet.depositRecorded")
       );
     } catch (requestError) {
-      Alert.alert(
-        t("wallet.deposit"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(depositTitle, requestError);
     }
   }
 
   async function handleWithdrawal() {
     if (moneyMovementBlocked) {
-      Alert.alert(t("wallet.withdraw"), t("wallet.mfaSetupRequired"));
+      showWarning(withdrawTitle, t("wallet.mfaSetupRequired"));
       return;
     }
 
     if (sessionRequiresVerification) {
-      Alert.alert(
-        t("wallet.withdraw"),
-        t("wallet.sessionVerificationRequired"),
-      );
+      showWarning(withdrawTitle, t("wallet.sessionVerificationRequired"));
       return;
     }
 
     if (!stepUpFresh) {
-      Alert.alert(t("wallet.withdraw"), t("wallet.mfaStepUpRequired"));
+      showWarning(withdrawTitle, t("wallet.mfaStepUpRequired"));
       return;
     }
 
     if (!activeWithdrawAsset) {
-      Alert.alert(t("wallet.withdraw"), t("wallet.selectAsset"));
+      showWarning(withdrawTitle, t("wallet.selectAsset"));
       return;
     }
 
     if (!isEthereumAddress(withdrawAddress)) {
-      Alert.alert(t("wallet.withdraw"), t("wallet.destinationInvalid"));
+      showWarning(withdrawTitle, t("wallet.destinationInvalid"));
       return;
     }
 
@@ -311,12 +329,12 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
       withdrawAddress.trim().toLowerCase() ===
         user.ethereumAddress.toLowerCase()
     ) {
-      Alert.alert(t("wallet.withdraw"), t("wallet.selfAddressInvalid"));
+      showWarning(withdrawTitle, t("wallet.selfAddressInvalid"));
       return;
     }
 
     if (!isPositiveDecimalString(withdrawAmount)) {
-      Alert.alert(t("wallet.withdraw"), t("wallet.amountInvalid"));
+      showWarning(withdrawTitle, t("wallet.amountInvalid"));
       return;
     }
 
@@ -327,7 +345,7 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
         selectedBalance.availableBalance,
       ) === 1
     ) {
-      Alert.alert(t("wallet.withdraw"), t("wallet.insufficientBalance"));
+      showWarning(withdrawTitle, t("wallet.insufficientBalance"));
       return;
     }
 
@@ -348,30 +366,25 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
       setLatestWithdrawal(result);
       setWithdrawAmount("");
       setWithdrawAddress("");
-      Alert.alert(t("wallet.withdraw"), t("wallet.withdrawalRecorded"));
+      showSuccess(withdrawTitle, t("wallet.withdrawalRecorded"));
     } catch (requestError) {
-      Alert.alert(
-        t("wallet.withdraw"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(withdrawTitle, requestError);
     }
   }
 
   async function handlePreviewSendRecipient() {
     if (moneyMovementBlocked) {
-      Alert.alert(t("wallet.send"), t("wallet.mfaSetupRequired"));
+      showWarning(sendTitle, t("wallet.mfaSetupRequired"));
       return;
     }
 
     if (sessionRequiresVerification) {
-      Alert.alert(t("wallet.send"), t("wallet.sessionVerificationRequired"));
+      showWarning(sendTitle, t("wallet.sessionVerificationRequired"));
       return;
     }
 
     if (!sendEmail.trim()) {
-      Alert.alert(t("wallet.send"), locale === "ar" ? "أدخل بريد المستلم." : "Enter the recipient email.");
+      showWarning(sendTitle, recipientEmailMessage);
       return;
     }
 
@@ -384,8 +397,8 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
       setSendPreview(result);
 
       if (!result.available) {
-        Alert.alert(
-          t("wallet.send"),
+        showWarning(
+          sendTitle,
           locale === "ar"
             ? "هذا البريد غير متاح كعميل نشط للتحويل الداخلي."
             : "That email is not available as an active internal recipient."
@@ -393,51 +406,45 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
         return;
       }
 
-      Alert.alert(
-        t("wallet.send"),
+      showSuccess(
+        sendTitle,
         locale === "ar"
           ? `تم التحقق من المستلم: ${result.maskedDisplay ?? result.maskedEmail ?? "عميل داخلي"}`
           : `Recipient verified: ${result.maskedDisplay ?? result.maskedEmail ?? "Internal customer"}`
       );
     } catch (requestError) {
-      Alert.alert(
-        t("wallet.send"),
-        requestError instanceof Error ? requestError.message : String(requestError)
-      );
+      showError(sendTitle, requestError);
     }
   }
 
   async function handleInternalTransfer() {
     if (moneyMovementBlocked) {
-      Alert.alert(t("wallet.send"), t("wallet.mfaSetupRequired"));
+      showWarning(sendTitle, t("wallet.mfaSetupRequired"));
       return;
     }
 
     if (sessionRequiresVerification) {
-      Alert.alert(t("wallet.send"), t("wallet.sessionVerificationRequired"));
+      showWarning(sendTitle, t("wallet.sessionVerificationRequired"));
       return;
     }
 
     if (!stepUpFresh) {
-      Alert.alert(t("wallet.send"), t("wallet.mfaStepUpRequired"));
+      showWarning(sendTitle, t("wallet.mfaStepUpRequired"));
       return;
     }
 
     if (!activeSendAsset) {
-      Alert.alert(t("wallet.send"), t("wallet.selectAsset"));
+      showWarning(sendTitle, t("wallet.selectAsset"));
       return;
     }
 
     if (!sendEmail.trim()) {
-      Alert.alert(
-        t("wallet.send"),
-        locale === "ar" ? "أدخل بريد المستلم." : "Enter the recipient email."
-      );
+      showWarning(sendTitle, recipientEmailMessage);
       return;
     }
 
     if (!isPositiveDecimalString(sendAmount)) {
-      Alert.alert(t("wallet.send"), t("wallet.amountInvalid"));
+      showWarning(sendTitle, t("wallet.amountInvalid"));
       return;
     }
 
@@ -445,13 +452,13 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
       selectedSendBalance &&
       compareDecimalStrings(sendAmount.trim(), selectedSendBalance.availableBalance) === 1
     ) {
-      Alert.alert(t("wallet.send"), t("wallet.insufficientBalance"));
+      showWarning(sendTitle, t("wallet.insufficientBalance"));
       return;
     }
 
     if (!sendPreviewMatchesCurrentInput) {
-      Alert.alert(
-        t("wallet.send"),
+      showWarning(
+        sendTitle,
         locale === "ar"
           ? "تحقق من المستلم لهذا البريد والمبلغ أولاً."
           : "Verify the recipient for this email and amount first."
@@ -477,8 +484,8 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
       setSendAmount("");
       setSendEmail("");
       setSendPreview(null);
-      Alert.alert(
-        t("wallet.send"),
+      showSuccess(
+        sendTitle,
         result.thresholdOutcome === "review_required"
           ? locale === "ar"
             ? "تم حجز الرصيد وإرسال التحويل إلى مراجعة تشغيلية."
@@ -488,10 +495,7 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
             : "The transfer settled internally immediately."
       );
     } catch (requestError) {
-      Alert.alert(
-        t("wallet.send"),
-        requestError instanceof Error ? requestError.message : String(requestError)
-      );
+      showError(sendTitle, requestError);
     }
   }
 
@@ -505,13 +509,14 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
       setWithdrawalChallengeId(result.challengeId);
       setWithdrawalChallengeCode("");
       setWithdrawalPreviewCode(result.previewCode);
-    } catch (requestError) {
-      Alert.alert(
-        t("wallet.withdraw"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
+      showInfo(
+        withdrawTitle,
+        locale === "ar"
+          ? "أرسلنا رمز التحقق لهذا الإجراء. أكمل التحقق لمتابعة السحب."
+          : "We sent a verification code for this action. Complete the challenge to continue the withdrawal."
       );
+    } catch (requestError) {
+      showError(withdrawTitle, requestError);
     }
   }
 
@@ -530,34 +535,29 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
       setWithdrawalChallengeId(null);
       setWithdrawalChallengeCode("");
       setWithdrawalPreviewCode(null);
-      Alert.alert(t("wallet.withdraw"), t("wallet.mfaStepUpReady"));
+      showSuccess(withdrawTitle, t("wallet.mfaStepUpReady"));
     } catch (requestError) {
-      Alert.alert(
-        t("wallet.withdraw"),
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(withdrawTitle, requestError);
     }
   }
 
   async function handleCreateRetirementVault() {
     if (!activeVaultCreateAsset) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showWarning(
+        retirementVaultTitle,
         locale === "ar"
           ? "اختر أصلاً قبل إنشاء القبو."
-          : "Select an asset before creating the vault.",
+          : "Select an asset before creating the vault."
       );
       return;
     }
 
     if (!isPositiveIntegerString(vaultUnlockYears)) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showWarning(
+        retirementVaultTitle,
         locale === "ar"
           ? "أدخل عدداً صحيحاً من السنوات."
-          : "Enter a whole number of years.",
+          : "Enter a whole number of years."
       );
       return;
     }
@@ -575,43 +575,38 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
       });
 
       setVaultFundAsset(result.vault.asset.symbol);
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showSuccess(
+        retirementVaultTitle,
         result.created
           ? locale === "ar"
             ? "تم إنشاء القبو ويمكنك تمويله الآن."
             : "The vault was created and can be funded now."
           : locale === "ar"
             ? "القبو موجود بالفعل لهذا الأصل."
-            : "A vault already exists for this asset.",
+            : "A vault already exists for this asset."
       );
     } catch (requestError) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(retirementVaultTitle, requestError);
     }
   }
 
   async function handleFundRetirementVault() {
     if (!activeVaultFundAsset) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showWarning(
+        retirementVaultTitle,
         locale === "ar"
           ? "أنشئ قبو تقاعد أولاً."
-          : "Create a retirement vault first.",
+          : "Create a retirement vault first."
       );
       return;
     }
 
     if (!isPositiveDecimalString(vaultFundAmount)) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showWarning(
+        retirementVaultTitle,
         locale === "ar"
           ? "أدخل مبلغاً موجباً صالحاً."
-          : "Enter a valid positive amount.",
+          : "Enter a valid positive amount."
       );
       return;
     }
@@ -623,11 +618,11 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
         selectedVaultFundBalance.availableBalance,
       ) === 1
     ) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showWarning(
+        retirementVaultTitle,
         locale === "ar"
           ? "المبلغ يتجاوز الرصيد المتاح."
-          : "Amount exceeds the available balance.",
+          : "Amount exceeds the available balance."
       );
       return;
     }
@@ -645,19 +640,14 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
       });
       clearRequestKey(signature);
       setVaultFundAmount("");
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
+      showSuccess(
+        retirementVaultTitle,
         locale === "ar"
           ? "تم نقل الأموال إلى الرصيد المقفل."
-          : "Funds were moved into the locked vault balance.",
+          : "Funds were moved into the locked vault balance."
       );
     } catch (requestError) {
-      Alert.alert(
-        locale === "ar" ? "قبو التقاعد" : "Retirement Vault",
-        requestError instanceof Error
-          ? requestError.message
-          : String(requestError),
-      );
+      showError(retirementVaultTitle, requestError);
     }
   }
 

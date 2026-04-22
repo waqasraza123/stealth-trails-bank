@@ -12,6 +12,7 @@ import { MobileI18nProvider } from "./src/i18n/provider";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { useT } from "./src/i18n/use-t";
 import { AppErrorBoundary } from "./src/components/system/AppErrorBoundary";
+import { AppFeedbackProvider } from "./src/components/system/AppFeedbackProvider";
 
 function MobileShell() {
   const t = useT();
@@ -22,10 +23,12 @@ function MobileShell() {
       message={t("common.crashRecovery")}
       actionLabel={t("common.reset")}
     >
-      <NavigationContainer>
-        <StatusBar style="dark" />
-        <AppNavigator />
-      </NavigationContainer>
+      <AppFeedbackProvider>
+        <NavigationContainer>
+          <StatusBar style="dark" />
+          <AppNavigator />
+        </NavigationContainer>
+      </AppFeedbackProvider>
     </AppErrorBoundary>
   );
 }

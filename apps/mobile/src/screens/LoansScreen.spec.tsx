@@ -1,4 +1,3 @@
-import { Alert } from "react-native";
 import { fireEvent, waitFor } from "@testing-library/react-native";
 import { LoansScreen } from "./LoansScreen";
 import { renderMobile } from "../test/test-utils";
@@ -8,6 +7,10 @@ jest.mock("../hooks/use-customer-queries", () => ({
   useQuotePreviewMutation: jest.fn(),
   useCreateLoanApplicationMutation: jest.fn(),
   useAutopayMutation: jest.fn()
+}));
+
+jest.mock("../components/ui/ScreenHeaderActions", () => ({
+  ScreenHeaderActions: () => null
 }));
 
 const {
@@ -27,7 +30,6 @@ describe("LoansScreen", () => {
   const applicationMutateAsync = jest.fn();
 
   beforeEach(() => {
-    jest.spyOn(Alert, "alert").mockImplementation(jest.fn());
     previewMutateAsync.mockReset();
     applicationMutateAsync.mockReset();
     useLoansDashboardQuery.mockReturnValue({
@@ -72,10 +74,6 @@ describe("LoansScreen", () => {
       mutateAsync: jest.fn(),
       isPending: false
     });
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
   });
 
   it("submits a quote preview with the default valid form", async () => {

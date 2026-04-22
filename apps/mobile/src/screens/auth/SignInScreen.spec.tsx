@@ -1,4 +1,3 @@
-import { Alert } from "react-native";
 import { fireEvent, waitFor } from "@testing-library/react-native";
 import { SignInScreen } from "./SignInScreen";
 import { renderMobile } from "../../test/test-utils";
@@ -25,11 +24,6 @@ describe("SignInScreen", () => {
   beforeEach(() => {
     mockNavigate.mockReset();
     mockSignIn.mockReset();
-    jest.spyOn(Alert, "alert").mockImplementation(jest.fn());
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
   });
 
   it("blocks invalid email before calling the API action", async () => {
@@ -44,10 +38,7 @@ describe("SignInScreen", () => {
 
     await waitFor(() => {
       expect(mockSignIn).not.toHaveBeenCalled();
-      expect(Alert.alert).toHaveBeenCalledWith(
-        "Sign in",
-        "Enter a valid email address."
-      );
+      expect(screen.getByText("Enter a valid email address.")).toBeTruthy();
     });
   });
 
