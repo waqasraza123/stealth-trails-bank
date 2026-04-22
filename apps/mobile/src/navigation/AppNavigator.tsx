@@ -36,6 +36,8 @@ import { SignInScreen } from "../screens/auth/SignInScreen";
 import { SignUpScreen } from "../screens/auth/SignUpScreen";
 import { AppButton } from "../components/ui/AppButton";
 import { EthereumBrandPanel } from "../components/ui/EthereumBrandPanel";
+import { NotificationRealtimeBridge } from "../components/system/NotificationRealtimeBridge";
+import { NotificationsScreen } from "../screens/NotificationsScreen";
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -191,28 +193,36 @@ function SignedInNavigator() {
   const { locale } = useLocale();
 
   return (
-    <RootStack.Navigator>
-      <RootStack.Screen
-        name="MainTabs"
-        component={SignedInTabs}
-        options={{ headerShown: false }}
-      />
-      <RootStack.Screen
-        name="Loans"
-        component={LoansScreen}
-        options={{ title: t("navigation.loans") }}
-      />
-      <RootStack.Screen
-        name="RetirementVault"
-        options={{
-          title: locale === "ar" ? "قبو التقاعد" : "Retirement Vault"
-        }}
-      >
-        {({ route }) => (
-          <RetirementVaultScreen initialFocus={route.params?.focus} />
-        )}
-      </RootStack.Screen>
-    </RootStack.Navigator>
+    <>
+      <NotificationRealtimeBridge />
+      <RootStack.Navigator>
+        <RootStack.Screen
+          name="MainTabs"
+          component={SignedInTabs}
+          options={{ headerShown: false }}
+        />
+        <RootStack.Screen
+          name="Notifications"
+          component={NotificationsScreen}
+          options={{ headerShown: false }}
+        />
+        <RootStack.Screen
+          name="Loans"
+          component={LoansScreen}
+          options={{ title: t("navigation.loans") }}
+        />
+        <RootStack.Screen
+          name="RetirementVault"
+          options={{
+            title: locale === "ar" ? "قبو التقاعد" : "Retirement Vault"
+          }}
+        >
+          {({ route }) => (
+            <RetirementVaultScreen initialFocus={route.params?.focus} />
+          )}
+        </RootStack.Screen>
+      </RootStack.Navigator>
+    </>
   );
 }
 

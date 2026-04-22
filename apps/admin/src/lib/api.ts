@@ -1,4 +1,10 @@
 import axios, { type AxiosRequestConfig } from "axios";
+import type {
+  NotificationCategory,
+  NotificationFeedResult,
+  NotificationPreferenceMatrix,
+  NotificationUnreadSummary
+} from "@stealth-trails-bank/types";
 import { reportAdminApiError } from "./observability";
 import type {
   AccountHoldList,
@@ -165,6 +171,75 @@ export async function getOperatorSession(
     method: "GET",
     url: "/auth/internal/operator/session"
   });
+}
+
+export async function listOperatorNotifications(
+  session: OperatorSession,
+  params: {
+    limit?: number;
+    unreadOnly?: boolean;
+    category?: NotificationCategory;
+  } = {}
+): Promise<NotificationFeedResult> {
+  return requestData(session, {
+    method: "GET",
+    url: "/notifications/internal/me",
+    params
+  });
+}
+
+export async function getOperatorNotificationUnreadSummary(
+  session: OperatorSession
+): Promise<NotificationUnreadSummary> {
+  return requestData(session, {
+    method: "GET",
+    url: "/notifications/internal/me/unread-count"
+  });
+}
+
+export async function markOperatorNotificationsRead(
+  session: OperatorSession,
+  ids: string[]
+): Promise<NotificationFeedResult> {
+  return requestData(session, {
+    method: "POST",
+    url: "/notifications/internal/me/mark-read",
+    data: { ids }
+  });
+}
+
+export async function markAllOperatorNotificationsRead(
+  session: OperatorSession
+): Promise<NotificationUnreadSummary> {
+  return requestData(session, {
+    method: "POST",
+    url: "/notifications/internal/me/mark-all-read",
+    data: {}
+  });
+}
+
+export async function archiveOperatorNotifications(
+  session: OperatorSession,
+  ids: string[]
+): Promise<NotificationFeedResult> {
+  return requestData(session, {
+    method: "POST",
+    url: "/notifications/internal/me/archive",
+    data: { ids }
+  });
+}
+
+export async function getOperatorNotificationPreferences(
+  session: OperatorSession
+): Promise<NotificationPreferenceMatrix> {
+  const result = await requestData<
+    { notificationPreferences: NotificationPreferenceMatrix }
+  >(session, {
+    method: "GET",
+    url: "/notifications/internal/me/preferences"
+  });
+
+  return result.notificationPreferences;
 }
 
 export async function listCustomerMfaRecoveryRequests(

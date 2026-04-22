@@ -1,3 +1,5 @@
+import type { NotificationPreferenceMatrix } from "./notifications";
+
 export type AccountLifecycleStatusValue =
   | "registered"
   | "email_verified"
@@ -7,7 +9,7 @@ export type AccountLifecycleStatusValue =
   | "frozen"
   | "closed";
 
-export type CustomerNotificationPreferences = {
+export type CustomerNotificationPreferences = NotificationPreferenceMatrix & {
   depositEmails: boolean;
   withdrawalEmails: boolean;
   loanEmails: boolean;

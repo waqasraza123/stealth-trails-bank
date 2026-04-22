@@ -5,7 +5,7 @@ import { AppButton } from "../components/ui/AppButton";
 import { AppText } from "../components/ui/AppText";
 import { FieldInput } from "../components/ui/FieldInput";
 import { InlineNotice } from "../components/ui/InlineNotice";
-import { LanguageToggle } from "../components/ui/LanguageToggle";
+import { ScreenHeaderActions } from "../components/ui/ScreenHeaderActions";
 import { OptionChips } from "../components/ui/OptionChips";
 import { SectionCard } from "../components/ui/SectionCard";
 import {
@@ -168,7 +168,7 @@ export function LoansScreen() {
     <AppScreen
       title={t("loans.title")}
       subtitle={t("loans.description")}
-      trailing={<LanguageToggle />}
+      trailing={<ScreenHeaderActions />}
     >
       {dashboardQuery.isError ? (
         <InlineNotice

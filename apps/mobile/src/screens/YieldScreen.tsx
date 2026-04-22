@@ -7,7 +7,7 @@ import { AppText } from "../components/ui/AppText";
 import { FeatureActionCard } from "../components/ui/FeatureActionCard";
 import { FieldInput } from "../components/ui/FieldInput";
 import { InlineNotice } from "../components/ui/InlineNotice";
-import { LanguageToggle } from "../components/ui/LanguageToggle";
+import { ScreenHeaderActions } from "../components/ui/ScreenHeaderActions";
 import { OptionChips } from "../components/ui/OptionChips";
 import { SectionCard } from "../components/ui/SectionCard";
 import { AnimatedSection } from "../components/ui/AnimatedSection";
@@ -106,7 +106,7 @@ export function YieldScreen({ initialFocus }: YieldScreenProps = {}) {
     <AppScreen
       title={t("yield.title")}
       subtitle={t("yield.description")}
-      trailing={<LanguageToggle />}
+      trailing={<ScreenHeaderActions />}
     >
       {snapshotQuery.isError ? (
         <InlineNotice

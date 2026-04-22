@@ -17,6 +17,7 @@ import {
   type CustomerAccountProjection,
   type CustomerWalletProjection,
 } from "../auth/auth.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 type LegacyUserProfile = {
@@ -75,6 +76,13 @@ type UpdateTrustedContactInput = {
   note?: string;
 };
 
+type LegacyNotificationPreferenceInput = {
+  depositEmails: boolean;
+  withdrawalEmails: boolean;
+  loanEmails: boolean;
+  productUpdateEmails: boolean;
+};
+
 @Injectable()
 export class UserService {
   private readonly stepUpFreshnessMs: number;
@@ -84,6 +92,7 @@ export class UserService {
   constructor(
     private readonly authService: AuthService,
     private readonly prismaService: PrismaService,
+    private readonly notificationsService: NotificationsService,
   ) {
     this.stepUpFreshnessMs =
       loadCustomerMfaPolicyRuntimeConfig().stepUpFreshnessSeconds * 1000;
@@ -377,15 +386,26 @@ export class UserService {
     };
   }
 
-  private mapNotificationPreferences(
-    projection: CustomerAccountProjection,
+  private withLegacyNotificationPreferenceCompatibility(
+    preferences: {
+      audience: CustomerNotificationPreferences["audience"];
+      entries: CustomerNotificationPreferences["entries"];
+      updatedAt: CustomerNotificationPreferences["updatedAt"];
+    },
   ): CustomerNotificationPreferences {
+    const readEmailPreference = (
+      category: CustomerNotificationPreferences["entries"][number]["category"],
+    ) =>
+      preferences.entries
+        .find((entry) => entry.category === category)
+        ?.channels.find((channel) => channel.channel === "email")?.enabled ?? false;
+
     return {
-      depositEmails: projection.customer.depositEmailNotificationsEnabled,
-      withdrawalEmails: projection.customer.withdrawalEmailNotificationsEnabled,
-      loanEmails: projection.customer.loanEmailNotificationsEnabled,
-      productUpdateEmails:
-        projection.customer.productUpdateEmailNotificationsEnabled,
+      ...preferences,
+      depositEmails: readEmailPreference("money_movement"),
+      withdrawalEmails: readEmailPreference("money_movement"),
+      loanEmails: readEmailPreference("loans"),
+      productUpdateEmails: readEmailPreference("product"),
     };
   }
 
@@ -405,6 +425,7 @@ export class UserService {
     currentSessionTrusted: boolean,
     currentSessionRequiresVerification: boolean,
     foundation: CustomerProfileFoundation,
+    notificationPreferences: CustomerNotificationPreferences,
   ): UserProfileProjection {
     const accountStatus = projection.customerAccount
       .status as AccountLifecycleStatusValue;
@@ -430,7 +451,7 @@ export class UserService {
       frozenAt: this.formatOptionalDate(projection.customerAccount.frozenAt),
       closedAt: this.formatOptionalDate(projection.customerAccount.closedAt),
       passwordRotationAvailable: Boolean(projection.customer.passwordHash),
-      notificationPreferences: this.mapNotificationPreferences(projection),
+      notificationPreferences,
       ageProfile: this.mapAgeProfile(foundation),
       trustedContacts: this.mapTrustedContacts(foundation),
       mfa: {
@@ -506,6 +527,10 @@ export class UserService {
       const foundation = await this.getCustomerFoundationById(
         customerProjection.customer.id,
       );
+      const notificationPreferences =
+        this.withLegacyNotificationPreferenceCompatibility(
+          await this.notificationsService.getCustomerPreferences(supabaseUserId),
+        );
 
       return this.mapCustomerProjectionWithWalletOverlay(
         customerProjection,
@@ -514,6 +539,7 @@ export class UserService {
         sessionSecurity.currentSessionTrusted,
         sessionSecurity.currentSessionRequiresVerification,
         foundation,
+        notificationPreferences,
       );
     } catch (error) {
       if (!(error instanceof NotFoundException)) {
@@ -530,42 +556,62 @@ export class UserService {
 
   async updateNotificationPreferences(
     supabaseUserId: string,
-    input: CustomerNotificationPreferences,
+    input: LegacyNotificationPreferenceInput,
   ): Promise<CustomerNotificationPreferences> {
-    const customer = await this.prismaService.customer.findUnique({
-      where: { supabaseUserId },
-      select: {
-        id: true,
-      },
-    });
+    const currentPreferences =
+      await this.notificationsService.getCustomerPreferences(supabaseUserId);
+    const updatedPreferences =
+      await this.notificationsService.updateCustomerPreferences(supabaseUserId, {
+        ...currentPreferences,
+        entries: currentPreferences.entries.map((entry) => {
+          if (entry.category === "money_movement") {
+            return {
+              ...entry,
+              channels: entry.channels.map((channel) =>
+                channel.channel === "email"
+                  ? {
+                      ...channel,
+                      enabled:
+                        input.depositEmails || input.withdrawalEmails,
+                    }
+                  : channel,
+              ),
+            };
+          }
 
-    if (!customer) {
-      throw new NotFoundException("Customer profile not found.");
-    }
+          if (entry.category === "loans") {
+            return {
+              ...entry,
+              channels: entry.channels.map((channel) =>
+                channel.channel === "email"
+                  ? {
+                      ...channel,
+                      enabled: input.loanEmails,
+                    }
+                  : channel,
+              ),
+            };
+          }
 
-    const updatedCustomer = await this.prismaService.customer.update({
-      where: { id: customer.id },
-      data: {
-        depositEmailNotificationsEnabled: input.depositEmails,
-        withdrawalEmailNotificationsEnabled: input.withdrawalEmails,
-        loanEmailNotificationsEnabled: input.loanEmails,
-        productUpdateEmailNotificationsEnabled: input.productUpdateEmails,
-      },
-      select: {
-        depositEmailNotificationsEnabled: true,
-        withdrawalEmailNotificationsEnabled: true,
-        loanEmailNotificationsEnabled: true,
-        productUpdateEmailNotificationsEnabled: true,
-      },
-    });
+          if (entry.category === "product") {
+            return {
+              ...entry,
+              channels: entry.channels.map((channel) =>
+                channel.channel === "email"
+                  ? {
+                      ...channel,
+                      enabled: input.productUpdateEmails,
+                    }
+                  : channel,
+              ),
+            };
+          }
 
-    return {
-      depositEmails: updatedCustomer.depositEmailNotificationsEnabled,
-      withdrawalEmails: updatedCustomer.withdrawalEmailNotificationsEnabled,
-      loanEmails: updatedCustomer.loanEmailNotificationsEnabled,
-      productUpdateEmails:
-        updatedCustomer.productUpdateEmailNotificationsEnabled,
-    };
+          return entry;
+        }),
+      });
+
+    return this.withLegacyNotificationPreferenceCompatibility(updatedPreferences);
   }
 
   async updateAgeProfile(

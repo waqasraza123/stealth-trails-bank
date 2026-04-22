@@ -4,7 +4,7 @@ import { AppScreen } from "../components/ui/AppScreen";
 import { AppButton } from "../components/ui/AppButton";
 import { AppText } from "../components/ui/AppText";
 import { InlineNotice } from "../components/ui/InlineNotice";
-import { LanguageToggle } from "../components/ui/LanguageToggle";
+import { ScreenHeaderActions } from "../components/ui/ScreenHeaderActions";
 import { LtrValue } from "../components/ui/LtrValue";
 import { OptionChips } from "../components/ui/OptionChips";
 import { SectionCard } from "../components/ui/SectionCard";
@@ -73,7 +73,7 @@ export function TransactionsScreen() {
     <AppScreen
       title={t("transactions.title")}
       subtitle={t("transactions.description")}
-      trailing={<LanguageToggle />}
+      trailing={<ScreenHeaderActions />}
     >
       <AnimatedSection delayOrder={1} variant="up">
         <SectionCard className="gap-4">

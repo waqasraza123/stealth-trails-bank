@@ -26,6 +26,7 @@ export type MainTabParamList = {
 export type RootStackParamList = {
   MainTabs: undefined;
   Loans: undefined;
+  Notifications: undefined;
   RetirementVault:
     | {
         focus?: "create" | "fund";

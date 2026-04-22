@@ -17,7 +17,7 @@ import { AppText } from "../components/ui/AppText";
 import { FeatureActionCard } from "../components/ui/FeatureActionCard";
 import { FieldInput } from "../components/ui/FieldInput";
 import { InlineNotice } from "../components/ui/InlineNotice";
-import { LanguageToggle } from "../components/ui/LanguageToggle";
+import { ScreenHeaderActions } from "../components/ui/ScreenHeaderActions";
 import { LtrValue } from "../components/ui/LtrValue";
 import { OptionChips } from "../components/ui/OptionChips";
 import { SectionCard } from "../components/ui/SectionCard";
@@ -665,7 +665,7 @@ export function WalletScreen({ initialFocus }: WalletScreenProps = {}) {
     <AppScreen
       title={t("wallet.title")}
       subtitle={t("wallet.description")}
-      trailing={<LanguageToggle />}
+      trailing={<ScreenHeaderActions />}
     >
       {assetsQuery.isError ? (
         <AnimatedSection delayOrder={1}>

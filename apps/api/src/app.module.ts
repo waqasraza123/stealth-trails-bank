@@ -12,6 +12,7 @@ import { GovernedExecutionModule } from "./governed-execution/governed-execution
 import { HealthModule } from "./health/health.module";
 import { LedgerReconciliationModule } from "./ledger-reconciliation/ledger-reconciliation.module";
 import { LoansModule } from "./loans/loans.module";
+import { NotificationsModule } from "./notifications/notifications.module";
 import { OperationsMonitoringModule } from "./operations-monitoring/operations-monitoring.module";
 import { OversightIncidentsModule } from "./oversight-incidents/oversight-incidents.module";
 import { PoolsModule } from "./pools/pools.module";
@@ -40,6 +41,7 @@ import { UserModule } from "./user/user.module";
     GovernedExecutionModule,
     EthereumModule,
     LoansModule,
+    NotificationsModule,
     LedgerReconciliationModule,
     OperationsMonitoringModule,
     SupportedAssetsModule,

@@ -22,6 +22,7 @@ const RetirementVault = lazy(() => import("./pages/RetirementVault"));
 const Loans = lazy(() => import("./pages/Loans"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Yield = lazy(() => import("./pages/Yield"));
+const Notifications = lazy(() => import("./pages/Notifications"));
 const TrustCenter = lazy(() => import("./pages/TrustCenter"));
 const ProofVerification = lazy(() => import("./pages/ProofVerification"));
 const SignIn = lazy(() => import("./pages/auth/SignIn"));
@@ -113,6 +114,14 @@ const App = () => (
                 path="/profile"
                 element={
                   <ProtectedRoute>{withRouteBoundary(<Profile />)}</ProtectedRoute>
+                }
+              />
+              <Route
+                path="/notifications"
+                element={
+                  <ProtectedRoute>
+                    {withRouteBoundary(<Notifications />)}
+                  </ProtectedRoute>
                 }
               />
               <Route

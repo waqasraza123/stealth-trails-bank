@@ -58,6 +58,8 @@ model Customer {
   trustedContacts    CustomerTrustedContact[]
   oversightIncidents OversightIncident[] @relation("OversightIncidentCustomer")
   ledgerReconciliationMismatches LedgerReconciliationMismatch[]
+  notificationFeedItems NotificationFeedItem[]
+  notificationPreferences NotificationPreference[]
 }
 
 model CustomerTrustedContact {
@@ -1863,6 +1865,7 @@ model PlatformAlert {
   createdAt                DateTime                       @default(now())
   updatedAt                DateTime                       @updatedAt
   deliveries               PlatformAlertDelivery[]
+  notificationEvents       NotificationEvent[]
 
   @@index([status, severity, updatedAt])
   @@index([status, routingStatus, updatedAt])
@@ -1901,6 +1904,82 @@ model PlatformAlertDelivery {
   @@index([targetName, status, createdAt])
   @@index([escalatedFromDeliveryId, createdAt])
   @@index([platformAlertId, escalationLevel, createdAt])
+}
+
+model NotificationEvent {
+  id              String                 @id @default(cuid())
+  sourceType      NotificationSourceType
+  sourceId        String
+  audience        NotificationAudience
+  category        NotificationCategory
+  priority        NotificationPriority   @default(normal)
+  title           String
+  summary         String
+  body            String?
+  deepLink        Json?
+  metadata        Json?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  sourceCreatedAt DateTime               @default(now())
+  platformAlertId String?
+  platformAlert   PlatformAlert?         @relation(fields: [platformAlertId], references: [id])
+  feedItems       NotificationFeedItem[]
+
+  @@unique([sourceType, sourceId, audience])
+  @@index([audience, sourceCreatedAt])
+  @@index([category, priority, sourceCreatedAt])
+  @@index([platformAlertId, sourceCreatedAt])
+}
+
+model NotificationFeedItem {
+  id                  String               @id @default(cuid())
+  notificationEventId String
+  notificationEvent   NotificationEvent    @relation(fields: [notificationEventId], references: [id])
+  audience            NotificationAudience
+  recipientKey        String
+  customerId          String?
+  customer            Customer?            @relation(fields: [customerId], references: [id])
+  operatorId          String?
+  operator            Operator?            @relation(fields: [operatorId], references: [id])
+  readAt              DateTime?
+  archivedAt          DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@unique([notificationEventId, recipientKey])
+  @@index([audience, recipientKey, archivedAt, createdAt])
+  @@index([customerId, readAt, archivedAt, createdAt])
+  @@index([operatorId, readAt, archivedAt, createdAt])
+}
+
+model NotificationPreference {
+  id         String               @id @default(cuid())
+  audience   NotificationAudience
+  recipientKey String
+  customerId String?
+  customer   Customer?            @relation(fields: [customerId], references: [id])
+  operatorId String?
+  operator   Operator?            @relation(fields: [operatorId], references: [id])
+  category   NotificationCategory
+  channel    NotificationChannel
+  enabled    Boolean              @default(true)
+  mandatory  Boolean              @default(false)
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  @@unique([audience, recipientKey, category, channel])
+  @@index([recipientKey, category, channel])
+  @@index([customerId, category, channel])
+  @@index([operatorId, category, channel])
+}
+
+model NotificationDeliveryCursor {
+  id            String                 @id @default(cuid())
+  sourceType    NotificationSourceType @unique
+  lastSourceId  String?
+  lastCreatedAt DateTime?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
 }
 
 model ReviewCaseEvent {
@@ -1966,6 +2045,44 @@ enum PlatformAlertSeverity {
 enum PlatformAlertStatus {
   open
   resolved
+}
+
+enum NotificationAudience {
+  customer
+  operator
+}
+
+enum NotificationCategory {
+  security
+  money_movement
+  yield
+  vault
+  loans
+  account
+  governance
+  operations
+  incident
+  product
+}
+
+enum NotificationPriority {
+  critical
+  high
+  normal
+  low
+}
+
+enum NotificationChannel {
+  in_app
+  email
+  push
+}
+
+enum NotificationSourceType {
+  audit_event
+  platform_alert
+  loan_event
+  system_notice
 }
 
 enum PlatformAlertRoutingStatus {
@@ -2346,6 +2463,8 @@ model Operator {
   environmentAccess   OperatorEnvironmentAccess[]
   approvalAuthorities OperatorApprovalAuthority[]
   sessionAudits       OperatorSessionAudit[]
+  notificationFeedItems NotificationFeedItem[]
+  notificationPreferences NotificationPreference[]
   createdAt           DateTime                   @default(now())
   updatedAt           DateTime                   @updatedAt
 

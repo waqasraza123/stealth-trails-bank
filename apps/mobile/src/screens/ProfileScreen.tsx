@@ -11,7 +11,7 @@ import { AppButton } from "../components/ui/AppButton";
 import { AppText } from "../components/ui/AppText";
 import { FieldInput } from "../components/ui/FieldInput";
 import { InlineNotice } from "../components/ui/InlineNotice";
-import { LanguageToggle } from "../components/ui/LanguageToggle";
+import { ScreenHeaderActions } from "../components/ui/ScreenHeaderActions";
 import { LtrValue } from "../components/ui/LtrValue";
 import { OptionChips } from "../components/ui/OptionChips";
 import { SectionCard } from "../components/ui/SectionCard";
@@ -77,6 +77,17 @@ const recommendedAuthenticatorApps = [
   "Google Authenticator",
   "Microsoft Authenticator",
 ];
+
+const buildNotificationToggleItems = (t: ReturnType<typeof useT>) =>
+  [
+    { key: "depositEmails", label: t("profile.deposits") },
+    { key: "withdrawalEmails", label: t("profile.withdrawals") },
+    { key: "loanEmails", label: t("profile.loans") },
+    {
+      key: "productUpdateEmails",
+      label: t("profile.productUpdates"),
+    },
+  ] as const;
 
 function formatSessionLabel(
   session: CustomerSessionProjection,
@@ -626,7 +637,7 @@ export function ProfileScreen() {
     <AppScreen
       title={t("profile.title")}
       subtitle={profile?.email}
-      trailing={<LanguageToggle />}
+      trailing={<ScreenHeaderActions />}
     >
       {profileQuery.isError ? (
         <InlineNotice
@@ -969,15 +980,7 @@ export function ProfileScreen() {
             </AppText>
             {notificationDraft ? (
               <>
-                {[
-                  { key: "depositEmails", label: t("profile.deposits") },
-                  { key: "withdrawalEmails", label: t("profile.withdrawals") },
-                  { key: "loanEmails", label: t("profile.loans") },
-                  {
-                    key: "productUpdateEmails",
-                    label: t("profile.productUpdates"),
-                  },
-                ].map((item) => (
+                {buildNotificationToggleItems(t).map((item) => (
                   <View
                     key={item.key}
                     className="flex-row items-center justify-between rounded-2xl border border-border bg-white px-4 py-4"
@@ -998,9 +1001,7 @@ export function ProfileScreen() {
                         )
                       }
                       value={
-                        notificationDraft[
-                          item.key as keyof typeof notificationDraft
-                        ]
+                        notificationDraft[item.key]
                       }
                     />
                   </View>

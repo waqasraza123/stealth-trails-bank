@@ -1,13 +1,13 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-  Bell,
   CircleHelp,
   Landmark,
   ShieldCheck,
   UserRound,
   Wallet
 } from "lucide-react";
+import { CustomerNotificationBell } from "@/components/notifications/CustomerNotificationBell";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import {
   HeroItem,
@@ -85,10 +85,7 @@ export const Layout = ({ children }: LayoutProps) => {
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <LanguageSwitcher tone="light" />
-                  <div className="stb-data-chip border-white/12 bg-white/6 text-white/84">
-                    <Bell className="h-4 w-4 text-white/70" />
-                    <span>{locale === "ar" ? "لا توجد تنبيهات" : "No alerts"}</span>
-                  </div>
+                  <CustomerNotificationBell />
                   <div className="stb-data-chip border-white/12 bg-white/6 text-white/84">
                     <CircleHelp className="h-4 w-4 text-white/70" />
                     <span>{locale === "ar" ? "المساعدة والأمان" : "Help & safety"}</span>

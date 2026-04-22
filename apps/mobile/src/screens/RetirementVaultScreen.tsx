@@ -8,7 +8,7 @@ import { AppText } from "../components/ui/AppText";
 import { AnimatedSection } from "../components/ui/AnimatedSection";
 import { FieldInput } from "../components/ui/FieldInput";
 import { InlineNotice } from "../components/ui/InlineNotice";
-import { LanguageToggle } from "../components/ui/LanguageToggle";
+import { ScreenHeaderActions } from "../components/ui/ScreenHeaderActions";
 import { OptionChips } from "../components/ui/OptionChips";
 import { SectionCard } from "../components/ui/SectionCard";
 import {
@@ -515,7 +515,7 @@ export function RetirementVaultScreen({
           ? "أنشئ القفل، موّل الرصيد المقفل، ثم افتح الإفراج أو تعديل القاعدة عبر مسار محكوم."
           : "Create the lock, fund the protected balance, then open governed release or rule change when needed."
       }
-      trailing={<LanguageToggle />}
+      trailing={<ScreenHeaderActions />}
     >
       <AnimatedSection delayOrder={1} variant="up">
         <View className="overflow-hidden rounded-[36px] bg-ink px-5 py-6">

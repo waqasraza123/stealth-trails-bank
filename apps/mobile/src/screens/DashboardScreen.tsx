@@ -10,7 +10,7 @@ import { AppButton } from "../components/ui/AppButton";
 import { AppText } from "../components/ui/AppText";
 import { FeatureActionCard } from "../components/ui/FeatureActionCard";
 import { InlineNotice } from "../components/ui/InlineNotice";
-import { LanguageToggle } from "../components/ui/LanguageToggle";
+import { ScreenHeaderActions } from "../components/ui/ScreenHeaderActions";
 import { SectionCard } from "../components/ui/SectionCard";
 import { StatusChip } from "../components/ui/StatusChip";
 import { AnimatedSection } from "../components/ui/AnimatedSection";
@@ -71,7 +71,7 @@ export function DashboardScreen() {
     <AppScreen
       title={t("dashboard.title")}
       subtitle={t("dashboard.description")}
-      trailing={<LanguageToggle />}
+      trailing={<ScreenHeaderActions />}
     >
       {balancesQuery.isError ? (
         <AnimatedSection delayOrder={1}>

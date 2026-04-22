@@ -6,6 +6,7 @@ import { ApiRequestLoggingInterceptor } from "./logging/api-request-logging.inte
 import { assignRequestContext } from "./logging/api-request-context";
 import { ApiRequestMetricsService } from "./logging/api-request-metrics.service";
 import { writeStructuredApiLog } from "./logging/structured-api-logger";
+import { NotificationsRealtimeService } from "./notifications/notifications.realtime.service";
 
 type NodeRequest = {
   url?: string;
@@ -76,6 +77,7 @@ async function getRequestHandler(): Promise<RequestHandler> {
       const { app } = await createApiApp();
 
       await app.init();
+      app.get(NotificationsRealtimeService).attach(app.getHttpServer());
 
       return app.getHttpAdapter().getInstance() as RequestHandler;
     })();
@@ -86,6 +88,8 @@ async function getRequestHandler(): Promise<RequestHandler> {
 
 async function bootstrap() {
   const { app, port } = await createApiApp();
+  await app.init();
+  app.get(NotificationsRealtimeService).attach(app.getHttpServer());
   await app.listen(port);
   writeStructuredApiLog("info", "api_started", {
     port

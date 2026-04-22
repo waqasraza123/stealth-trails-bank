@@ -14,6 +14,7 @@ import {
 } from "react-router-dom";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
+import { OperatorNotificationBell } from "@/components/console/OperatorNotificationBell";
 import { SessionCard } from "@/components/console/SessionCard";
 import { AdminErrorBoundary } from "@/components/system/AdminErrorBoundary";
 import { AdminI18nProvider } from "@/i18n/provider";
@@ -40,6 +41,7 @@ import { LaunchReadinessPage } from "@/pages/LaunchReadinessPage";
 import { LoansPage } from "@/pages/LoansPage";
 import { MfaRecoveryPage } from "@/pages/MfaRecoveryPage";
 import { OperationsPage } from "@/pages/OperationsPage";
+import { NotificationsPage } from "@/pages/NotificationsPage";
 import { QueuesPage } from "@/pages/QueuesPage";
 import { ReconciliationPage } from "@/pages/ReconciliationPage";
 import { StakingGovernancePage } from "@/pages/StakingGovernancePage";
@@ -55,6 +57,7 @@ const queryClient = createAdminQueryClient();
 
 const navItems = [
   { label: "Operations Overview", path: "/operations" },
+  { label: "Notifications", path: "/notifications" },
   { label: "Queues", path: "/queues" },
   { label: "Vaults", path: "/vaults" },
   { label: "Vault Releases", path: "/vault-releases" },
@@ -188,12 +191,18 @@ function AdminConsole() {
             : "Session not saved"
       }
       environmentLabel={configuredSession ? configuredSession.baseUrl : runtimeConfig.serverUrl}
-      topActions={<LanguageSwitcher />}
+      topActions={
+        <>
+          <OperatorNotificationBell />
+          <LanguageSwitcher />
+        </>
+      }
       sidebar={<SessionCard />}
     >
       <Routes>
         <Route path="/" element={<Navigate to="/operations" replace />} />
         <Route path="/operations" element={<OperationsPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/queues" element={<QueuesPage />} />
         <Route path="/vaults" element={<VaultsPage />} />
         <Route path="/vault-releases" element={<VaultReleasesPage />} />
