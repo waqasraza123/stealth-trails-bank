@@ -22,6 +22,7 @@ import {
 } from "@prisma/client";
 import { assertOperatorRoleAuthorized } from "../auth/internal-operator-role-policy";
 import { LedgerService } from "../ledger/ledger.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { BalanceTransferEmailDeliveryService } from "./balance-transfer-email-delivery.service";
 import { CreateBalanceTransferDto } from "./dto/create-balance-transfer.dto";
@@ -195,9 +196,24 @@ export class BalanceTransfersService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly ledgerService: LedgerService,
-    private readonly emailDeliveryService: BalanceTransferEmailDeliveryService
+    private readonly emailDeliveryService: BalanceTransferEmailDeliveryService,
+    private readonly notificationsService: NotificationsService,
   ) {
     this.productChainId = loadProductChainRuntimeConfig().productChainId;
+  }
+
+  private async appendAuditEvent(
+    transaction: Prisma.TransactionClient,
+    data: Prisma.AuditEventUncheckedCreateInput,
+  ) {
+    const auditEvent = await transaction.auditEvent.create({
+      data,
+    });
+    await this.notificationsService.publishAuditEventRecord(
+      auditEvent,
+      transaction,
+    );
+    return auditEvent;
   }
 
   private normalizeAssetSymbol(value: string): string {
@@ -547,22 +563,20 @@ export class BalanceTransfersService {
       },
     });
 
-    await transaction.auditEvent.create({
-      data: {
-        customerId: input.sender.customerId,
-        actorType: "system",
-        actorId: null,
-        action: "review_case.internal_balance_transfer_review.opened",
-        targetType: "ReviewCase",
-        targetId: reviewCase.id,
-        metadata: {
-          transactionIntentId: input.intentId,
-          customerAccountId: input.sender.customerAccountId,
-          assetSymbol: input.assetSymbol,
-          amount: input.amount.toString(),
-          recipientMaskedDisplay: input.recipient.maskedDisplay,
-          recipientMaskedEmail: input.recipient.maskedEmail,
-        },
+    await this.appendAuditEvent(transaction, {
+      customerId: input.sender.customerId,
+      actorType: "system",
+      actorId: null,
+      action: "review_case.internal_balance_transfer_review.opened",
+      targetType: "ReviewCase",
+      targetId: reviewCase.id,
+      metadata: {
+        transactionIntentId: input.intentId,
+        customerAccountId: input.sender.customerAccountId,
+        assetSymbol: input.assetSymbol,
+        amount: input.amount.toString(),
+        recipientMaskedDisplay: input.recipient.maskedDisplay,
+        recipientMaskedEmail: input.recipient.maskedEmail,
       },
     });
 
@@ -612,18 +626,16 @@ export class BalanceTransfersService {
       },
     });
 
-    await transaction.auditEvent.create({
-      data: {
-        customerId: input.intent.customerAccount?.customer.id ?? null,
-        actorType: "operator",
-        actorId: input.operatorId,
-        action: "review_case.internal_balance_transfer_review.resolved",
-        targetType: "ReviewCase",
-        targetId: reviewCase.id,
-        metadata: {
-          transactionIntentId: input.intent.id,
-          note: input.note,
-        },
+    await this.appendAuditEvent(transaction, {
+      customerId: input.intent.customerAccount?.customer.id ?? null,
+      actorType: "operator",
+      actorId: input.operatorId,
+      action: "review_case.internal_balance_transfer_review.resolved",
+      targetType: "ReviewCase",
+      targetId: reviewCase.id,
+      metadata: {
+        transactionIntentId: input.intent.id,
+        note: input.note,
       },
     });
 
@@ -878,29 +890,27 @@ export class BalanceTransfersService {
             amount: requestedAmount,
           });
 
-          await transaction.auditEvent.create({
-            data: {
-              customerId: sender.customerId,
-              actorType: "customer",
-              actorId: supabaseUserId,
-              action: "transaction_intent.internal_balance_transfer.review_required",
-              targetType: "TransactionIntent",
-              targetId: intent.id,
-              metadata: {
-                customerAccountId: sender.customerAccountId,
-                recipientCustomerAccountId: recipient.customerAccountId,
-                assetId: sender.assetId,
-                assetSymbol: sender.assetSymbol,
-                requestedAmount: requestedAmount.toString(),
-                reviewCaseId,
-                recipientMaskedDisplay: recipient.maskedDisplay,
-                recipientMaskedEmail: recipient.maskedEmail,
-                ledgerJournalId: balanceTransition.ledgerJournalId,
-                debitLedgerAccountId: balanceTransition.debitLedgerAccountId,
-                creditLedgerAccountId: balanceTransition.creditLedgerAccountId,
-                senderAvailableBalance: balanceTransition.senderAvailableBalance,
-                senderPendingBalance: balanceTransition.senderPendingBalance,
-              },
+          await this.appendAuditEvent(transaction, {
+            customerId: sender.customerId,
+            actorType: "customer",
+            actorId: supabaseUserId,
+            action: "transaction_intent.internal_balance_transfer.review_required",
+            targetType: "TransactionIntent",
+            targetId: intent.id,
+            metadata: {
+              customerAccountId: sender.customerAccountId,
+              recipientCustomerAccountId: recipient.customerAccountId,
+              assetId: sender.assetId,
+              assetSymbol: sender.assetSymbol,
+              requestedAmount: requestedAmount.toString(),
+              reviewCaseId,
+              recipientMaskedDisplay: recipient.maskedDisplay,
+              recipientMaskedEmail: recipient.maskedEmail,
+              ledgerJournalId: balanceTransition.ledgerJournalId,
+              debitLedgerAccountId: balanceTransition.debitLedgerAccountId,
+              creditLedgerAccountId: balanceTransition.creditLedgerAccountId,
+              senderAvailableBalance: balanceTransition.senderAvailableBalance,
+              senderPendingBalance: balanceTransition.senderPendingBalance,
             },
           });
         } else {
@@ -917,31 +927,29 @@ export class BalanceTransfersService {
             }
           );
 
-          await transaction.auditEvent.create({
-            data: {
-              customerId: sender.customerId,
-              actorType: "customer",
-              actorId: supabaseUserId,
-              action: "transaction_intent.internal_balance_transfer.settled",
-              targetType: "TransactionIntent",
-              targetId: intent.id,
-              metadata: {
-                customerAccountId: sender.customerAccountId,
-                recipientCustomerAccountId: recipient.customerAccountId,
-                assetId: sender.assetId,
-                assetSymbol: sender.assetSymbol,
-                requestedAmount: requestedAmount.toString(),
-                settledAmount: requestedAmount.toString(),
-                recipientMaskedDisplay: recipient.maskedDisplay,
-                recipientMaskedEmail: recipient.maskedEmail,
-                ledgerJournalId: ledgerResult.ledgerJournalId,
-                debitLedgerAccountId: ledgerResult.debitLedgerAccountId,
-                creditLedgerAccountId: ledgerResult.creditLedgerAccountId,
-                senderAvailableBalance: ledgerResult.senderAvailableBalance,
-                senderPendingBalance: ledgerResult.senderPendingBalance,
-                recipientAvailableBalance: ledgerResult.recipientAvailableBalance,
-                recipientPendingBalance: ledgerResult.recipientPendingBalance,
-              },
+          await this.appendAuditEvent(transaction, {
+            customerId: sender.customerId,
+            actorType: "customer",
+            actorId: supabaseUserId,
+            action: "transaction_intent.internal_balance_transfer.settled",
+            targetType: "TransactionIntent",
+            targetId: intent.id,
+            metadata: {
+              customerAccountId: sender.customerAccountId,
+              recipientCustomerAccountId: recipient.customerAccountId,
+              assetId: sender.assetId,
+              assetSymbol: sender.assetSymbol,
+              requestedAmount: requestedAmount.toString(),
+              settledAmount: requestedAmount.toString(),
+              recipientMaskedDisplay: recipient.maskedDisplay,
+              recipientMaskedEmail: recipient.maskedEmail,
+              ledgerJournalId: ledgerResult.ledgerJournalId,
+              debitLedgerAccountId: ledgerResult.debitLedgerAccountId,
+              creditLedgerAccountId: ledgerResult.creditLedgerAccountId,
+              senderAvailableBalance: ledgerResult.senderAvailableBalance,
+              senderPendingBalance: ledgerResult.senderPendingBalance,
+              recipientAvailableBalance: ledgerResult.recipientAvailableBalance,
+              recipientPendingBalance: ledgerResult.recipientPendingBalance,
             },
           });
         }
@@ -1105,32 +1113,30 @@ export class BalanceTransfersService {
           note: dto.note?.trim() ?? null,
         });
 
-        await transaction.auditEvent.create({
-          data: {
-            customerId: senderAccount.customer.id,
-            actorType: "operator",
-            actorId: operatorId,
-            action: "transaction_intent.internal_balance_transfer.approved",
-            targetType: "TransactionIntent",
-            targetId: existingIntent.id,
-            metadata: {
-              customerAccountId: senderAccount.id,
-              recipientCustomerAccountId: recipientAccount.id,
-              assetId: existingIntent.asset.id,
-              assetSymbol: existingIntent.asset.symbol,
-              requestedAmount: existingIntent.requestedAmount.toString(),
-              settledAmount: existingIntent.requestedAmount.toString(),
-              reviewCaseId,
-              operatorRole: normalizedOperatorRole,
-              note: dto.note?.trim() ?? null,
-              ledgerJournalId: ledgerResult.ledgerJournalId,
-              debitLedgerAccountId: ledgerResult.debitLedgerAccountId,
-              creditLedgerAccountId: ledgerResult.creditLedgerAccountId,
-              senderAvailableBalance: ledgerResult.senderAvailableBalance,
-              senderPendingBalance: ledgerResult.senderPendingBalance,
-              recipientAvailableBalance: ledgerResult.recipientAvailableBalance,
-              recipientPendingBalance: ledgerResult.recipientPendingBalance,
-            },
+        await this.appendAuditEvent(transaction, {
+          customerId: senderAccount.customer.id,
+          actorType: "operator",
+          actorId: operatorId,
+          action: "transaction_intent.internal_balance_transfer.approved",
+          targetType: "TransactionIntent",
+          targetId: existingIntent.id,
+          metadata: {
+            customerAccountId: senderAccount.id,
+            recipientCustomerAccountId: recipientAccount.id,
+            assetId: existingIntent.asset.id,
+            assetSymbol: existingIntent.asset.symbol,
+            requestedAmount: existingIntent.requestedAmount.toString(),
+            settledAmount: existingIntent.requestedAmount.toString(),
+            reviewCaseId,
+            operatorRole: normalizedOperatorRole,
+            note: dto.note?.trim() ?? null,
+            ledgerJournalId: ledgerResult.ledgerJournalId,
+            debitLedgerAccountId: ledgerResult.debitLedgerAccountId,
+            creditLedgerAccountId: ledgerResult.creditLedgerAccountId,
+            senderAvailableBalance: ledgerResult.senderAvailableBalance,
+            senderPendingBalance: ledgerResult.senderPendingBalance,
+            recipientAvailableBalance: ledgerResult.recipientAvailableBalance,
+            recipientPendingBalance: ledgerResult.recipientPendingBalance,
           },
         });
       } else {
@@ -1165,30 +1171,28 @@ export class BalanceTransfersService {
           note: dto.note?.trim() ?? dto.denialReason?.trim() ?? null,
         });
 
-        await transaction.auditEvent.create({
-          data: {
-            customerId: senderAccount.customer.id,
-            actorType: "operator",
-            actorId: operatorId,
-            action: "transaction_intent.internal_balance_transfer.denied",
-            targetType: "TransactionIntent",
-            targetId: existingIntent.id,
-            metadata: {
-              customerAccountId: senderAccount.id,
-              recipientCustomerAccountId: recipientAccount.id,
-              assetId: existingIntent.asset.id,
-              assetSymbol: existingIntent.asset.symbol,
-              requestedAmount: existingIntent.requestedAmount.toString(),
-              reviewCaseId,
-              operatorRole: normalizedOperatorRole,
-              note: dto.note?.trim() ?? null,
-              denialReason: dto.denialReason?.trim() ?? null,
-              ledgerJournalId: ledgerResult.ledgerJournalId,
-              debitLedgerAccountId: ledgerResult.debitLedgerAccountId,
-              creditLedgerAccountId: ledgerResult.creditLedgerAccountId,
-              senderAvailableBalance: ledgerResult.senderAvailableBalance,
-              senderPendingBalance: ledgerResult.senderPendingBalance,
-            },
+        await this.appendAuditEvent(transaction, {
+          customerId: senderAccount.customer.id,
+          actorType: "operator",
+          actorId: operatorId,
+          action: "transaction_intent.internal_balance_transfer.denied",
+          targetType: "TransactionIntent",
+          targetId: existingIntent.id,
+          metadata: {
+            customerAccountId: senderAccount.id,
+            recipientCustomerAccountId: recipientAccount.id,
+            assetId: existingIntent.asset.id,
+            assetSymbol: existingIntent.asset.symbol,
+            requestedAmount: existingIntent.requestedAmount.toString(),
+            reviewCaseId,
+            operatorRole: normalizedOperatorRole,
+            note: dto.note?.trim() ?? null,
+            denialReason: dto.denialReason?.trim() ?? null,
+            ledgerJournalId: ledgerResult.ledgerJournalId,
+            debitLedgerAccountId: ledgerResult.debitLedgerAccountId,
+            creditLedgerAccountId: ledgerResult.creditLedgerAccountId,
+            senderAvailableBalance: ledgerResult.senderAvailableBalance,
+            senderPendingBalance: ledgerResult.senderPendingBalance,
           },
         });
       }

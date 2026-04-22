@@ -15,6 +15,7 @@ import { ArchiveNotificationsDto } from "./dto/archive-notifications.dto";
 import { ListNotificationsDto } from "./dto/list-notifications.dto";
 import { MarkNotificationsReadDto } from "./dto/mark-notifications-read.dto";
 import { UpdateNotificationPreferencesDto } from "./dto/update-notification-preferences.dto";
+import { supportedNotificationChannels } from "./notification-preferences.util";
 import { NotificationsService } from "./notifications.service";
 
 @UseGuards(JwtAuthGuard)
@@ -139,6 +140,7 @@ export class NotificationsController {
       request.user.id,
       {
         audience: "customer",
+        supportedChannels: [...supportedNotificationChannels],
         entries: dto.entries.map((entry) => ({
           category: entry.category,
           channels: entry.channels.map((channel) => ({
@@ -157,6 +159,21 @@ export class NotificationsController {
       data: {
         notificationPreferences: result,
       },
+    };
+  }
+
+  @Post("me/socket-session")
+  async createSocketSession(
+    @Request() request: { user: { id: string } },
+  ): Promise<CustomJsonResponse> {
+    const result = await this.notificationsService.createCustomerSocketSession(
+      request.user.id,
+    );
+
+    return {
+      status: "success",
+      message: "Notification socket session created successfully.",
+      data: result,
     };
   }
 }

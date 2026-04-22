@@ -23,7 +23,7 @@ This spec is grounded in repo docs (ADRs, runbooks) and the current implementati
    - Transactions: history list + detail timeline
    - Yield: staking snapshot + governed actions (deposit/withdraw/claim/emergency)
    - Loans: managed lending surface (dashboard, quote preview, submit application, autopay preference)
-   - Profile: account status + lifecycle timestamps, managed wallet detail, password rotation (if allowed), email notification preferences, logout
+   - Profile: account status + lifecycle timestamps, managed wallet detail, password rotation (if allowed), matrix-based notification preferences for in-app and email, logout
 2. **Mobile-first navigation + UX** that preserves “bank-like” clarity:
    - Bottom-tab primary navigation
    - A consistent “status + reference + timeline” pattern for money movement
@@ -123,7 +123,8 @@ type ApiEnvelope<T> = {
 
 - `GET /user/:supabaseUserId` (JWT required, must match token identity)
   - Returns `UserProfileProjection` (see `packages/types/src/user-profile.ts`)
-- `PATCH /user/:supabaseUserId/notification-preferences` (JWT required)
+- `GET /notifications/me/preferences` (JWT required)
+- `PATCH /notifications/me/preferences` (JWT required)
   - Request: `{ depositEmails, withdrawalEmails, loanEmails, productUpdateEmails }`
 
 ### Assets and balances
@@ -177,6 +178,7 @@ type ApiEnvelope<T> = {
   - account lifecycle status (`accountStatus`, timestamps)
   - password rotation availability
   - notification preferences
+  - inbox bell with unread badge and realtime resume
 
 ### Idempotency keys
 
@@ -459,8 +461,10 @@ Actions:
   - validate confirm password matches
   - `PATCH /auth/password`
 - Notification preferences (if available):
-  - toggles for deposit/withdrawal/loan/product updates
-  - `PATCH /user/:id/notification-preferences`
+  - category rows with `In app` and `Email` switches
+  - security channels stay mandatory
+  - `GET /notifications/me/preferences`
+  - `PATCH /notifications/me/preferences`
 - Logout:
   - clear token + user from storage
   - navigate to Sign In
@@ -538,7 +542,7 @@ The mobile app is considered v1-complete when:
 - Yield screen renders snapshot and correctly gates actions; actions succeed when allowed.
 - Profile shows account lifecycle state, allows logout, and:
   - rotates password when available
-  - edits notification preferences when available
+  - edits matrix notification preferences when available
 - Locale switching works for `en` and `ar`, with correct RTL layout.
 
 ## 16) Fork / “Delete backend + contracts” Feasibility Assessment

@@ -127,10 +127,81 @@ describe("profile page", () => {
         closedAt: null,
         passwordRotationAvailable: true,
         notificationPreferences: {
-          depositEmails: true,
-          withdrawalEmails: true,
-          loanEmails: true,
-          productUpdateEmails: false,
+          audience: "customer",
+          supportedChannels: ["in_app", "email"],
+          updatedAt: null,
+          entries: [
+            {
+              category: "security",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: true },
+                { channel: "email", enabled: true, mandatory: true },
+              ],
+            },
+            {
+              category: "money_movement",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: true, mandatory: false },
+              ],
+            },
+            {
+              category: "yield",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: true, mandatory: false },
+              ],
+            },
+            {
+              category: "vault",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: true, mandatory: false },
+              ],
+            },
+            {
+              category: "loans",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: true, mandatory: false },
+              ],
+            },
+            {
+              category: "account",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: true, mandatory: false },
+              ],
+            },
+            {
+              category: "governance",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: false, mandatory: false },
+              ],
+            },
+            {
+              category: "operations",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: false, mandatory: false },
+              ],
+            },
+            {
+              category: "incident",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: false, mandatory: false },
+              ],
+            },
+            {
+              category: "product",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: false, mandatory: false },
+              ],
+            },
+          ],
         },
         ageProfile: {
           dateOfBirth: "1990-04-11",
@@ -291,7 +362,7 @@ describe("profile page", () => {
       screen.getByText(/trusted contacts and beneficiaries/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("switch", { name: /product updates/i }),
+      screen.getByRole("switch", { name: /product email/i }),
     ).toHaveAttribute("data-state", "unchecked");
     expect(
       screen.getByText(
@@ -317,10 +388,81 @@ describe("profile page", () => {
         closedAt: null,
         passwordRotationAvailable: true,
         notificationPreferences: {
-          depositEmails: true,
-          withdrawalEmails: true,
-          loanEmails: true,
-          productUpdateEmails: false,
+          audience: "customer",
+          supportedChannels: ["in_app", "email"],
+          updatedAt: null,
+          entries: [
+            {
+              category: "security",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: true },
+                { channel: "email", enabled: true, mandatory: true },
+              ],
+            },
+            {
+              category: "money_movement",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: true, mandatory: false },
+              ],
+            },
+            {
+              category: "yield",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: true, mandatory: false },
+              ],
+            },
+            {
+              category: "vault",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: true, mandatory: false },
+              ],
+            },
+            {
+              category: "loans",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: true, mandatory: false },
+              ],
+            },
+            {
+              category: "account",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: true, mandatory: false },
+              ],
+            },
+            {
+              category: "governance",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: false, mandatory: false },
+              ],
+            },
+            {
+              category: "operations",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: false, mandatory: false },
+              ],
+            },
+            {
+              category: "incident",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: false, mandatory: false },
+              ],
+            },
+            {
+              category: "product",
+              channels: [
+                { channel: "in_app", enabled: true, mandatory: false },
+                { channel: "email", enabled: false, mandatory: false },
+              ],
+            },
+          ],
         },
         ageProfile: {
           dateOfBirth: "1990-04-11",
@@ -414,17 +556,17 @@ describe("profile page", () => {
     renderWithRouter(<Profile />);
 
     const productUpdatesSwitch = screen.getByRole("switch", {
-      name: /product updates/i,
+      name: /product email/i,
     });
 
     await user.click(productUpdatesSwitch);
     await user.click(screen.getByRole("button", { name: /save preferences/i }));
 
     expect(updateNotificationPreferences).toHaveBeenCalledWith({
-      depositEmails: true,
-      withdrawalEmails: true,
-      loanEmails: true,
-      productUpdateEmails: true,
+      audience: "customer",
+      supportedChannels: ["in_app", "email"],
+      updatedAt: null,
+      entries: expect.any(Array),
     });
     expect(productUpdatesSwitch).toHaveAttribute("data-state", "checked");
     expect(

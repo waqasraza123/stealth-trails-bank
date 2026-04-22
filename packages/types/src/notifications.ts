@@ -38,6 +38,7 @@ export type NotificationPreferenceEntry = {
 
 export type NotificationPreferenceMatrix = {
   audience: NotificationAudience;
+  supportedChannels: NotificationChannel[];
   entries: NotificationPreferenceEntry[];
   updatedAt: string | null;
 };
@@ -53,6 +54,8 @@ export type NotificationDeepLink = {
 export type NotificationFeedItem = {
   id: string;
   audience: NotificationAudience;
+  recipientKey: string;
+  deliverySequence: number;
   category: NotificationCategory;
   priority: NotificationPriority;
   title: string;
@@ -79,4 +82,22 @@ export type NotificationUnreadSummary = {
   unreadCount: number;
   criticalCount: number;
   highCount: number;
+};
+
+export type NotificationSocketSession = {
+  audience: NotificationAudience;
+  recipientKey: string;
+  socketToken: string;
+  expiresAt: string;
+  latestSequence: number;
+  heartbeatIntervalMs: number;
+  supportedChannels: NotificationChannel[];
+};
+
+export type NotificationRealtimeEnvelope<TType extends string, TData> = {
+  type: TType;
+  sequence: number;
+  occurredAt: string;
+  recipientKey: string;
+  data: TData;
 };

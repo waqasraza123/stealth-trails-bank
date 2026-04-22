@@ -38,6 +38,7 @@ import {
 } from "../auth/auth.service";
 import { GovernedExecutionService } from "../governed-execution/governed-execution.service";
 import { LedgerService } from "../ledger/ledger.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { PrismaJsonValue } from "../prisma/prisma-json";
 import { SolvencyService } from "../solvency/solvency.service";
@@ -176,6 +177,7 @@ export class LoansService {
     private readonly prismaService: PrismaService,
     private readonly authService: AuthService,
     private readonly ledgerService: LedgerService,
+    private readonly notificationsService: NotificationsService,
     @Optional()
     private readonly solvencyService?: Pick<SolvencyService, "assertLoanFundingAllowed">,
     @Optional()
@@ -676,7 +678,7 @@ export class LoansService {
       metadata?: Record<string, unknown>;
     }
   ): Promise<void> {
-    await transaction.loanEvent.create({
+    const loanEvent = await transaction.loanEvent.create({
       data: {
         loanApplicationId: input.loanApplicationId ?? null,
         loanAgreementId: input.loanAgreementId ?? null,
@@ -686,8 +688,31 @@ export class LoansService {
         eventType: input.eventType,
         note: input.note ?? null,
         metadata: (input.metadata ?? {}) as PrismaJsonValue
-      }
+      },
+      include: {
+        loanApplication: {
+          select: {
+            id: true,
+            customerAccount: {
+              select: {
+                customerId: true,
+              },
+            },
+          },
+        },
+        loanAgreement: {
+          select: {
+            id: true,
+            customerAccount: {
+              select: {
+                customerId: true,
+              },
+            },
+          },
+        },
+      },
     });
+    await this.notificationsService.publishLoanEventRecord(loanEvent, transaction);
   }
 
   private async maybeCreateOnchainLoan(input: {

@@ -31,6 +31,7 @@ import {
 } from "@stealth-trails-bank/config/api";
 import { PrismaService } from "../prisma/prisma.service";
 import type { PrismaJsonValue } from "../prisma/prisma-json";
+import { NotificationsService } from "../notifications/notifications.service";
 import { ReviewCasesService } from "../review-cases/review-cases.service";
 import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import {
@@ -523,6 +524,7 @@ export class AuthService {
     private readonly customerMfaEmailDeliveryService: CustomerMfaEmailDeliveryService,
     private readonly customerSecurityEmailDeliveryService: CustomerSecurityEmailDeliveryService,
     private readonly reviewCasesService: ReviewCasesService,
+    private readonly notificationsService: NotificationsService,
   ) {
     this.productChainId = loadProductChainRuntimeConfig().productChainId;
     const customerMfaPolicy = loadCustomerMfaPolicyRuntimeConfig();
@@ -824,7 +826,7 @@ export class AuthService {
     targetId?: string | null;
     metadata?: PrismaJsonValue;
   }): Promise<void> {
-    await this.prismaService.auditEvent.create({
+    const auditEvent = await this.prismaService.auditEvent.create({
       data: {
         customerId: input.customerId,
         actorType: "customer",
@@ -835,6 +837,7 @@ export class AuthService {
         metadata: input.metadata,
       },
     });
+    await this.notificationsService.publishAuditEventRecord(auditEvent);
   }
 
   private async appendOperatorAuditEvent(input: {
@@ -845,7 +848,7 @@ export class AuthService {
     targetId?: string | null;
     metadata?: PrismaJsonValue;
   }): Promise<void> {
-    await this.prismaService.auditEvent.create({
+    const auditEvent = await this.prismaService.auditEvent.create({
       data: {
         customerId: input.customerId,
         actorType: "operator",
@@ -856,6 +859,7 @@ export class AuthService {
         metadata: input.metadata,
       },
     });
+    await this.notificationsService.publishAuditEventRecord(auditEvent);
   }
 
   private normalizeSessionPlatform(

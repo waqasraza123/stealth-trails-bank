@@ -2,7 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  NotFoundException
+  NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import {
   loadDepositRiskPolicyRuntimeConfig,
@@ -25,6 +26,7 @@ import {
 } from "@prisma/client";
 import { assertOperatorRoleAuthorized } from "../auth/internal-operator-role-policy";
 import { LedgerService } from "../ledger/ledger.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReviewCasesService } from "../review-cases/review-cases.service";
 import { ConfirmDepositIntentDto } from "./dto/confirm-deposit-intent.dto";
@@ -278,7 +280,12 @@ export class TransactionIntentsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly ledgerService: LedgerService,
-    private readonly reviewCasesService: ReviewCasesService
+    private readonly reviewCasesService: ReviewCasesService,
+    @Optional()
+    private readonly notificationsService?: Pick<
+      NotificationsService,
+      "publishAuditEventRecord"
+    >,
   ) {
     this.productChainId = loadProductChainRuntimeConfig().productChainId;
     const sensitiveActionPolicyConfig =
@@ -296,6 +303,22 @@ export class TransactionIntentsService {
         new Prisma.Decimal(threshold.maxRequestedAmount)
       ])
     );
+  }
+
+  private async appendAuditEvent(
+    transaction: Prisma.TransactionClient,
+    args: Prisma.AuditEventCreateArgs,
+  ) {
+    const auditEvent = await transaction.auditEvent.create(args);
+
+    if (this.notificationsService) {
+      await this.notificationsService.publishAuditEventRecord(
+        auditEvent,
+        transaction,
+      );
+    }
+
+    return auditEvent;
   }
 
   private assertCanDecideTransactionIntent(operatorRole?: string): string {
@@ -607,7 +630,7 @@ export class TransactionIntentsService {
       }
     });
 
-    await transaction.auditEvent.create({
+    await this.appendAuditEvent(transaction, {
       data: {
         customerId: existingReviewCase.customerId,
         actorType: "operator",
@@ -677,7 +700,7 @@ export class TransactionIntentsService {
       }
     });
 
-    await transaction.auditEvent.create({
+    await this.appendAuditEvent(transaction, {
       data: {
         customerId: intent.customerAccount!.customer.id,
         actorType: actor.actorType,
@@ -1231,7 +1254,7 @@ export class TransactionIntentsService {
             });
           }
 
-          await transaction.auditEvent.create({
+          await this.appendAuditEvent(transaction, {
             data: {
               customerId: context.customerId,
               actorType: "customer",
@@ -1471,7 +1494,7 @@ export class TransactionIntentsService {
           normalizedNote
         );
 
-        await transaction.auditEvent.create({
+        await this.appendAuditEvent(transaction, {
           data: {
             customerId: existingIntent.customerAccount!.customer.id,
             actorType: "operator",
@@ -1682,7 +1705,7 @@ export class TransactionIntentsService {
           }
         });
 
-        await transaction.auditEvent.create({
+        await this.appendAuditEvent(transaction, {
           data: {
             customerId: existingIntent.customerAccount!.customer.id,
             actorType: "operator",
@@ -2057,7 +2080,7 @@ export class TransactionIntentsService {
           }
         });
 
-        await transaction.auditEvent.create({
+        await this.appendAuditEvent(transaction, {
           data: {
             customerId: currentIntent.customerAccount!.customer.id,
             actorType: actor.actorType,
@@ -2368,7 +2391,7 @@ export class TransactionIntentsService {
           }
         });
 
-        await transaction.auditEvent.create({
+        await this.appendAuditEvent(transaction, {
           data: {
             customerId: currentIntent.customerAccount!.customer.id,
             actorType: actor.actorType,
@@ -2894,7 +2917,7 @@ export class TransactionIntentsService {
           }
         });
 
-        await transaction.auditEvent.create({
+        await this.appendAuditEvent(transaction, {
           data: {
             customerId: currentIntent.customerAccount!.customer.id,
             actorType: actor.actorType,
@@ -3327,7 +3350,7 @@ export class TransactionIntentsService {
           }
         });
 
-        await transaction.auditEvent.create({
+        await this.appendAuditEvent(transaction, {
           data: {
             customerId: currentIntent.customerAccount!.customer.id,
             actorType: actor.actorType,

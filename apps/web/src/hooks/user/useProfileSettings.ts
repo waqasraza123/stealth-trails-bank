@@ -389,8 +389,10 @@ export function useUpdateNotificationPreferences() {
         const response = await axios.patch<
           ApiResponse<UpdateNotificationPreferencesResult>
         >(
-          `${webRuntimeConfig.serverUrl}/user/${user.supabaseUserId}/notification-preferences`,
-          input,
+          `${webRuntimeConfig.serverUrl}/notifications/me/preferences`,
+          {
+            entries: input.entries,
+          },
           {
             headers: {
               ...buildWebAuthHeaders(token),

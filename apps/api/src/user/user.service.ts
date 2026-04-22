@@ -76,13 +76,6 @@ type UpdateTrustedContactInput = {
   note?: string;
 };
 
-type LegacyNotificationPreferenceInput = {
-  depositEmails: boolean;
-  withdrawalEmails: boolean;
-  loanEmails: boolean;
-  productUpdateEmails: boolean;
-};
-
 @Injectable()
 export class UserService {
   private readonly stepUpFreshnessMs: number;
@@ -386,29 +379,6 @@ export class UserService {
     };
   }
 
-  private withLegacyNotificationPreferenceCompatibility(
-    preferences: {
-      audience: CustomerNotificationPreferences["audience"];
-      entries: CustomerNotificationPreferences["entries"];
-      updatedAt: CustomerNotificationPreferences["updatedAt"];
-    },
-  ): CustomerNotificationPreferences {
-    const readEmailPreference = (
-      category: CustomerNotificationPreferences["entries"][number]["category"],
-    ) =>
-      preferences.entries
-        .find((entry) => entry.category === category)
-        ?.channels.find((channel) => channel.channel === "email")?.enabled ?? false;
-
-    return {
-      ...preferences,
-      depositEmails: readEmailPreference("money_movement"),
-      withdrawalEmails: readEmailPreference("money_movement"),
-      loanEmails: readEmailPreference("loans"),
-      productUpdateEmails: readEmailPreference("product"),
-    };
-  }
-
   private resolveProfileEthereumAddress(
     walletProjection: CustomerWalletProjection | null,
     legacyUser: LegacyUserProfile | null,
@@ -528,9 +498,7 @@ export class UserService {
         customerProjection.customer.id,
       );
       const notificationPreferences =
-        this.withLegacyNotificationPreferenceCompatibility(
-          await this.notificationsService.getCustomerPreferences(supabaseUserId),
-        );
+        await this.notificationsService.getCustomerPreferences(supabaseUserId);
 
       return this.mapCustomerProjectionWithWalletOverlay(
         customerProjection,
@@ -552,66 +520,6 @@ export class UserService {
 
       return this.mapLegacyUserProfile(legacyUser);
     }
-  }
-
-  async updateNotificationPreferences(
-    supabaseUserId: string,
-    input: LegacyNotificationPreferenceInput,
-  ): Promise<CustomerNotificationPreferences> {
-    const currentPreferences =
-      await this.notificationsService.getCustomerPreferences(supabaseUserId);
-    const updatedPreferences =
-      await this.notificationsService.updateCustomerPreferences(supabaseUserId, {
-        ...currentPreferences,
-        entries: currentPreferences.entries.map((entry) => {
-          if (entry.category === "money_movement") {
-            return {
-              ...entry,
-              channels: entry.channels.map((channel) =>
-                channel.channel === "email"
-                  ? {
-                      ...channel,
-                      enabled:
-                        input.depositEmails || input.withdrawalEmails,
-                    }
-                  : channel,
-              ),
-            };
-          }
-
-          if (entry.category === "loans") {
-            return {
-              ...entry,
-              channels: entry.channels.map((channel) =>
-                channel.channel === "email"
-                  ? {
-                      ...channel,
-                      enabled: input.loanEmails,
-                    }
-                  : channel,
-              ),
-            };
-          }
-
-          if (entry.category === "product") {
-            return {
-              ...entry,
-              channels: entry.channels.map((channel) =>
-                channel.channel === "email"
-                  ? {
-                      ...channel,
-                      enabled: input.productUpdateEmails,
-                    }
-                  : channel,
-              ),
-            };
-          }
-
-          return entry;
-        }),
-      });
-
-    return this.withLegacyNotificationPreferenceCompatibility(updatedPreferences);
   }
 
   async updateAgeProfile(

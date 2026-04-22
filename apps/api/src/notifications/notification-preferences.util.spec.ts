@@ -49,10 +49,11 @@ describe("notification-preferences.util", () => {
     ).toBe(false);
   });
 
-  it("normalizes customer matrices by re-enabling mandatory channels", () => {
+  it("normalizes customer matrices by re-enabling mandatory channels and dropping unsupported channels", () => {
     const normalized = normalizeNotificationPreferenceMatrix(
       {
         audience: "customer",
+        supportedChannels: ["in_app", "email"],
         updatedAt: null,
         entries: [
           {
@@ -96,12 +97,9 @@ describe("notification-preferences.util", () => {
         enabled: true,
         mandatory: true,
       });
-    expect(securityEntry?.channels.find((channel) => channel.channel === "push"))
-      .toEqual({
-        channel: "push",
-        enabled: true,
-        mandatory: false,
-      });
+    expect(
+      securityEntry?.channels.find((channel) => channel.channel === "push"),
+    ).toBeUndefined();
   });
 
   it("marks operator incident and operations in-app channels as mandatory and builds recipient keys", () => {

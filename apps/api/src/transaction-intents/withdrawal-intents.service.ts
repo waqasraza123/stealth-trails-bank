@@ -28,6 +28,7 @@ import {
 import { assertOperatorRoleAuthorized } from "../auth/internal-operator-role-policy";
 import { GovernedExecutionService } from "../governed-execution/governed-execution.service";
 import { LedgerService } from "../ledger/ledger.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReviewCasesService } from "../review-cases/review-cases.service";
 import { SolvencyService } from "../solvency/solvency.service";
@@ -379,7 +380,12 @@ export class WithdrawalIntentsService {
     private readonly governedExecutionService?: Pick<
       GovernedExecutionService,
       "assertManagedWithdrawalExecutionAllowed"
-    >
+    >,
+    @Optional()
+    private readonly notificationsService?: Pick<
+      NotificationsService,
+      "publishAuditEventRecord"
+    >,
   ) {
     this.productChainId = loadProductChainRuntimeConfig().productChainId;
     const sensitiveActionPolicyConfig =
@@ -435,6 +441,22 @@ export class WithdrawalIntentsService {
     }
 
     return WithdrawalExecutionFailureCategory.permanent;
+  }
+
+  private async appendAuditEvent(
+    transaction: Prisma.TransactionClient,
+    args: Prisma.AuditEventCreateArgs,
+  ) {
+    const auditEvent = await transaction.auditEvent.create(args);
+
+    if (this.notificationsService) {
+      await this.notificationsService.publishAuditEventRecord(
+        auditEvent,
+        transaction,
+      );
+    }
+
+    return auditEvent;
   }
 
   private resolveWithdrawalExecutionFailureResolution(args: {
@@ -1055,7 +1077,7 @@ export class WithdrawalIntentsService {
               amount: requestedAmount
             });
 
-          await transaction.auditEvent.create({
+          await this.appendAuditEvent(transaction, {
             data: {
               customerId: context.customerId,
               actorType: "customer",
@@ -1269,7 +1291,7 @@ export class WithdrawalIntentsService {
           }
         });
 
-        await transaction.auditEvent.create({
+        await this.appendAuditEvent(transaction, {
           data: {
             customerId: existingIntent.customerAccount!.customer.id,
             actorType: "operator",
@@ -1507,7 +1529,7 @@ export class WithdrawalIntentsService {
           }
         });
 
-        await transaction.auditEvent.create({
+        await this.appendAuditEvent(transaction, {
           data: {
             customerId: existingIntent.customerAccount!.customer.id,
             actorType: "operator",
@@ -1917,7 +1939,7 @@ export class WithdrawalIntentsService {
         });
       }
 
-      await transaction.auditEvent.create({
+      await this.appendAuditEvent(transaction, {
         data: {
           customerId: currentIntent.customerAccount!.customer.id,
           actorType: "worker",
@@ -2182,7 +2204,7 @@ export class WithdrawalIntentsService {
           }
         });
 
-        await transaction.auditEvent.create({
+        await this.appendAuditEvent(transaction, {
           data: {
             customerId: currentIntent.customerAccount!.customer.id,
             actorType: "worker",
@@ -2503,7 +2525,7 @@ export class WithdrawalIntentsService {
           }
         });
 
-        await transaction.auditEvent.create({
+        await this.appendAuditEvent(transaction, {
           data: {
             customerId: currentIntent.customerAccount!.customer.id,
             actorType: actor.actorType,
@@ -2834,7 +2856,7 @@ export class WithdrawalIntentsService {
           }
         });
 
-        await transaction.auditEvent.create({
+        await this.appendAuditEvent(transaction, {
           data: {
             customerId: currentIntent.customerAccount!.customer.id,
             actorType: actor.actorType,
@@ -3308,7 +3330,7 @@ export class WithdrawalIntentsService {
           }
         });
 
-        await transaction.auditEvent.create({
+        await this.appendAuditEvent(transaction, {
           data: {
             customerId: currentIntent.customerAccount!.customer.id,
             actorType: actor.actorType,
@@ -3606,7 +3628,7 @@ export class WithdrawalIntentsService {
           }
         });
 
-        await transaction.auditEvent.create({
+        await this.appendAuditEvent(transaction, {
           data: {
             customerId: currentIntent.customerAccount!.customer.id,
             actorType: actor.actorType,

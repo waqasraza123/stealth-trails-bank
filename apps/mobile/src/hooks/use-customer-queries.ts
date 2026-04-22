@@ -973,7 +973,9 @@ export function useUpdateNotificationPreferencesMutation() {
     mutationFn: async (input: CustomerNotificationPreferences) => {
       const response = await apiClient.patch<
         ApiEnvelope<UpdateNotificationPreferencesResult>
-      >(`/user/${user?.supabaseUserId}/notification-preferences`, input);
+      >("/notifications/me/preferences", {
+        entries: input.entries,
+      });
 
       if (response.data.status !== "success" || !response.data.data) {
         throw new Error(

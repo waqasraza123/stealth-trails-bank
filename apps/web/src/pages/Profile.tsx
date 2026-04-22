@@ -88,16 +88,134 @@ function sameNotificationPreferences(
   left: CustomerNotificationPreferences | null,
   right: CustomerNotificationPreferences | null,
 ): boolean {
-  if (!left || !right) {
-    return left === right;
+  const normalizedLeft = coerceNotificationPreferences(left);
+  const normalizedRight = coerceNotificationPreferences(right);
+
+  if (!normalizedLeft || !normalizedRight) {
+    return normalizedLeft === normalizedRight;
   }
 
-  return (
-    left.depositEmails === right.depositEmails &&
-    left.withdrawalEmails === right.withdrawalEmails &&
-    left.loanEmails === right.loanEmails &&
-    left.productUpdateEmails === right.productUpdateEmails
-  );
+  return JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight);
+}
+
+const notificationCategoryLabels: Record<
+  CustomerNotificationPreferences["entries"][number]["category"],
+  string
+> = {
+  security: "Security",
+  money_movement: "Money movement",
+  yield: "Yield",
+  vault: "Retirement vault",
+  loans: "Loans",
+  account: "Account",
+  governance: "Governance",
+  operations: "Operations",
+  incident: "Incident",
+  product: "Product",
+};
+
+const notificationChannelLabels = {
+  in_app: "In app",
+  email: "Email",
+  push: "Push",
+} as const;
+
+function coerceNotificationPreferences(
+  value: CustomerNotificationPreferences | null | undefined,
+): CustomerNotificationPreferences | null {
+  if (!value) {
+    return null;
+  }
+
+  if (Array.isArray((value as { entries?: unknown }).entries)) {
+    return value;
+  }
+
+  const legacyValue = value as Record<string, unknown>;
+  const moneyMovementEmail =
+    legacyValue.depositEmails === true || legacyValue.withdrawalEmails === true;
+
+  return {
+    audience: "customer",
+    supportedChannels: ["in_app", "email"],
+    updatedAt: null,
+    entries: [
+      {
+        category: "security",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: true },
+          { channel: "email", enabled: true, mandatory: true },
+        ],
+      },
+      {
+        category: "money_movement",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: moneyMovementEmail, mandatory: false },
+        ],
+      },
+      {
+        category: "yield",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: true, mandatory: false },
+        ],
+      },
+      {
+        category: "vault",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: true, mandatory: false },
+        ],
+      },
+      {
+        category: "loans",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: legacyValue.loanEmails !== false, mandatory: false },
+        ],
+      },
+      {
+        category: "account",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: true, mandatory: false },
+        ],
+      },
+      {
+        category: "governance",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: false, mandatory: false },
+        ],
+      },
+      {
+        category: "operations",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: false, mandatory: false },
+        ],
+      },
+      {
+        category: "incident",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: false, mandatory: false },
+        ],
+      },
+      {
+        category: "product",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          {
+            channel: "email",
+            enabled: legacyValue.productUpdateEmails === true,
+            mandatory: false,
+          },
+        ],
+      },
+    ],
+  };
 }
 
 function formatSessionLabel(session: CustomerSessionProjection): string {
@@ -298,7 +416,7 @@ const Profile = () => {
   );
 
   useEffect(() => {
-    setNotificationDraft(profile?.notificationPreferences ?? null);
+    setNotificationDraft(coerceNotificationPreferences(profile?.notificationPreferences));
   }, [profile?.notificationPreferences]);
 
   useEffect(() => {
@@ -1193,7 +1311,7 @@ const Profile = () => {
                   </div>
                   <p className="mt-2 text-sm text-muted-foreground">
                     {notificationPreferencesAvailable
-                      ? "Customer-editable email preferences are available for transaction, lending, and product update notices."
+                      ? "Customer notification delivery is now managed as a category-by-channel matrix across in-app and email delivery."
                       : "This profile does not yet expose customer-editable notification preferences, so the section below remains read-only."}
                   </p>
                 </div>
@@ -1602,7 +1720,7 @@ const Profile = () => {
 
               <Card className="glass-card">
                 <CardHeader>
-                  <CardTitle>Email Notification Preferences</CardTitle>
+                  <CardTitle>Notification Preferences</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div
@@ -1610,11 +1728,12 @@ const Profile = () => {
                     data-tone="neutral"
                   >
                     <p className="text-sm font-medium text-foreground">
-                      Mandatory security notices
+                      Matrix-based delivery
                     </p>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      Account-risk, security, and lifecycle restriction notices
-                      remain enabled and are not customer-configurable.
+                      Security notices remain mandatory. This matrix controls
+                      supported delivery channels for the rest of the customer
+                      notification system.
                     </p>
                   </div>
 
@@ -1636,58 +1755,75 @@ const Profile = () => {
 
                   {notificationDraft ? (
                     <>
-                      {[
-                        {
-                          key: "depositEmails" as const,
-                          label: "Deposit emails",
-                          description:
-                            "Receive email updates when deposit requests are created, approved, or settled.",
-                        },
-                        {
-                          key: "withdrawalEmails" as const,
-                          label: "Withdrawal emails",
-                          description:
-                            "Receive email updates for withdrawal review, execution, and settlement state changes.",
-                        },
-                        {
-                          key: "loanEmails" as const,
-                          label: "Loan emails",
-                          description:
-                            "Receive servicing, repayment, grace-period, and managed lending status updates.",
-                        },
-                        {
-                          key: "productUpdateEmails" as const,
-                          label: "Product updates",
-                          description:
-                            "Receive product notices about supported features and managed account changes.",
-                        },
-                      ].map((item) => (
+                      {notificationDraft.entries.map((entry) => (
                         <div
-                          key={item.key}
+                          key={entry.category}
                           className="stb-section-frame flex items-start justify-between gap-4 p-4"
                         >
-                          <div className="space-y-1">
+                          <div className="min-w-0 flex-1 space-y-1">
                             <p className="text-sm font-medium text-foreground">
-                              {item.label}
+                              {notificationCategoryLabels[entry.category]}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              {item.description}
+                              Choose how this category reaches you across the
+                              supported notification channels.
                             </p>
                           </div>
-                          <Switch
-                            aria-label={item.label}
-                            checked={notificationDraft[item.key]}
-                            onCheckedChange={(checked) =>
-                              setNotificationDraft((current) =>
-                                current
-                                  ? {
-                                      ...current,
-                                      [item.key]: checked,
-                                    }
-                                  : current,
+                          <div className="flex flex-wrap items-center justify-end gap-3">
+                            {entry.channels
+                              .filter((channel) =>
+                                notificationDraft.supportedChannels.includes(
+                                  channel.channel,
+                                ),
                               )
-                            }
-                          />
+                              .map((channel) => (
+                                <div
+                                  key={`${entry.category}-${channel.channel}`}
+                                  className="flex items-center gap-2"
+                                >
+                                  <span className="text-xs text-muted-foreground">
+                                    {notificationChannelLabels[channel.channel]}
+                                  </span>
+                                  <Switch
+                                    aria-label={`${notificationCategoryLabels[entry.category]} ${notificationChannelLabels[channel.channel]}`}
+                                    checked={channel.enabled}
+                                    disabled={channel.mandatory}
+                                    onCheckedChange={(checked) =>
+                                      setNotificationDraft((current) =>
+                                        current
+                                          ? {
+                                              ...current,
+                                              entries: current.entries.map(
+                                                (candidate) =>
+                                                  candidate.category !==
+                                                  entry.category
+                                                    ? candidate
+                                                    : {
+                                                        ...candidate,
+                                                        channels:
+                                                          candidate.channels.map(
+                                                            (
+                                                              candidateChannel,
+                                                            ) =>
+                                                              candidateChannel.channel !==
+                                                              channel.channel
+                                                                ? candidateChannel
+                                                                : {
+                                                                    ...candidateChannel,
+                                                                    enabled:
+                                                                      checked,
+                                                                  },
+                                                          ),
+                                                      },
+                                              ),
+                                            }
+                                          : current,
+                                      )
+                                    }
+                                  />
+                                </div>
+                              ))}
+                          </div>
                         </div>
                       ))}
                       <Button

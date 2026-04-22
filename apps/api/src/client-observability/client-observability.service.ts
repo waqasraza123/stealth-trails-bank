@@ -8,6 +8,7 @@ import {
   PlatformAlertStatus,
   Prisma
 } from "@prisma/client";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlatformAlertDeliveryService } from "../operations-monitoring/platform-alert-delivery.service";
 import type { PrismaJsonValue } from "../prisma/prisma-json";
@@ -48,7 +49,8 @@ function isJsonObject(
 export class ClientObservabilityService {
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly platformAlertDeliveryService: PlatformAlertDeliveryService
+    private readonly platformAlertDeliveryService: PlatformAlertDeliveryService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private trimToNull(value: string | null | undefined): string | null {
@@ -282,6 +284,7 @@ export class ClientObservabilityService {
           lastDetectedAt: detectedAt
         }
       });
+      await this.notificationsService.publishPlatformAlertRecord(createdAlert);
 
       void this.platformAlertDeliveryService.enqueueAlertEvent({
         alert: this.buildDeliveryPayload(createdAlert),
@@ -336,6 +339,7 @@ export class ClientObservabilityService {
         lastDetectedAt: detectedAt
       }
     });
+    await this.notificationsService.publishPlatformAlertRecord(updatedAlert);
 
     if (reopened) {
       void this.platformAlertDeliveryService.enqueueAlertEvent({

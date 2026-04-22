@@ -79,16 +79,125 @@ const recommendedAuthenticatorApps = [
   "Microsoft Authenticator",
 ];
 
-const buildNotificationToggleItems = (t: ReturnType<typeof useT>) =>
-  [
-    { key: "depositEmails", label: t("profile.deposits") },
-    { key: "withdrawalEmails", label: t("profile.withdrawals") },
-    { key: "loanEmails", label: t("profile.loans") },
-    {
-      key: "productUpdateEmails",
-      label: t("profile.productUpdates"),
-    },
-  ] as const;
+const notificationCategoryLabels: Record<
+  CustomerNotificationPreferences["entries"][number]["category"],
+  string
+> = {
+  security: "Security",
+  money_movement: "Money movement",
+  yield: "Yield",
+  vault: "Retirement vault",
+  loans: "Loans",
+  account: "Account",
+  governance: "Governance",
+  operations: "Operations",
+  incident: "Incident",
+  product: "Product",
+};
+
+const notificationChannelLabels = {
+  in_app: "In app",
+  email: "Email",
+  push: "Push",
+} as const;
+
+function coerceNotificationPreferences(
+  value: CustomerNotificationPreferences | null | undefined,
+): CustomerNotificationPreferences | null {
+  if (!value) {
+    return null;
+  }
+
+  if (Array.isArray((value as { entries?: unknown }).entries)) {
+    return value;
+  }
+
+  const legacyValue = value as Record<string, unknown>;
+  const moneyMovementEmail =
+    legacyValue.depositEmails === true || legacyValue.withdrawalEmails === true;
+
+  return {
+    audience: "customer",
+    supportedChannels: ["in_app", "email"],
+    updatedAt: null,
+    entries: [
+      {
+        category: "security",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: true },
+          { channel: "email", enabled: true, mandatory: true },
+        ],
+      },
+      {
+        category: "money_movement",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: moneyMovementEmail, mandatory: false },
+        ],
+      },
+      {
+        category: "yield",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: true, mandatory: false },
+        ],
+      },
+      {
+        category: "vault",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: true, mandatory: false },
+        ],
+      },
+      {
+        category: "loans",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: legacyValue.loanEmails !== false, mandatory: false },
+        ],
+      },
+      {
+        category: "account",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: true, mandatory: false },
+        ],
+      },
+      {
+        category: "governance",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: false, mandatory: false },
+        ],
+      },
+      {
+        category: "operations",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: false, mandatory: false },
+        ],
+      },
+      {
+        category: "incident",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          { channel: "email", enabled: false, mandatory: false },
+        ],
+      },
+      {
+        category: "product",
+        channels: [
+          { channel: "in_app", enabled: true, mandatory: false },
+          {
+            channel: "email",
+            enabled: legacyValue.productUpdateEmails === true,
+            mandatory: false,
+          },
+        ],
+      },
+    ],
+  };
+}
 
 function formatSessionLabel(
   session: CustomerSessionProjection,
@@ -256,7 +365,7 @@ export function ProfileScreen() {
   >(null);
 
   useEffect(() => {
-    setNotificationDraft(profile?.notificationPreferences ?? null);
+    setNotificationDraft(coerceNotificationPreferences(profile?.notificationPreferences));
   }, [profile?.notificationPreferences]);
 
   useEffect(() => {
@@ -915,30 +1024,71 @@ export function ProfileScreen() {
             </AppText>
             {notificationDraft ? (
               <>
-                {buildNotificationToggleItems(t).map((item) => (
+                <InlineNotice
+                  message="Security notifications remain mandatory. Other categories can be configured per supported delivery channel."
+                  tone="neutral"
+                />
+                {notificationDraft.entries.map((entry) => (
                   <View
-                    key={item.key}
-                    className="flex-row items-center justify-between rounded-2xl border border-border bg-white px-4 py-4"
+                    key={entry.category}
+                    className="gap-3 rounded-2xl border border-border bg-white px-4 py-4"
                   >
                     <AppText className="text-sm text-ink" weight="semibold">
-                      {item.label}
+                      {notificationCategoryLabels[entry.category]}
                     </AppText>
-                    <Switch
-                      accessibilityLabel={item.label}
-                      onValueChange={(nextValue) =>
-                        setNotificationDraft((current) =>
-                          current
-                            ? {
-                                ...current,
-                                [item.key]: nextValue,
-                              }
-                            : current,
+                    <View className="gap-3">
+                      {entry.channels
+                        .filter((channel) =>
+                          notificationDraft.supportedChannels.includes(
+                            channel.channel,
+                          ),
                         )
-                      }
-                      value={
-                        notificationDraft[item.key]
-                      }
-                    />
+                        .map((channel) => (
+                          <View
+                            key={`${entry.category}-${channel.channel}`}
+                            className="flex-row items-center justify-between"
+                          >
+                            <AppText className="text-sm text-slate">
+                              {notificationChannelLabels[channel.channel]}
+                            </AppText>
+                            <Switch
+                              accessibilityLabel={`${notificationCategoryLabels[entry.category]} ${notificationChannelLabels[channel.channel]}`}
+                              disabled={channel.mandatory}
+                              onValueChange={(nextValue) =>
+                                setNotificationDraft((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        entries: current.entries.map(
+                                          (candidate) =>
+                                            candidate.category !== entry.category
+                                              ? candidate
+                                              : {
+                                                  ...candidate,
+                                                  channels:
+                                                    candidate.channels.map(
+                                                      (
+                                                        candidateChannel,
+                                                      ) =>
+                                                        candidateChannel.channel !==
+                                                        channel.channel
+                                                          ? candidateChannel
+                                                          : {
+                                                              ...candidateChannel,
+                                                              enabled: nextValue,
+                                                            },
+                                                    ),
+                                                },
+                                        ),
+                                      }
+                                    : current,
+                                )
+                              }
+                              value={channel.enabled}
+                            />
+                          </View>
+                        ))}
+                    </View>
                   </View>
                 ))}
                 <AppButton

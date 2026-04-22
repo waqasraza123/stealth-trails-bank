@@ -39,6 +39,11 @@ export const notificationChannels: NotificationChannel[] = [
   "push",
 ];
 
+export const supportedNotificationChannels: NotificationChannel[] = [
+  "in_app",
+  "email",
+];
+
 export function buildNotificationRecipientKey(
   audience: NotificationAudience,
   recipientId: string,
@@ -124,10 +129,11 @@ export function buildNotificationPreferenceMatrix(args: {
 
   return {
     audience: args.audience,
+    supportedChannels: [...supportedNotificationChannels],
     updatedAt: latestUpdatedAt ? new Date(latestUpdatedAt).toISOString() : null,
     entries: notificationCategories.map((category) => ({
       category,
-      channels: notificationChannels.map((channel) => {
+      channels: supportedNotificationChannels.map((channel) => {
         const row = args.rows?.find(
           (candidate) =>
             candidate.category === category && candidate.channel === channel,
@@ -162,7 +168,9 @@ export function normalizeNotificationPreferenceMatrix(
   return buildNotificationPreferenceMatrix({
     audience,
     rows: matrix.entries.flatMap((entry: NotificationPreferenceMatrix["entries"][number]) =>
-      entry.channels.map(
+      entry.channels
+        .filter((channel) => supportedNotificationChannels.includes(channel.channel))
+        .map(
         (
           channel: NotificationPreferenceMatrix["entries"][number]["channels"][number],
         ) => {

@@ -60,6 +60,8 @@ model Customer {
   ledgerReconciliationMismatches LedgerReconciliationMismatch[]
   notificationFeedItems NotificationFeedItem[]
   notificationPreferences NotificationPreference[]
+  notificationRecipientState NotificationRecipientState?
+  notificationSocketSessions NotificationSocketSession[]
 }
 
 model CustomerTrustedContact {
@@ -1941,12 +1943,14 @@ model NotificationFeedItem {
   customer            Customer?            @relation(fields: [customerId], references: [id])
   operatorId          String?
   operator            Operator?            @relation(fields: [operatorId], references: [id])
+  deliverySequence    Int
   readAt              DateTime?
   archivedAt          DateTime?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
   @@unique([notificationEventId, recipientKey])
+  @@unique([recipientKey, deliverySequence])
   @@index([audience, recipientKey, archivedAt, createdAt])
   @@index([customerId, readAt, archivedAt, createdAt])
   @@index([operatorId, readAt, archivedAt, createdAt])
@@ -1973,13 +1977,38 @@ model NotificationPreference {
   @@index([operatorId, category, channel])
 }
 
-model NotificationDeliveryCursor {
-  id            String                 @id @default(cuid())
-  sourceType    NotificationSourceType @unique
-  lastSourceId  String?
-  lastCreatedAt DateTime?
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
+model NotificationRecipientState {
+  id                   String               @id @default(cuid())
+  audience             NotificationAudience
+  recipientKey         String               @unique
+  customerId           String?              @unique
+  customer             Customer?            @relation(fields: [customerId], references: [id])
+  operatorId           String?              @unique
+  operator             Operator?            @relation(fields: [operatorId], references: [id])
+  latestDeliverySequence Int                @default(0)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  @@index([audience, recipientKey])
+}
+
+model NotificationSocketSession {
+  id                String               @id @default(cuid())
+  audience          NotificationAudience
+  recipientKey      String
+  customerId        String?
+  customer          Customer?            @relation(fields: [customerId], references: [id])
+  operatorId        String?
+  operator          Operator?            @relation(fields: [operatorId], references: [id])
+  tokenHash         String               @unique
+  expiresAt         DateTime
+  lastIssuedSequence Int                 @default(0)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([recipientKey, expiresAt])
+  @@index([customerId, expiresAt])
+  @@index([operatorId, expiresAt])
 }
 
 model ReviewCaseEvent {
@@ -2465,6 +2494,8 @@ model Operator {
   sessionAudits       OperatorSessionAudit[]
   notificationFeedItems NotificationFeedItem[]
   notificationPreferences NotificationPreference[]
+  notificationRecipientState NotificationRecipientState?
+  notificationSocketSessions NotificationSocketSession[]
   createdAt           DateTime                   @default(now())
   updatedAt           DateTime                   @updatedAt
 

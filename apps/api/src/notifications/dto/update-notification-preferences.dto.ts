@@ -10,12 +10,12 @@ import {
 } from "class-validator";
 import {
   notificationCategories,
-  notificationChannels,
+  supportedNotificationChannels,
 } from "../notification-preferences.util";
 
 class UpdateNotificationChannelPreferenceDto {
-  @IsEnum(notificationChannels)
-  channel: (typeof notificationChannels)[number] = "in_app";
+  @IsEnum(supportedNotificationChannels)
+  channel: (typeof supportedNotificationChannels)[number] = "in_app";
 
   @IsBoolean()
   enabled: boolean = true;

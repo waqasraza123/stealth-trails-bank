@@ -1,10 +1,11 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
-  OnModuleDestroy,
-  OnModuleInit,
+  forwardRef,
 } from "@nestjs/common";
+import { createHash, randomBytes } from "crypto";
 import {
   NotificationAudience,
   NotificationCategory,
@@ -19,6 +20,7 @@ import type {
   NotificationFeedItem,
   NotificationFeedResult,
   NotificationPreferenceMatrix,
+  NotificationSocketSession,
   NotificationUnreadSummary,
 } from "@stealth-trails-bank/types";
 import { PrismaService } from "../prisma/prisma.service";
@@ -83,34 +85,21 @@ type FeedItemRecord = Prisma.NotificationFeedItemGetPayload<{
 }>;
 
 @Injectable()
-export class NotificationsService implements OnModuleInit, OnModuleDestroy {
-  private syncPromise: Promise<void> | null = null;
-  private syncInterval: NodeJS.Timeout | null = null;
+export class NotificationsService {
+  private readonly heartbeatIntervalMs = 20_000;
+  private readonly socketSessionLifetimeMs = 60_000;
 
   constructor(
     private readonly prismaService: PrismaService,
+    @Inject(forwardRef(() => NotificationsRealtimeService))
     private readonly realtimeService: NotificationsRealtimeService,
   ) {}
-
-  onModuleInit(): void {
-    this.syncInterval = setInterval(() => {
-      void this.syncSourceStreams();
-    }, 5000);
-  }
-
-  onModuleDestroy(): void {
-    if (this.syncInterval) {
-      clearInterval(this.syncInterval);
-      this.syncInterval = null;
-    }
-  }
 
   async listCustomerNotifications(
     supabaseUserId: string,
     query: ListNotificationsDto,
   ): Promise<NotificationFeedResult> {
     const customer = await this.resolveCustomerOrThrow(supabaseUserId);
-    await this.syncSourceStreams();
     return this.listNotificationsForRecipient(
       "customer",
       customer.id,
@@ -124,7 +113,6 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     supabaseUserId: string,
   ): Promise<NotificationUnreadSummary> {
     const customer = await this.resolveCustomerOrThrow(supabaseUserId);
-    await this.syncSourceStreams();
     return this.buildUnreadSummary("customer", customer.id, customer.id, null);
   }
 
@@ -232,12 +220,6 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         mandatory: row.mandatory,
         updatedAt: row.updatedAt,
       })),
-      legacyEmailPreferences: {
-        depositEmails: customer.depositEmailNotificationsEnabled,
-        withdrawalEmails: customer.withdrawalEmailNotificationsEnabled,
-        loanEmails: customer.loanEmailNotificationsEnabled,
-        productUpdateEmails: customer.productUpdateEmailNotificationsEnabled,
-      },
     });
   }
 
@@ -257,33 +239,20 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       matrix: normalized,
     });
 
-    const emailEnabled = (category: NotificationCategory) =>
-      normalized.entries
-        .find(
-          (
-            entry: NotificationPreferenceMatrix["entries"][number],
-          ) => entry.category === category,
-        )
-        ?.channels.find(
-          (
-            channel: NotificationPreferenceMatrix["entries"][number]["channels"][number],
-          ) => channel.channel === "email",
-        )?.enabled ??
-      false;
-
-    await this.prismaService.customer.update({
-      where: {
-        id: customer.id,
-      },
-      data: {
-        depositEmailNotificationsEnabled: emailEnabled("money_movement"),
-        withdrawalEmailNotificationsEnabled: emailEnabled("money_movement"),
-        loanEmailNotificationsEnabled: emailEnabled("loans"),
-        productUpdateEmailNotificationsEnabled: emailEnabled("product"),
-      },
-    });
-
     return this.getCustomerPreferences(supabaseUserId);
+  }
+
+  async createCustomerSocketSession(
+    supabaseUserId: string,
+  ): Promise<NotificationSocketSession> {
+    const customer = await this.resolveCustomerOrThrow(supabaseUserId);
+    const recipientKey = buildNotificationRecipientKey("customer", customer.id);
+    return this.issueSocketSession(
+      NotificationAudience.customer,
+      recipientKey,
+      customer.id,
+      null,
+    );
   }
 
   async listOperatorNotifications(
@@ -291,7 +260,6 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     query: ListNotificationsDto,
   ): Promise<NotificationFeedResult> {
     const operator = await this.resolveOperatorOrThrow(operatorId);
-    await this.syncSourceStreams();
     return this.listNotificationsForRecipient(
       "operator",
       operator.id,
@@ -305,7 +273,6 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     operatorId: string,
   ): Promise<NotificationUnreadSummary> {
     const operator = await this.resolveOperatorOrThrow(operatorId);
-    await this.syncSourceStreams();
     return this.buildUnreadSummary("operator", operator.id, null, operator.id);
   }
 
@@ -402,6 +369,113 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     return this.getOperatorPreferences(operatorId);
   }
 
+  async createOperatorSocketSession(
+    operatorId: string,
+  ): Promise<NotificationSocketSession> {
+    const operator = await this.resolveOperatorOrThrow(operatorId);
+    const recipientKey = buildNotificationRecipientKey("operator", operator.id);
+    return this.issueSocketSession(
+      NotificationAudience.operator,
+      recipientKey,
+      null,
+      operator.id,
+    );
+  }
+
+  async validateSocketSessionToken(token: string): Promise<{
+    audience: "customer" | "operator";
+    recipientKey: string;
+    customerId: string | null;
+    operatorId: string | null;
+    latestSequence: number;
+    heartbeatIntervalMs: number;
+  } | null> {
+    const tokenHash = this.hashSocketToken(token);
+    const session = await this.prismaService.notificationSocketSession.findUnique({
+      where: {
+        tokenHash,
+      },
+    });
+
+    if (!session || session.expiresAt.getTime() <= Date.now()) {
+      return null;
+    }
+
+    return {
+      audience:
+        session.audience === NotificationAudience.customer ? "customer" : "operator",
+      recipientKey: session.recipientKey,
+      customerId: session.customerId,
+      operatorId: session.operatorId,
+      latestSequence: session.lastIssuedSequence,
+      heartbeatIntervalMs: this.heartbeatIntervalMs,
+    };
+  }
+
+  async listRealtimeEventsAfterSequence(
+    recipientKey: string,
+    afterSequence: number,
+  ): Promise<Array<{
+    item: NotificationFeedItem;
+    unreadSummary: NotificationUnreadSummary;
+  }>> {
+    const rows = await this.prismaService.notificationFeedItem.findMany({
+      where: {
+        recipientKey,
+        deliverySequence: {
+          gt: afterSequence,
+        },
+      },
+      include: {
+        notificationEvent: true,
+      },
+      orderBy: {
+        deliverySequence: "asc",
+      },
+      take: 100,
+    });
+
+    return Promise.all(
+      rows.map(async (row) => ({
+        item: this.mapFeedItem(row),
+        unreadSummary: await this.buildUnreadSummaryForRecipientKey(recipientKey),
+      })),
+    );
+  }
+
+  async publishAuditEventRecord(
+    event: AuditEventRecord,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const projections = await this.projectAuditEvent(event);
+
+    for (const projection of projections) {
+      await this.persistProjection(projection, transaction);
+    }
+  }
+
+  async publishLoanEventRecord(
+    event: LoanEventRecord,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const projections = await this.projectLoanEvent(event);
+
+    for (const projection of projections) {
+      await this.persistProjection(projection, transaction);
+    }
+  }
+
+  async publishPlatformAlertRecord(
+    alert: PlatformAlertRecord,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const projection = await this.projectPlatformAlert(alert);
+
+    if (projection) {
+      await this.persistProjection(projection, transaction);
+    }
+  }
+
   private async persistPreferences(input: {
     audience: NotificationAudience;
     recipientKey: string;
@@ -453,6 +527,81 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  private hashSocketToken(token: string): string {
+    return createHash("sha256").update(token).digest("hex");
+  }
+
+  private async issueSocketSession(
+    audience: NotificationAudience,
+    recipientKey: string,
+    customerId: string | null,
+    operatorId: string | null,
+  ): Promise<NotificationSocketSession> {
+    const socketToken = randomBytes(24).toString("hex");
+    const tokenHash = this.hashSocketToken(socketToken);
+    const recipientState =
+      await this.prismaService.notificationRecipientState.findUnique({
+        where: {
+          recipientKey,
+        },
+      });
+    const expiresAt = new Date(Date.now() + this.socketSessionLifetimeMs);
+
+    await this.prismaService.notificationSocketSession.deleteMany({
+      where: {
+        recipientKey,
+        audience,
+      },
+    });
+
+    await this.prismaService.notificationSocketSession.create({
+      data: {
+        audience,
+        recipientKey,
+        customerId,
+        operatorId,
+        tokenHash,
+        expiresAt,
+        lastIssuedSequence: recipientState?.latestDeliverySequence ?? 0,
+      },
+    });
+
+    return {
+      audience: audience === NotificationAudience.customer ? "customer" : "operator",
+      recipientKey,
+      socketToken,
+      expiresAt: expiresAt.toISOString(),
+      latestSequence: recipientState?.latestDeliverySequence ?? 0,
+      heartbeatIntervalMs: this.heartbeatIntervalMs,
+      supportedChannels: ["in_app", "email"],
+    };
+  }
+
+  private async buildUnreadSummaryForRecipientKey(
+    recipientKey: string,
+  ): Promise<NotificationUnreadSummary> {
+    const rows = await this.prismaService.notificationFeedItem.findMany({
+      where: {
+        recipientKey,
+        readAt: null,
+        archivedAt: null,
+      },
+      include: {
+        notificationEvent: true,
+      },
+    });
+
+    return {
+      unreadCount: rows.length,
+      criticalCount: rows.filter(
+        (row) => row.notificationEvent.priority === NotificationPriority.critical,
+      ).length,
+      highCount: rows.filter(
+        (row) => row.notificationEvent.priority === NotificationPriority.high,
+      ).length,
+    };
+  }
+
   private async listNotificationsForRecipient(
     audience: "customer" | "operator",
     recipientId: string,
@@ -488,9 +637,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         },
         take: limit,
         orderBy: {
-          notificationEvent: {
-            sourceCreatedAt: "desc",
-          },
+          deliverySequence: "desc",
         },
       }),
       this.prismaService.notificationFeedItem.count({
@@ -518,8 +665,8 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   private async buildUnreadSummary(
     audience: "customer" | "operator",
     recipientId: string,
-    customerId: string | null,
-    operatorDbId: string | null,
+    _customerId: string | null,
+    _operatorDbId: string | null,
   ): Promise<NotificationUnreadSummary> {
     const rows = await this.prismaService.notificationFeedItem.findMany({
       where: {
@@ -553,6 +700,8 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     return {
       id: row.id,
       audience: row.audience,
+      recipientKey: row.recipientKey,
+      deliverySequence: row.deliverySequence,
       category: row.notificationEvent.category,
       priority: row.notificationEvent.priority,
       title: row.notificationEvent.title,
@@ -714,166 +863,12 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async syncSourceStreams(): Promise<void> {
-    if (this.syncPromise) {
-      return this.syncPromise;
-    }
-
-    this.syncPromise = (async () => {
-      try {
-        await this.syncAuditEvents();
-        await this.syncLoanEvents();
-        await this.syncPlatformAlerts();
-      } finally {
-        this.syncPromise = null;
-      }
-    })();
-
-    return this.syncPromise;
-  }
-
-  private async syncAuditEvents(): Promise<void> {
-    const cursor = await this.loadCursor(NotificationSourceType.audit_event);
-    const rows = await this.prismaService.auditEvent.findMany({
-      where: cursor.lastCreatedAt
-        ? {
-            createdAt: {
-              gte: cursor.lastCreatedAt,
-            },
-          }
-        : undefined,
-      orderBy: {
-        createdAt: "asc",
-      },
-      take: 200,
-    });
-
-    const events = rows.filter((row) => {
-      if (!cursor.lastCreatedAt) {
-        return true;
-      }
-
-      return (
-        row.createdAt.getTime() > cursor.lastCreatedAt.getTime() ||
-        row.id !== cursor.lastSourceId
-      );
-    });
-
-    for (const event of events) {
-      const projections = await this.projectAuditEvent(event);
-
-      for (const projection of projections) {
-        await this.persistProjection(projection);
-      }
-
-      await this.persistCursor(NotificationSourceType.audit_event, event.id, event.createdAt);
-    }
-  }
-
-  private async syncLoanEvents(): Promise<void> {
-    const cursor = await this.loadCursor(NotificationSourceType.loan_event);
-    const rows = await this.prismaService.loanEvent.findMany({
-      where: cursor.lastCreatedAt
-        ? {
-            createdAt: {
-              gte: cursor.lastCreatedAt,
-            },
-          }
-        : undefined,
-      orderBy: {
-        createdAt: "asc",
-      },
-      take: 200,
-      include: {
-        loanApplication: {
-          select: {
-            id: true,
-            customerAccount: {
-              select: {
-                customerId: true,
-              },
-            },
-          },
-        },
-        loanAgreement: {
-          select: {
-            id: true,
-            customerAccount: {
-              select: {
-                customerId: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    const events = rows.filter((row) => {
-      if (!cursor.lastCreatedAt) {
-        return true;
-      }
-
-      return (
-        row.createdAt.getTime() > cursor.lastCreatedAt.getTime() ||
-        row.id !== cursor.lastSourceId
-      );
-    });
-
-    for (const event of events) {
-      const projections = await this.projectLoanEvent(event);
-
-      for (const projection of projections) {
-        await this.persistProjection(projection);
-      }
-
-      await this.persistCursor(NotificationSourceType.loan_event, event.id, event.createdAt);
-    }
-  }
-
-  private async syncPlatformAlerts(): Promise<void> {
-    const cursor = await this.loadCursor(NotificationSourceType.platform_alert);
-    const rows = await this.prismaService.platformAlert.findMany({
-      where: cursor.lastCreatedAt
-        ? {
-            createdAt: {
-              gte: cursor.lastCreatedAt,
-            },
-          }
-        : undefined,
-      orderBy: {
-        createdAt: "asc",
-      },
-      take: 200,
-    });
-
-    const alerts = rows.filter((row) => {
-      if (!cursor.lastCreatedAt) {
-        return true;
-      }
-
-      return (
-        row.createdAt.getTime() > cursor.lastCreatedAt.getTime() ||
-        row.id !== cursor.lastSourceId
-      );
-    });
-
-    for (const alert of alerts) {
-      const projection = await this.projectPlatformAlert(alert);
-
-      if (projection) {
-        await this.persistProjection(projection);
-      }
-
-      await this.persistCursor(
-        NotificationSourceType.platform_alert,
-        alert.id,
-        alert.createdAt,
-      );
-    }
-  }
-
-  private async persistProjection(input: NotificationProjectionInput): Promise<void> {
-    const event = await this.prismaService.notificationEvent.upsert({
+  private async persistProjection(
+    input: NotificationProjectionInput,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const client = transaction ?? this.prismaService;
+    const event = await client.notificationEvent.upsert({
       where: {
         sourceType_sourceId_audience: {
           sourceType: input.sourceType,
@@ -914,7 +909,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         recipientId,
       );
       const existingFeedItem =
-        await this.prismaService.notificationFeedItem.findUnique({
+        await client.notificationFeedItem.findUnique({
           where: {
             notificationEventId_recipientKey: {
               notificationEventId: event.id,
@@ -930,7 +925,31 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
 
-      const createdFeedItem = await this.prismaService.notificationFeedItem.create({
+      const recipientState = await client.notificationRecipientState.upsert({
+        where: {
+          recipientKey,
+        },
+        update: {
+          latestDeliverySequence: {
+            increment: 1,
+          },
+          customerId:
+            input.audience === NotificationAudience.customer ? recipientId : null,
+          operatorId:
+            input.audience === NotificationAudience.operator ? recipientId : null,
+        },
+        create: {
+          audience: input.audience,
+          recipientKey,
+          customerId:
+            input.audience === NotificationAudience.customer ? recipientId : null,
+          operatorId:
+            input.audience === NotificationAudience.operator ? recipientId : null,
+          latestDeliverySequence: 1,
+        },
+      });
+
+      const createdFeedItem = await client.notificationFeedItem.create({
         data: {
           notificationEventId: event.id,
           audience: input.audience,
@@ -939,18 +958,14 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
             input.audience === NotificationAudience.customer ? recipientId : null,
           operatorId:
             input.audience === NotificationAudience.operator ? recipientId : null,
+          deliverySequence: recipientState.latestDeliverySequence,
         },
         include: {
           notificationEvent: true,
         },
       });
 
-      const unreadSummary = await this.buildUnreadSummary(
-        input.audience === NotificationAudience.customer ? "customer" : "operator",
-        recipientId,
-        input.audience === NotificationAudience.customer ? recipientId : null,
-        input.audience === NotificationAudience.operator ? recipientId : null,
-      );
+      const unreadSummary = await this.buildUnreadSummaryForRecipientKey(recipientKey);
 
       this.realtimeService.broadcastCreated(
         recipientKey,
@@ -960,40 +975,6 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async loadCursor(sourceType: NotificationSourceType) {
-    const cursor = await this.prismaService.notificationDeliveryCursor.findUnique({
-      where: {
-        sourceType,
-      },
-    });
-
-    return {
-      lastSourceId: cursor?.lastSourceId ?? null,
-      lastCreatedAt: cursor?.lastCreatedAt ?? null,
-    };
-  }
-
-  private async persistCursor(
-    sourceType: NotificationSourceType,
-    sourceId: string,
-    createdAt: Date,
-  ): Promise<void> {
-    await this.prismaService.notificationDeliveryCursor.upsert({
-      where: {
-        sourceType,
-      },
-      update: {
-        lastSourceId: sourceId,
-        lastCreatedAt: createdAt,
-      },
-      create: {
-        sourceType,
-        lastSourceId: sourceId,
-        lastCreatedAt: createdAt,
-      },
-    });
-  }
-
   private async resolveCustomerOrThrow(supabaseUserId: string) {
     const customer = await this.prismaService.customer.findUnique({
       where: {
@@ -1001,10 +982,6 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       },
       select: {
         id: true,
-        depositEmailNotificationsEnabled: true,
-        withdrawalEmailNotificationsEnabled: true,
-        loanEmailNotificationsEnabled: true,
-        productUpdateEmailNotificationsEnabled: true,
       },
     });
 

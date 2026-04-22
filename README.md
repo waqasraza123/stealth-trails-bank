@@ -41,10 +41,11 @@ Current execution frontier:
 
 - Phase 11/12 boundary hardening
 - internal email transfer hardening is in place; dedicated end-to-end verification is deferred to a follow-up pass
+- unified notifications cutover is in place across API, web, admin, and mobile with websocket resume, matrix preferences, and fresh-start inbox rollout
 
 Immediate next step:
 
-- run the remaining staged drills and release-readiness evidence flow for delivery-target SLOs, critical alert re-escalation, restore and rollback, secret handling, role review, and governed launch approval
+- run the remaining staged drills and release-readiness evidence flow for delivery-target SLOs, critical alert re-escalation, restore and rollback, secret handling, role review, governed launch approval, and notification cutover verification
 
 ## Implemented product surfaces
 
@@ -58,6 +59,7 @@ Immediate next step:
 
 - customer auth and account lookup
 - managed wallet ownership and customer profile projection
+- customer and operator notification inboxes with websocket-backed unread state, replay sequencing, and category-by-channel preferences
 - supported assets and ledger-backed customer balances
 - deposit and withdrawal intent request flows with review and execution state
 - internal email-to-email balance transfer with MFA, session trust, masked recipient preview, and operator review thresholds
@@ -154,6 +156,12 @@ pnpm --filter @stealth-trails-bank/api prisma:generate
 pnpm --filter @stealth-trails-bank/api prisma:migrate
 ```
 
+Notification cutover note:
+
+- the notifications migration is a fresh-start cutover; it clears existing notification feed/event rows and removes the legacy cursor projector state
+- deploy order is: Prisma migration, API, then web/admin/mobile clients
+- only post-deploy domain mutations will appear in the new inboxes
+
 ### 4. Start local development
 
 ```bash
@@ -218,6 +226,7 @@ pnpm --filter @stealth-trails-bank/api prisma:deploy
 Use these docs first when working in the repo:
 
 - `docs/architecture/target-system.md`
+- `docs/runbooks/notifications-platform-cutover.md`
 - `docs/architecture/production-roadmap.md`
 - `docs/architecture/critical-feature-e2e-plan.md`
 - `docs/roadmaps/email-balance-transfer/README.md`

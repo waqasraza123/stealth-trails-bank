@@ -13,7 +13,6 @@ describe("UserController", () => {
   };
   const userService = {
     getUserById: jest.fn(),
-    updateNotificationPreferences: jest.fn(),
     updateAgeProfile: jest.fn(),
     createTrustedContact: jest.fn(),
     updateTrustedContact: jest.fn(),
@@ -51,61 +50,54 @@ describe("UserController", () => {
     });
   });
 
-  it("rejects cross-user notification preference updates", async () => {
-    await request(app.getHttpServer())
-      .patch("/user/supabase_2/notification-preferences")
-      .set("Authorization", "Bearer test-token")
-      .send({
-        depositEmails: true,
-        withdrawalEmails: true,
-        loanEmails: true,
-        productUpdateEmails: false,
-      })
-      .expect(401);
-
-    expect(userService.updateNotificationPreferences).not.toHaveBeenCalled();
-  });
-
-  it("passes normalized notification preference updates to the service", async () => {
-    userService.updateNotificationPreferences.mockResolvedValue({
-      depositEmails: false,
-      withdrawalEmails: true,
-      loanEmails: false,
-      productUpdateEmails: true,
+  it("returns the authenticated user's profile projection", async () => {
+    userService.getUserById.mockResolvedValue({
+      id: 1,
+      customerId: "customer_1",
+      supabaseUserId: "supabase_1",
+      email: "amina@example.com",
+      firstName: "Amina",
+      lastName: "Rahman",
+      ethereumAddress: "0x1234",
+      accountStatus: "active",
+      activatedAt: "2026-04-22T10:00:00.000Z",
+      restrictedAt: null,
+      frozenAt: null,
+      closedAt: null,
+      passwordRotationAvailable: true,
+      notificationPreferences: {
+        audience: "customer",
+        supportedChannels: ["in_app", "email"],
+        updatedAt: null,
+        entries: [],
+      },
+      ageProfile: null,
+      trustedContacts: [],
+      mfa: {
+        required: true,
+        totpEnrolled: false,
+        emailOtpEnrolled: false,
+        requiresSetup: true,
+        moneyMovementBlocked: true,
+        stepUpFreshUntil: null,
+        lockedUntil: null,
+      },
+      sessionSecurity: {
+        currentSessionTrusted: true,
+        currentSessionRequiresVerification: false,
+      },
     });
 
     const response = await request(app.getHttpServer())
-      .patch("/user/supabase_1/notification-preferences")
+      .get("/user/supabase_1")
       .set("Authorization", "Bearer test-token")
-      .send({
-        depositEmails: false,
-        withdrawalEmails: true,
-        loanEmails: false,
-        productUpdateEmails: true,
-      })
       .expect(200);
 
-    expect(userService.updateNotificationPreferences).toHaveBeenCalledWith(
-      "supabase_1",
-      {
-        depositEmails: false,
-        withdrawalEmails: true,
-        loanEmails: false,
-        productUpdateEmails: true,
-      },
-    );
-    expect(response.body).toEqual({
-      status: "success",
-      message: "Notification preferences updated successfully.",
-      data: {
-        notificationPreferences: {
-          depositEmails: false,
-          withdrawalEmails: true,
-          loanEmails: false,
-          productUpdateEmails: true,
-        },
-      },
-    });
+    expect(userService.getUserById).toHaveBeenCalledWith("supabase_1", null);
+    expect(response.body.data.notificationPreferences.supportedChannels).toEqual([
+      "in_app",
+      "email",
+    ]);
   });
 
   it("passes age profile updates to the service", async () => {

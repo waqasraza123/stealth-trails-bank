@@ -9,12 +9,7 @@ export type AccountLifecycleStatusValue =
   | "frozen"
   | "closed";
 
-export type CustomerNotificationPreferences = NotificationPreferenceMatrix & {
-  depositEmails: boolean;
-  withdrawalEmails: boolean;
-  loanEmails: boolean;
-  productUpdateEmails: boolean;
-};
+export type CustomerNotificationPreferences = NotificationPreferenceMatrix;
 
 export type CustomerAgeVerificationStatus =
   | "unverified"

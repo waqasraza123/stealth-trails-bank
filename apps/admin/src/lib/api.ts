@@ -3,6 +3,7 @@ import type {
   NotificationCategory,
   NotificationFeedResult,
   NotificationPreferenceMatrix,
+  NotificationSocketSession,
   NotificationUnreadSummary
 } from "@stealth-trails-bank/types";
 import { reportAdminApiError } from "./observability";
@@ -240,6 +241,33 @@ export async function getOperatorNotificationPreferences(
   });
 
   return result.notificationPreferences;
+}
+
+export async function updateOperatorNotificationPreferences(
+  session: OperatorSession,
+  matrix: NotificationPreferenceMatrix
+): Promise<NotificationPreferenceMatrix> {
+  const result = await requestData<
+    { notificationPreferences: NotificationPreferenceMatrix }
+  >(session, {
+    method: "PATCH",
+    url: "/notifications/internal/me/preferences",
+    data: {
+      entries: matrix.entries
+    }
+  });
+
+  return result.notificationPreferences;
+}
+
+export async function createOperatorNotificationSocketSession(
+  session: OperatorSession
+): Promise<NotificationSocketSession> {
+  return requestData(session, {
+    method: "POST",
+    url: "/notifications/internal/me/socket-session",
+    data: {}
+  });
 }
 
 export async function listCustomerMfaRecoveryRequests(

@@ -149,6 +149,7 @@ describe("NotificationsInternalController", () => {
       "ops_1",
       {
         audience: "operator",
+        supportedChannels: ["in_app", "email"],
         updatedAt: null,
         entries: [
           {

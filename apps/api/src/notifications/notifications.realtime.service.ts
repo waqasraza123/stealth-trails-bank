@@ -1,31 +1,53 @@
-import { Injectable, OnModuleDestroy } from "@nestjs/common";
+import { Inject, Injectable, Logger, OnModuleDestroy, forwardRef } from "@nestjs/common";
 import type { IncomingMessage, Server as HttpServer } from "http";
+import { randomUUID } from "crypto";
 import { URL } from "url";
-import { WebSocketServer, type WebSocket } from "ws";
-import { AuthService } from "../auth/auth.service";
-import { OperatorIdentityService } from "../auth/operator-identity.service";
-import { PrismaService } from "../prisma/prisma.service";
+import { WebSocketServer, type RawData, type WebSocket } from "ws";
 import type {
   NotificationFeedItem,
+  NotificationRealtimeEnvelope,
   NotificationUnreadSummary,
 } from "@stealth-trails-bank/types";
-import { buildNotificationRecipientKey } from "./notification-preferences.util";
+import { NotificationsService } from "./notifications.service";
 
 type NotificationSocketContext = {
+  connectionId: string;
   audience: "customer" | "operator";
-  recipientId: string;
   recipientKey: string;
+  latestSequence: number;
+  heartbeatIntervalMs: number;
+  lastPongAt: number;
+  heartbeatTimer: NodeJS.Timeout | null;
 };
+
+type BroadcastPayload =
+  | NotificationRealtimeEnvelope<"notifications.item.created", NotificationFeedItem>
+  | NotificationRealtimeEnvelope<"notifications.item.updated", NotificationFeedItem>
+  | NotificationRealtimeEnvelope<
+      "notifications.unread_summary",
+      NotificationUnreadSummary
+    >;
+
+type IncomingRealtimePayload =
+  | {
+      type?: "ping" | "pong";
+    }
+  | {
+      type?: "notifications.resume";
+      data?: {
+        lastSeenSequence?: number;
+      };
+    };
 
 @Injectable()
 export class NotificationsRealtimeService implements OnModuleDestroy {
+  private readonly logger = new Logger(NotificationsRealtimeService.name);
   private server: WebSocketServer | null = null;
-  private readonly clients = new Map<string, Set<WebSocket>>();
+  private readonly clients = new Map<string, Map<WebSocket, NotificationSocketContext>>();
 
   constructor(
-    private readonly prismaService: PrismaService,
-    private readonly authService: AuthService,
-    private readonly operatorIdentityService: OperatorIdentityService,
+    @Inject(forwardRef(() => NotificationsService))
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   attach(httpServer: HttpServer): void {
@@ -55,36 +77,23 @@ export class NotificationsRealtimeService implements OnModuleDestroy {
         return;
       }
 
-      this.registerSocket(context.recipientKey, socket);
-      this.send(socket, {
+      this.registerSocket(context.recipientKey, socket, context);
+      this.sendEnvelope(socket, {
         type: "notifications.connected",
+        sequence: context.latestSequence,
+        occurredAt: new Date().toISOString(),
+        recipientKey: context.recipientKey,
         data: {
+          connectionId: context.connectionId,
           audience: context.audience,
           recipientKey: context.recipientKey,
-          connectedAt: new Date().toISOString(),
+          latestSequence: context.latestSequence,
+          heartbeatIntervalMs: context.heartbeatIntervalMs,
         },
       });
 
-      socket.on("message", (payload) => {
-        try {
-          const parsed = JSON.parse(String(payload)) as { type?: string };
-
-          if (parsed.type === "ping") {
-            this.send(socket, {
-              type: "pong",
-              data: {
-                at: new Date().toISOString(),
-              },
-            });
-          }
-        } catch {
-          this.send(socket, {
-            type: "notifications.error",
-            data: {
-              message: "Unsupported realtime payload.",
-            },
-          });
-        }
+      socket.on("message", async (payload) => {
+        await this.handleMessage(socket, context, payload);
       });
 
       socket.on("close", () => {
@@ -94,6 +103,15 @@ export class NotificationsRealtimeService implements OnModuleDestroy {
   }
 
   onModuleDestroy(): void {
+    for (const sockets of this.clients.values()) {
+      for (const [socket, context] of sockets.entries()) {
+        if (context.heartbeatTimer) {
+          clearInterval(context.heartbeatTimer);
+        }
+        socket.close();
+      }
+    }
+
     this.server?.close();
     this.server = null;
     this.clients.clear();
@@ -106,10 +124,16 @@ export class NotificationsRealtimeService implements OnModuleDestroy {
   ): void {
     this.broadcast(recipientKey, {
       type: "notifications.item.created",
+      sequence: item.deliverySequence,
+      occurredAt: item.updatedAt,
+      recipientKey,
       data: item,
     });
     this.broadcast(recipientKey, {
       type: "notifications.unread_summary",
+      sequence: item.deliverySequence,
+      occurredAt: new Date().toISOString(),
+      recipientKey,
       data: unreadSummary,
     });
   }
@@ -121,10 +145,16 @@ export class NotificationsRealtimeService implements OnModuleDestroy {
   ): void {
     this.broadcast(recipientKey, {
       type: "notifications.item.updated",
+      sequence: item.deliverySequence,
+      occurredAt: item.updatedAt,
+      recipientKey,
       data: item,
     });
     this.broadcast(recipientKey, {
       type: "notifications.unread_summary",
+      sequence: item.deliverySequence,
+      occurredAt: new Date().toISOString(),
+      recipientKey,
       data: unreadSummary,
     });
   }
@@ -132,63 +162,55 @@ export class NotificationsRealtimeService implements OnModuleDestroy {
   private async resolveSocketContext(
     request: IncomingMessage,
   ): Promise<NotificationSocketContext | null> {
-    const url = new URL(
-      request.url ?? "/notifications/ws",
-      "http://localhost",
-    );
-    const audience = url.searchParams.get("audience");
-    const token = url.searchParams.get("token");
+    const url = new URL(request.url ?? "/notifications/ws", "http://localhost");
+    const sessionToken = url.searchParams.get("session");
 
-    if (!token || (audience !== "customer" && audience !== "operator")) {
+    if (!sessionToken) {
       return null;
     }
 
-    if (audience === "customer") {
-      const session = await this.authService.validateToken(token);
-      const customer = await this.prismaService.customer.findUnique({
-        where: {
-          supabaseUserId: session.id,
-        },
-        select: {
-          id: true,
-        },
-      });
+    const session =
+      await this.notificationsService.validateSocketSessionToken(sessionToken);
 
-      if (!customer) {
-        return null;
-      }
-
-      return {
-        audience,
-        recipientId: customer.id,
-        recipientKey: buildNotificationRecipientKey(audience, customer.id),
-      };
-    }
-
-    const resolvedOperator =
-      await this.operatorIdentityService.resolveFromBearerToken({
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-      });
-
-    if (!resolvedOperator?.operatorDbId) {
+    if (!session) {
       return null;
     }
 
     return {
-      audience,
-      recipientId: resolvedOperator.operatorDbId,
-      recipientKey: buildNotificationRecipientKey(
-        audience,
-        resolvedOperator.operatorDbId,
-      ),
+      connectionId: randomUUID(),
+      audience: session.audience,
+      recipientKey: session.recipientKey,
+      latestSequence: session.latestSequence,
+      heartbeatIntervalMs: session.heartbeatIntervalMs,
+      lastPongAt: Date.now(),
+      heartbeatTimer: null,
     };
   }
 
-  private registerSocket(recipientKey: string, socket: WebSocket): void {
-    const sockets = this.clients.get(recipientKey) ?? new Set<WebSocket>();
-    sockets.add(socket);
+  private registerSocket(
+    recipientKey: string,
+    socket: WebSocket,
+    context: NotificationSocketContext,
+  ): void {
+    const sockets =
+      this.clients.get(recipientKey) ??
+      new Map<WebSocket, NotificationSocketContext>();
+
+    context.heartbeatTimer = setInterval(() => {
+      if (Date.now() - context.lastPongAt > context.heartbeatIntervalMs * 2) {
+        socket.close(1011, "Heartbeat timed out");
+        return;
+      }
+
+      this.send(socket, {
+        type: "ping",
+        data: {
+          at: new Date().toISOString(),
+        },
+      });
+    }, context.heartbeatIntervalMs);
+
+    sockets.set(socket, context);
     this.clients.set(recipientKey, sockets);
   }
 
@@ -199,6 +221,12 @@ export class NotificationsRealtimeService implements OnModuleDestroy {
       return;
     }
 
+    const context = sockets.get(socket);
+
+    if (context?.heartbeatTimer) {
+      clearInterval(context.heartbeatTimer);
+    }
+
     sockets.delete(socket);
 
     if (sockets.size === 0) {
@@ -206,16 +234,102 @@ export class NotificationsRealtimeService implements OnModuleDestroy {
     }
   }
 
-  private broadcast(recipientKey: string, payload: unknown): void {
+  private async handleMessage(
+    socket: WebSocket,
+    context: NotificationSocketContext,
+    payload: RawData,
+  ): Promise<void> {
+    try {
+      const parsed = JSON.parse(String(payload)) as IncomingRealtimePayload;
+
+      if (parsed.type === "pong" || parsed.type === "ping") {
+        context.lastPongAt = Date.now();
+
+        if (parsed.type === "ping") {
+          this.send(socket, {
+            type: "pong",
+            data: {
+              at: new Date().toISOString(),
+            },
+          });
+        }
+
+        return;
+      }
+
+      if (parsed.type === "notifications.resume") {
+        const lastSeenSequence =
+          typeof parsed.data?.lastSeenSequence === "number"
+            ? Math.max(0, parsed.data.lastSeenSequence)
+            : 0;
+
+        const replayEvents =
+          await this.notificationsService.listRealtimeEventsAfterSequence(
+            context.recipientKey,
+            lastSeenSequence,
+          );
+
+        for (const event of replayEvents) {
+          this.sendEnvelope(socket, {
+            type: "notifications.item.created",
+            sequence: event.item.deliverySequence,
+            occurredAt: event.item.updatedAt,
+            recipientKey: context.recipientKey,
+            data: event.item,
+          });
+          this.sendEnvelope(socket, {
+            type: "notifications.unread_summary",
+            sequence: event.item.deliverySequence,
+            occurredAt: new Date().toISOString(),
+            recipientKey: context.recipientKey,
+            data: event.unreadSummary,
+          });
+        }
+
+        return;
+      }
+
+      this.send(socket, {
+        type: "notifications.error",
+        data: {
+          message: "Unsupported realtime payload.",
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Notification websocket payload handling failed: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+      );
+      this.send(socket, {
+        type: "notifications.error",
+        data: {
+          message: "Unsupported realtime payload.",
+        },
+      });
+    }
+  }
+
+  private broadcast(recipientKey: string, payload: BroadcastPayload): void {
     const sockets = this.clients.get(recipientKey);
 
     if (!sockets || sockets.size === 0) {
       return;
     }
 
-    for (const socket of sockets) {
-      this.send(socket, payload);
+    for (const [socket] of sockets.entries()) {
+      this.sendEnvelope(socket, payload);
     }
+  }
+
+  private sendEnvelope(socket: WebSocket, payload: BroadcastPayload | NotificationRealtimeEnvelope<"notifications.connected", {
+    connectionId: string;
+    audience: "customer" | "operator";
+    recipientKey: string;
+    latestSequence: number;
+    heartbeatIntervalMs: number;
+  }>): void {
+    this.send(socket, payload);
   }
 
   private send(socket: WebSocket, payload: unknown): void {

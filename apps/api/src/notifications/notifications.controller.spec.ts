@@ -154,6 +154,7 @@ describe("NotificationsController", () => {
       "supabase_customer_1",
       {
         audience: "customer",
+        supportedChannels: ["in_app", "email"],
         updatedAt: null,
         entries: [
           {

@@ -14,7 +14,6 @@ import {
 } from "@nestjs/common";
 import type {
   CustomerAgeProfile,
-  CustomerNotificationPreferences,
   CustomerTrustedContactProjection,
 } from "@stealth-trails-bank/types";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -22,7 +21,6 @@ import { CustomJsonResponse } from "../types/CustomJsonResponse";
 import { CreateCustomerTrustedContactDto } from "./dto/create-customer-trusted-contact.dto";
 import { UpdateCustomerAgeProfileDto } from "./dto/update-customer-age-profile.dto";
 import { UpdateCustomerTrustedContactDto } from "./dto/update-customer-trusted-contact.dto";
-import { UpdateNotificationPreferencesDto } from "./dto/update-notification-preferences.dto";
 import { UserService } from "./user.service";
 
 @Controller("user")
@@ -54,42 +52,6 @@ export class UserController {
       status: "success",
       message: "User retreived.",
       data: user,
-    };
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Patch(":id/notification-preferences")
-  async updateNotificationPreferences(
-    @Param("id") id: string,
-    @Body(new ValidationPipe()) dto: UpdateNotificationPreferencesDto,
-    @Req() req: { user: { id: string } },
-  ): Promise<
-    CustomJsonResponse<{
-      notificationPreferences: CustomerNotificationPreferences;
-    }>
-  > {
-    const authenticatedUser = req.user;
-
-    if (authenticatedUser.id !== id) {
-      throw new UnauthorizedException(
-        "You are not authorized to update this user",
-      );
-    }
-
-    const notificationPreferences =
-      await this.userService.updateNotificationPreferences(id, {
-        depositEmails: dto.depositEmails,
-        withdrawalEmails: dto.withdrawalEmails,
-        loanEmails: dto.loanEmails,
-        productUpdateEmails: dto.productUpdateEmails,
-      });
-
-    return {
-      status: "success",
-      message: "Notification preferences updated successfully.",
-      data: {
-        notificationPreferences,
-      },
     };
   }
 

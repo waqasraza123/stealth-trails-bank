@@ -10,8 +10,10 @@ import {
   useMarkAllOperatorNotificationsRead,
   useMarkOperatorNotificationsRead,
   useOperatorNotificationFeed,
+  useOperatorNotificationPreferences,
   useOperatorNotificationRealtimeBridge,
   useOperatorNotificationUnreadSummary,
+  useUpdateOperatorNotificationPreferences,
 } from "@/hooks/use-operator-notifications";
 import { useConfiguredSessionGuard } from "./shared";
 
@@ -28,6 +30,12 @@ const mockUseMarkAllOperatorNotificationsRead = vi.mocked(
 const mockUseArchiveOperatorNotifications = vi.mocked(
   useArchiveOperatorNotifications,
 );
+const mockUseOperatorNotificationPreferences = vi.mocked(
+  useOperatorNotificationPreferences,
+);
+const mockUseUpdateOperatorNotificationPreferences = vi.mocked(
+  useUpdateOperatorNotificationPreferences,
+);
 const mockUseOperatorNotificationRealtimeBridge = vi.mocked(
   useOperatorNotificationRealtimeBridge,
 );
@@ -39,6 +47,8 @@ vi.mock("@/hooks/use-operator-notifications", () => ({
   useMarkOperatorNotificationsRead: vi.fn(),
   useMarkAllOperatorNotificationsRead: vi.fn(),
   useArchiveOperatorNotifications: vi.fn(),
+  useOperatorNotificationPreferences: vi.fn(),
+  useUpdateOperatorNotificationPreferences: vi.fn(),
   useOperatorNotificationRealtimeBridge: vi.fn(),
 }));
 
@@ -104,6 +114,8 @@ describe("NotificationsPage", () => {
           {
             id: "operator_notif_1",
             audience: "operator",
+            recipientKey: "operator:ops_1",
+            deliverySequence: 12,
             category: "incident",
             priority: "critical",
             title: "Platform alert opened",
@@ -133,6 +145,29 @@ describe("NotificationsPage", () => {
       isError: false,
       error: null,
     } as ReturnType<typeof useOperatorNotificationFeed>);
+    mockUseOperatorNotificationPreferences.mockReturnValue({
+      data: {
+        audience: "operator",
+        supportedChannels: ["in_app", "email"],
+        updatedAt: null,
+        entries: [
+          {
+            category: "incident",
+            channels: [
+              { channel: "in_app", enabled: true, mandatory: true },
+              { channel: "email", enabled: false, mandatory: false },
+            ],
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as ReturnType<typeof useOperatorNotificationPreferences>);
+    mockUseUpdateOperatorNotificationPreferences.mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: false,
+    } as ReturnType<typeof useUpdateOperatorNotificationPreferences>);
     mockUseMarkOperatorNotificationsRead.mockReturnValue({
       mutateAsync: markRead,
       isPending: false,

@@ -1,5 +1,9 @@
-import { useMemo, useState } from "react";
-import type { NotificationCategory, NotificationFeedItem } from "@stealth-trails-bank/types";
+import { useEffect, useMemo, useState } from "react";
+import type {
+  NotificationCategory,
+  NotificationFeedItem,
+  NotificationPreferenceMatrix
+} from "@stealth-trails-bank/types";
 import { Archive, ArrowRight, BellRing, Inbox } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -14,8 +18,10 @@ import {
   useMarkAllOperatorNotificationsRead,
   useMarkOperatorNotificationsRead,
   useOperatorNotificationFeed,
+  useOperatorNotificationPreferences,
   useOperatorNotificationRealtimeBridge,
-  useOperatorNotificationUnreadSummary
+  useOperatorNotificationUnreadSummary,
+  useUpdateOperatorNotificationPreferences
 } from "@/hooks/use-operator-notifications";
 import { formatDateTime, toTitleCase } from "@/lib/format";
 import { mapStatusToTone, useConfiguredSessionGuard } from "./shared";
@@ -68,9 +74,17 @@ export function NotificationsPage() {
     category: selectedCategory ?? undefined
   });
   const unreadSummaryQuery = useOperatorNotificationUnreadSummary();
+  const preferencesQuery = useOperatorNotificationPreferences();
+  const updatePreferencesMutation = useUpdateOperatorNotificationPreferences();
   const markReadMutation = useMarkOperatorNotificationsRead();
   const markAllReadMutation = useMarkAllOperatorNotificationsRead();
   const archiveMutation = useArchiveOperatorNotifications();
+  const [preferenceDraft, setPreferenceDraft] =
+    useState<NotificationPreferenceMatrix | null>(null);
+
+  useEffect(() => {
+    setPreferenceDraft(preferencesQuery.data ?? null);
+  }, [preferencesQuery.data]);
 
   const groupedItems = useMemo(() => {
     const buckets = new Map<string, NotificationFeedItem[]>();
@@ -291,6 +305,91 @@ export function NotificationsPage() {
             </div>
           </div>
         </div>
+      </SectionPanel>
+
+      <SectionPanel
+        title="Operator preferences"
+        description="Control which supported channels deliver each operator notification category."
+      >
+        {!preferenceDraft ? (
+          <EmptyState
+            title="Preferences unavailable"
+            description="Operator notification preferences could not be loaded."
+          />
+        ) : (
+          <div className="admin-list">
+            {preferenceDraft.entries.map((entry) => (
+              <article key={entry.category} className="admin-notification-card">
+                <div className="admin-notification-card__header">
+                  <div>
+                    <h4>{toTitleCase(entry.category.replace(/_/g, " "))}</h4>
+                    <p>Supported delivery channels for this operator category.</p>
+                  </div>
+                </div>
+                <div className="admin-inline-actions">
+                  {entry.channels
+                    .filter((channel) =>
+                      preferenceDraft.supportedChannels.includes(channel.channel)
+                    )
+                    .map((channel) => (
+                      <label
+                        key={`${entry.category}-${channel.channel}`}
+                        className="admin-filter-chip"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={channel.enabled}
+                          disabled={channel.mandatory}
+                          onChange={(event) =>
+                            setPreferenceDraft((current) =>
+                              !current
+                                ? current
+                                : {
+                                    ...current,
+                                    entries: current.entries.map((candidate) =>
+                                      candidate.category !== entry.category
+                                        ? candidate
+                                        : {
+                                            ...candidate,
+                                            channels: candidate.channels.map(
+                                              (candidateChannel) =>
+                                                candidateChannel.channel !==
+                                                channel.channel
+                                                  ? candidateChannel
+                                                  : {
+                                                      ...candidateChannel,
+                                                      enabled:
+                                                        event.target.checked
+                                                    }
+                                            )
+                                          }
+                                    )
+                                  }
+                            )
+                          }
+                        />
+                        <span>{toTitleCase(channel.channel.replace(/_/g, " "))}</span>
+                      </label>
+                    ))}
+                </div>
+              </article>
+            ))}
+            <button
+              type="button"
+              className="admin-primary-action"
+              onClick={() => {
+                if (preferenceDraft) {
+                  void updatePreferencesMutation.mutateAsync(preferenceDraft);
+                }
+              }}
+              disabled={!preferenceDraft || updatePreferencesMutation.isPending}
+            >
+              {updatePreferencesMutation.isPending
+                ? "Saving preferences..."
+                : "Save preferences"}
+            </button>
+          </div>
+        )}
       </SectionPanel>
     </div>
   );

@@ -31,6 +31,7 @@ import {
   type CustomerWalletProjection
 } from "../auth/auth.service";
 import { GovernedExecutionService } from "../governed-execution/governed-execution.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { PrismaJsonValue } from "../prisma/prisma-json";
 import { SolvencyService } from "../solvency/solvency.service";
@@ -132,6 +133,7 @@ export class StakingService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authService: AuthService,
+    private readonly notificationsService: NotificationsService,
     @Optional()
     private readonly solvencyService?: Pick<SolvencyService, "assertStakingWritesAllowed">,
     @Optional()
@@ -352,7 +354,7 @@ export class StakingService {
     metadata?: Record<string, unknown>;
   }): Promise<void> {
     try {
-      await this.prismaService.auditEvent.create({
+      const auditEvent = await this.prismaService.auditEvent.create({
         data: {
           customerId: input.customerId,
           actorType: input.actor.actorType,
@@ -369,6 +371,7 @@ export class StakingService {
           } as PrismaJsonValue
         }
       });
+      await this.notificationsService.publishAuditEventRecord(auditEvent);
     } catch (error) {
       this.logger.error(
         `Failed to write staking audit event "${input.action}".`,
