@@ -116,16 +116,21 @@ describe("StakingService", () => {
       getCustomerWalletProjectionBySupabaseUserId: jest.fn(),
       getUserFromDatabaseById: jest.fn()
     };
+    const notificationsService = {
+      publishAuditEventRecord: jest.fn().mockResolvedValue(undefined)
+    };
 
     const service = new StakingService(
       prismaService as never,
-      authService as never
+      authService as never,
+      notificationsService as never
     );
 
     return {
       service,
       prismaService,
-      authService
+      authService,
+      notificationsService
     };
   }
 

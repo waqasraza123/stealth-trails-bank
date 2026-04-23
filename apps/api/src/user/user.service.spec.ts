@@ -44,6 +44,85 @@ describe("UserService.getUserById", () => {
         currentSessionRequiresVerification: false,
       }),
     };
+    const notificationsService = {
+      getCustomerPreferences: jest.fn().mockResolvedValue({
+        audience: "customer",
+        supportedChannels: ["in_app", "email"],
+        updatedAt: null,
+        entries: [
+          {
+            category: "security",
+            channels: [
+              { channel: "in_app", enabled: true, mandatory: true },
+              { channel: "email", enabled: true, mandatory: true },
+            ],
+          },
+          {
+            category: "money_movement",
+            channels: [
+              { channel: "in_app", enabled: true, mandatory: false },
+              { channel: "email", enabled: true, mandatory: false },
+            ],
+          },
+          {
+            category: "yield",
+            channels: [
+              { channel: "in_app", enabled: true, mandatory: false },
+              { channel: "email", enabled: true, mandatory: false },
+            ],
+          },
+          {
+            category: "vault",
+            channels: [
+              { channel: "in_app", enabled: true, mandatory: false },
+              { channel: "email", enabled: true, mandatory: false },
+            ],
+          },
+          {
+            category: "loans",
+            channels: [
+              { channel: "in_app", enabled: true, mandatory: false },
+              { channel: "email", enabled: true, mandatory: false },
+            ],
+          },
+          {
+            category: "account",
+            channels: [
+              { channel: "in_app", enabled: true, mandatory: false },
+              { channel: "email", enabled: true, mandatory: false },
+            ],
+          },
+          {
+            category: "governance",
+            channels: [
+              { channel: "in_app", enabled: true, mandatory: false },
+              { channel: "email", enabled: false, mandatory: false },
+            ],
+          },
+          {
+            category: "operations",
+            channels: [
+              { channel: "in_app", enabled: true, mandatory: false },
+              { channel: "email", enabled: false, mandatory: false },
+            ],
+          },
+          {
+            category: "incident",
+            channels: [
+              { channel: "in_app", enabled: true, mandatory: false },
+              { channel: "email", enabled: false, mandatory: false },
+            ],
+          },
+          {
+            category: "product",
+            channels: [
+              { channel: "in_app", enabled: true, mandatory: false },
+              { channel: "email", enabled: false, mandatory: false },
+            ],
+          },
+        ],
+      }),
+    };
 
     if (options.customerProjectionError) {
       authService.getCustomerAccountProjectionBySupabaseUserId.mockRejectedValue(
@@ -68,12 +147,14 @@ describe("UserService.getUserById", () => {
     const service = new UserService(
       authService as never,
       prismaService as never,
+      notificationsService as never,
     );
 
     return {
       service,
       authService,
       prismaService,
+      notificationsService,
     };
   }
 
@@ -172,12 +253,13 @@ describe("UserService.getUserById", () => {
     expect(result.customerId).toBe("customer_1");
     expect(result.id).toBe(7);
     expect(result.passwordRotationAvailable).toBe(true);
-    expect(result.notificationPreferences).toEqual({
-      depositEmails: true,
-      withdrawalEmails: true,
-      loanEmails: true,
-      productUpdateEmails: false,
-    });
+    expect(result.notificationPreferences).toEqual(
+      expect.objectContaining({
+        audience: "customer",
+        supportedChannels: ["in_app", "email"],
+        entries: expect.any(Array),
+      }),
+    );
     expect(result.ageProfile).toEqual({
       dateOfBirth: "1990-04-11",
       ageYears: expect.any(Number),
@@ -284,73 +366,6 @@ describe("UserService.getUserById", () => {
     await expect(service.getUserById("missing_user")).rejects.toBeInstanceOf(
       NotFoundException,
     );
-  });
-
-  it("updates customer notification preferences", async () => {
-    const { service, prismaService } = createService({
-      legacyUser,
-      customerProjectionResult: customerProjection,
-      walletProjectionResult: walletProjection,
-      customerFoundationResult: customerFoundation,
-    });
-
-    prismaService.customer.findUnique.mockResolvedValue({
-      id: "customer_1",
-    });
-    prismaService.customer.update.mockResolvedValue({
-      depositEmailNotificationsEnabled: false,
-      withdrawalEmailNotificationsEnabled: true,
-      loanEmailNotificationsEnabled: false,
-      productUpdateEmailNotificationsEnabled: true,
-    });
-
-    const result = await service.updateNotificationPreferences("supabase_1", {
-      depositEmails: false,
-      withdrawalEmails: true,
-      loanEmails: false,
-      productUpdateEmails: true,
-    });
-
-    expect(prismaService.customer.update).toHaveBeenCalledWith({
-      where: { id: "customer_1" },
-      data: {
-        depositEmailNotificationsEnabled: false,
-        withdrawalEmailNotificationsEnabled: true,
-        loanEmailNotificationsEnabled: false,
-        productUpdateEmailNotificationsEnabled: true,
-      },
-      select: {
-        depositEmailNotificationsEnabled: true,
-        withdrawalEmailNotificationsEnabled: true,
-        loanEmailNotificationsEnabled: true,
-        productUpdateEmailNotificationsEnabled: true,
-      },
-    });
-    expect(result).toEqual({
-      depositEmails: false,
-      withdrawalEmails: true,
-      loanEmails: false,
-      productUpdateEmails: true,
-    });
-  });
-
-  it("throws when notification preferences are updated for a missing customer", async () => {
-    const { service, prismaService } = createService({
-      legacyUser,
-      customerProjectionResult: customerProjection,
-      walletProjectionResult: walletProjection,
-    });
-
-    prismaService.customer.findUnique.mockResolvedValue(null);
-
-    await expect(
-      service.updateNotificationPreferences("missing_user", {
-        depositEmails: true,
-        withdrawalEmails: true,
-        loanEmails: true,
-        productUpdateEmails: false,
-      }),
-    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("updates the customer age profile and resets verification when the DOB changes", async () => {

@@ -153,12 +153,16 @@ describe("AuthService", () => {
     const reviewCasesService = {
       openOrReuseReviewCase: jest.fn(),
     };
+    const notificationsService = {
+      publishAuditEventRecord: jest.fn().mockResolvedValue(undefined),
+    };
 
     const service = new AuthService(
       prismaService as never,
       customerMfaEmailDeliveryService as never,
       customerSecurityEmailDeliveryService as never,
       reviewCasesService as never,
+      notificationsService as never,
     );
 
     transaction.customerAuthSession.create.mockResolvedValue({
@@ -197,6 +201,7 @@ describe("AuthService", () => {
       customerMfaEmailDeliveryService,
       customerSecurityEmailDeliveryService,
       reviewCasesService,
+      notificationsService,
     };
   }
 

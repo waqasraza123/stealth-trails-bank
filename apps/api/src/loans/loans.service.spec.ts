@@ -55,16 +55,21 @@ function createService() {
     isLoanFundingGovernedExternalEnabled: jest.fn(() => false),
     requestLoanContractCreation: jest.fn()
   };
+  const notificationsService = {
+    publishLoanEventRecord: jest.fn().mockResolvedValue(undefined)
+  };
 
   return {
     prismaService,
     authService,
     ledgerService,
     governedExecutionService,
+    notificationsService,
     service: new LoansService(
       prismaService,
       authService,
       ledgerService,
+      notificationsService as never,
       undefined,
       governedExecutionService as never
     )

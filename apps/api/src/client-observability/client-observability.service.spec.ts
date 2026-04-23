@@ -23,11 +23,19 @@ function createService() {
   const deliveryService = {
     enqueueAlertEvent: jest.fn()
   } as unknown as PlatformAlertDeliveryService;
+  const notificationsService = {
+    publishPlatformAlertRecord: jest.fn().mockResolvedValue(undefined)
+  };
 
   return {
     prismaService,
     deliveryService,
-    service: new ClientObservabilityService(prismaService, deliveryService)
+    notificationsService,
+    service: new ClientObservabilityService(
+      prismaService,
+      deliveryService,
+      notificationsService as never
+    )
   };
 }
 
