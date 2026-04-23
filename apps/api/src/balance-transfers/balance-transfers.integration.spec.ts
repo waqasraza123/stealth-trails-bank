@@ -36,6 +36,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { InternalOperatorBearerGuard } from "../auth/guards/internal-operator-bearer.guard";
 import { OperatorIdentityService } from "../auth/operator-identity.service";
 import { LedgerService } from "../ledger/ledger.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { createIntegrationTestApp } from "../test-utils/create-integration-test-app";
 import { BalanceTransferEmailDeliveryService } from "./balance-transfer-email-delivery.service";
@@ -224,6 +225,10 @@ class BalanceTransferIntegrationHarness {
 
   readonly emailDeliveryService = {
     sendTransferEmail: jest.fn().mockResolvedValue(undefined),
+  };
+
+  readonly notificationsService = {
+    publishAuditEventRecord: jest.fn().mockResolvedValue(undefined),
   };
 
   readonly prismaService: PrismaService;
@@ -1105,6 +1110,10 @@ describe("BalanceTransfers integration", () => {
           provide: BalanceTransferEmailDeliveryService,
           useValue: harness.emailDeliveryService,
         },
+        {
+          provide: NotificationsService,
+          useValue: harness.notificationsService,
+        },
       ],
     });
 
@@ -1112,7 +1121,7 @@ describe("BalanceTransfers integration", () => {
   });
 
   afterEach(async () => {
-    await app.close();
+    await app?.close();
   });
 
   it("settles low-risk transfers immediately and projects sender and recipient history correctly", async () => {
