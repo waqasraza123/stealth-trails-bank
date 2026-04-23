@@ -88,7 +88,6 @@ export default defineConfig(({ mode }) => ({
         "src/lib/customer-account.ts",
         "src/lib/customer-finance.ts",
         "src/pages/Index.tsx",
-        "src/pages/Profile.tsx",
         "src/pages/Staking.tsx",
         "src/pages/Transactions.tsx",
         "src/pages/Wallet.tsx",
