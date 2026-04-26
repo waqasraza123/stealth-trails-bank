@@ -2666,20 +2666,54 @@ export class AuthService {
   async getCustomerAccountProjectionBySupabaseUserId(
     supabaseUserId: string,
   ): Promise<CustomerAccountProjection> {
-    const customer = await this.prismaService.customer.findUnique({
-      where: { supabaseUserId },
-      include: { accounts: true },
+    const customerAccount = await this.prismaService.customerAccount.findFirst({
+      where: {
+        customer: {
+          supabaseUserId,
+        },
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+      select: {
+        id: true,
+        status: true,
+        activatedAt: true,
+        restrictedAt: true,
+        frozenAt: true,
+        closedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        customer: {
+          select: {
+            id: true,
+            supabaseUserId: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            passwordHash: true,
+            authTokenVersion: true,
+            mfaRequired: true,
+            mfaTotpEnrolled: true,
+            mfaEmailOtpEnrolled: true,
+            mfaLastVerifiedAt: true,
+            mfaLockedUntil: true,
+            depositEmailNotificationsEnabled: true,
+            withdrawalEmailNotificationsEnabled: true,
+            loanEmailNotificationsEnabled: true,
+            productUpdateEmailNotificationsEnabled: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
     });
 
-    if (!customer) {
+    if (!customerAccount) {
       throw new NotFoundException("Customer projection not found.");
     }
 
-    const customerAccount = customer.accounts[0];
-
-    if (!customerAccount) {
-      throw new NotFoundException("Customer account projection not found.");
-    }
+    const customer = customerAccount.customer;
 
     return {
       customer: {

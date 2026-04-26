@@ -274,6 +274,68 @@ describe("AuthService", () => {
     });
   });
 
+  it("returns the customer account projection without selecting optional profile columns", async () => {
+    const { service, prismaService } = createService();
+    const createdAt = new Date("2026-03-29T00:00:00.000Z");
+    const updatedAt = new Date("2026-03-29T00:10:00.000Z");
+
+    prismaService.customerAccount.findFirst.mockResolvedValue({
+      id: "account_1",
+      status: "registered",
+      activatedAt: null,
+      restrictedAt: null,
+      frozenAt: null,
+      closedAt: null,
+      createdAt,
+      updatedAt,
+      customer: {
+        id: "customer_1",
+        supabaseUserId: "shared-login-admin",
+        email: "admin@gmail.com",
+        firstName: "Shared",
+        lastName: "Admin",
+        passwordHash: "hashed",
+        authTokenVersion: 0,
+        mfaRequired: true,
+        mfaTotpEnrolled: false,
+        mfaEmailOtpEnrolled: false,
+        mfaLastVerifiedAt: null,
+        mfaLockedUntil: null,
+        depositEmailNotificationsEnabled: true,
+        withdrawalEmailNotificationsEnabled: true,
+        loanEmailNotificationsEnabled: true,
+        productUpdateEmailNotificationsEnabled: false,
+        createdAt,
+        updatedAt,
+      },
+    });
+
+    const result =
+      await service.getCustomerAccountProjectionBySupabaseUserId(
+        "shared-login-admin",
+      );
+
+    expect(prismaService.customer.findUnique).not.toHaveBeenCalled();
+    expect(prismaService.customerAccount.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          customer: {
+            supabaseUserId: "shared-login-admin",
+          },
+        },
+        select: expect.objectContaining({
+          customer: {
+            select: expect.not.objectContaining({
+              dateOfBirth: true,
+            }),
+          },
+        }),
+      }),
+    );
+    expect(result.customer.id).toBe("customer_1");
+    expect(result.customerAccount.id).toBe("account_1");
+  });
+
   it("throws when the customer account projection does not exist", async () => {
     const { service, prismaService } = createService();
 
