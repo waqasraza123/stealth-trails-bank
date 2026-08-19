@@ -18,6 +18,11 @@
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js",
       "require": "./dist/node.js"
+    },
+    "./password-policy": {
+      "types": "./src/password-policy.ts",
+      "import": "./src/password-policy.ts",
+      "require": "./dist/src/password-policy.js"
     }
   },
   "scripts": {

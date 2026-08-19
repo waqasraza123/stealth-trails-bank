@@ -665,7 +665,7 @@ describe("profile page", () => {
 
     renderWithRouter(<Profile />);
 
-    expect(screen.getByText(/active sessions/i)).toBeInTheDocument();
+    expect(screen.getByText(/^active sessions$/i)).toBeInTheDocument();
     expect(screen.getAllByText(/web browser/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/mobile app/i)).toBeInTheDocument();
 
@@ -680,7 +680,11 @@ describe("profile page", () => {
   it("renders recent customer security activity in the session security card", () => {
     renderWithRouter(<Profile />);
 
-    expect(screen.getByText(/recent security activity/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: /security history/i }),
+    ).toHaveClass("max-h-[22rem]", "md:max-h-[26rem]");
+    expect(screen.getByText(/security history/i)).toBeInTheDocument();
+    expect(screen.getByText(/^recent security activity$/i)).toBeInTheDocument();
     expect(screen.getByText(/new sign-in/i)).toBeInTheDocument();
     expect(screen.getAllByText(/203.0.113.10/i).length).toBeGreaterThan(0);
   });

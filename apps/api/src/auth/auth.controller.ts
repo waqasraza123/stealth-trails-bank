@@ -7,6 +7,7 @@ import {
   Post,
   Query,
   Request,
+  Res,
   UnauthorizedException,
   UseGuards,
   ValidationPipe,
@@ -37,6 +38,17 @@ import { VerifyEmailRecoveryDto } from "./dto/verify-email-recovery.dto";
 import { VerifyMfaChallengeDto } from "./dto/verify-mfa-challenge.dto";
 import { VerifySessionTrustDto } from "./dto/verify-session-trust.dto";
 import { VerifyTotpEnrollmentDto } from "./dto/verify-totp-enrollment.dto";
+import {
+  ResendEmailVerificationDto,
+  VerifyPrimaryEmailDto,
+} from "./dto/email-verification.dto";
+import {
+  LoginFlowDto,
+  UpgradeLoginPasswordDto,
+  VerifyLoginRecoveryCodeDto,
+  VerifyLoginTotpDto,
+} from "./dto/login-flow.dto";
+import { MobileRefreshDto } from "./dto/mobile-refresh.dto";
 
 type AuthenticatedRequest = {
   headers?: Record<string, string | string[] | undefined>;
@@ -44,7 +56,16 @@ type AuthenticatedRequest = {
   user: {
     id: string;
     sessionId?: string | null;
+    authMode?: "cookie" | "bearer";
   };
+};
+
+type HttpResponse = {
+  setHeader(name: string, value: string): void;
+};
+
+type UnauthenticatedRequest = Omit<AuthenticatedRequest, "user"> & {
+  user?: AuthenticatedRequest["user"];
 };
 
 function readSingleHeader(
@@ -58,13 +79,15 @@ function readSingleHeader(
 }
 
 function buildCustomerSessionContext(
-  request: Pick<AuthenticatedRequest, "headers" | "ip" | "user">,
+  request: Pick<AuthenticatedRequest, "headers" | "ip"> & {
+    user?: AuthenticatedRequest["user"];
+  },
 ) {
   const forwardedFor = readSingleHeader(request.headers?.["x-forwarded-for"]);
   const ipAddress = forwardedFor?.split(",")[0]?.trim() || request.ip || null;
 
   return {
-    currentSessionId: request.user.sessionId ?? null,
+    currentSessionId: request.user?.sessionId ?? null,
     clientPlatform: readSingleHeader(
       request.headers?.["x-stb-client-platform"],
     ) as "web" | "mobile" | "unknown" | null,
@@ -93,6 +116,35 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly operatorIdentityService?: OperatorIdentityService,
   ) {}
+
+  private finalizeWebLoginResponse<T extends CustomJsonResponse>(
+    result: T,
+    response: HttpResponse,
+  ): T {
+    const data = result.data as
+      | {
+          session?: {
+            kind?: string;
+            sessionToken?: string;
+          };
+        }
+      | undefined;
+
+    if (data?.session?.kind !== "web" || !data.session.sessionToken) {
+      return result;
+    }
+
+    const secure = process.env.NODE_ENV === "production";
+    const cookieName = secure ? "__Host-stb_session" : "stb_session";
+    const cookieValue = encodeURIComponent(data.session.sessionToken);
+    response.setHeader(
+      "Set-Cookie",
+      `${cookieName}=${cookieValue}; Path=/; HttpOnly; SameSite=Strict${secure ? "; Secure" : ""}`,
+    );
+    delete data.session.sessionToken;
+    response.setHeader("Cache-Control", "no-store");
+    return result;
+  }
 
   @UseGuards(InternalOperatorApiKeyGuard)
   @Post("internal/operator/session")
@@ -176,29 +228,173 @@ export class AuthController {
     );
   }
 
+  @Post("email-verification/resend")
+  async resendEmailVerification(
+    @Body(new ValidationPipe()) dto: ResendEmailVerificationDto,
+  ): Promise<CustomJsonResponse> {
+    return this.authService.resendPrimaryEmailVerification(dto.email);
+  }
+
+  @Post("email-verification/verify")
+  async verifyEmailVerification(
+    @Body(new ValidationPipe()) dto: VerifyPrimaryEmailDto,
+  ): Promise<CustomJsonResponse> {
+    return this.authService.verifyPrimaryEmail(dto.email, dto.code);
+  }
+
+  @Post("login/totp/enrollment/start")
+  async startLoginTotpEnrollment(
+    @Body(new ValidationPipe()) dto: LoginFlowDto,
+  ): Promise<CustomJsonResponse> {
+    return this.authService.startLoginTotpEnrollment(dto.flowId);
+  }
+
+  @Post("login/totp/enrollment/verify")
+  async verifyLoginTotpEnrollment(
+    @Body(new ValidationPipe()) dto: VerifyLoginTotpDto,
+    @Request() request: UnauthenticatedRequest,
+    @Res({ passthrough: true }) response: HttpResponse,
+  ): Promise<CustomJsonResponse> {
+    const result = await this.authService.verifyLoginTotpEnrollment(
+      dto.flowId,
+      dto.code,
+      buildCustomerSessionContext(request),
+    );
+    return this.finalizeWebLoginResponse(result, response);
+  }
+
+  @Post("login/totp/verify")
+  async verifyLoginTotp(
+    @Body(new ValidationPipe()) dto: VerifyLoginTotpDto,
+    @Request() request: UnauthenticatedRequest,
+    @Res({ passthrough: true }) response: HttpResponse,
+  ): Promise<CustomJsonResponse> {
+    const result = await this.authService.verifyLoginTotp(
+      dto.flowId,
+      dto.code,
+      buildCustomerSessionContext(request),
+    );
+    return this.finalizeWebLoginResponse(result, response);
+  }
+
+  @Post("login/recovery-code/verify")
+  async verifyLoginRecoveryCode(
+    @Body(new ValidationPipe()) dto: VerifyLoginRecoveryCodeDto,
+  ): Promise<CustomJsonResponse> {
+    return this.authService.verifyLoginRecoveryCode(dto.flowId, dto.code);
+  }
+
+  @Post("login/password/upgrade")
+  async upgradeLoginPassword(
+    @Body(new ValidationPipe()) dto: UpgradeLoginPasswordDto,
+    @Request() request: UnauthenticatedRequest,
+    @Res({ passthrough: true }) response: HttpResponse,
+  ): Promise<CustomJsonResponse> {
+    const result = await this.authService.upgradeLoginPassword(
+      dto.flowId,
+      dto.newPassword,
+      buildCustomerSessionContext(request),
+    );
+    return this.finalizeWebLoginResponse(result, response);
+  }
+
+  @Post("login/recovery-codes/setup")
+  async setupLoginRecoveryCodes(
+    @Body(new ValidationPipe()) dto: LoginFlowDto,
+    @Request() request: UnauthenticatedRequest,
+    @Res({ passthrough: true }) response: HttpResponse,
+  ): Promise<CustomJsonResponse> {
+    const result = await this.authService.setupLoginRecoveryCodes(
+      dto.flowId,
+      buildCustomerSessionContext(request),
+    );
+    return this.finalizeWebLoginResponse(result, response);
+  }
+
+  @Post("mobile/refresh")
+  async refreshMobileSession(
+    @Body(new ValidationPipe()) dto: MobileRefreshDto,
+    @Request() request: UnauthenticatedRequest,
+  ): Promise<CustomJsonResponse> {
+    return this.authService.refreshMobileSession(
+      dto.refreshToken,
+      buildCustomerSessionContext(request),
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("session")
+  async getCustomerSession(
+    @Request() request: AuthenticatedRequest,
+  ): Promise<CustomJsonResponse> {
+    if (request.user.authMode !== "cookie" || !request.user.sessionId) {
+      throw new UnauthorizedException("Web session cookie is required.");
+    }
+    return this.authService.getWebSessionBootstrap(
+      request.user.id,
+      request.user.sessionId,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("logout")
+  async logout(
+    @Request() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: HttpResponse,
+  ): Promise<CustomJsonResponse> {
+    const result = await this.authService.logoutCustomerSession(
+      request.user.id,
+      request.user.sessionId ?? null,
+    );
+    const secure = process.env.NODE_ENV === "production";
+    const cookieName = secure ? "__Host-stb_session" : "stb_session";
+    response.setHeader(
+      "Set-Cookie",
+      `${cookieName}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure ? "; Secure" : ""}`,
+    );
+    response.setHeader("Clear-Site-Data", '"cache"');
+    return result;
+  }
+
   @UseGuards(JwtAuthGuard)
   @Patch("password")
   async updatePassword(
     @Body(new ValidationPipe()) updatePasswordDto: UpdatePasswordDto,
     @Request() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: HttpResponse,
   ): Promise<CustomJsonResponse> {
-    return this.authService.updatePassword(
+    const result = await this.authService.updatePassword(
       request.user.id,
       updatePasswordDto.currentPassword,
       updatePasswordDto.newPassword,
       buildCustomerSessionContext(request),
     );
+    const secure = process.env.NODE_ENV === "production";
+    response.setHeader(
+      "Set-Cookie",
+      `${secure ? "__Host-stb_session" : "stb_session"}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure ? "; Secure" : ""}`,
+    );
+    response.setHeader("Clear-Site-Data", '"cache"');
+    return result;
   }
 
   @UseGuards(JwtAuthGuard)
   @Post("session/revoke-all")
   async revokeAllCustomerSessions(
     @Request() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: HttpResponse,
   ): Promise<CustomJsonResponse> {
-    return this.authService.revokeAllCustomerSessions(
+    const result = await this.authService.revokeAllCustomerSessions(
       request.user.id,
       buildCustomerSessionContext(request),
     );
+    const secure = process.env.NODE_ENV === "production";
+    response.setHeader(
+      "Set-Cookie",
+      `${secure ? "__Host-stb_session" : "stb_session"}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure ? "; Secure" : ""}`,
+    );
+    response.setHeader("Clear-Site-Data", '"cache"');
+    return result;
   }
 
   @UseGuards(JwtAuthGuard)

@@ -1,82 +1,63 @@
+import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
+import { Platform } from "react-native";
 import { create } from "zustand";
+import { loadMobileRuntimeConfig } from "@stealth-trails-bank/config/mobile";
 import type { SessionUser } from "../lib/api/types";
 
-const tokenStorageKey = "stb.mobile.token";
-const userStorageKey = "stb.mobile.user";
-
+const sessionStorageKey = "stb.mobile.refresh-session.v2";
 type PendingRequestCache = Record<string, string>;
+type PersistedSession = { refreshToken: string; user: SessionUser };
 
-function readWebStorage(key: string): string | null {
-  if (typeof globalThis.localStorage === "undefined") {
-    return null;
-  }
+async function secureStoreOptions(): Promise<SecureStore.SecureStoreOptions> {
+  const biometricAvailable =
+    Platform.OS !== "web" &&
+    (await LocalAuthentication.hasHardwareAsync()) &&
+    (await LocalAuthentication.isEnrolledAsync());
+  return {
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    requireAuthentication: biometricAvailable,
+    authenticationPrompt: "Unlock Stealth Trails Bank",
+  };
+}
 
+async function readPersistedSession(): Promise<PersistedSession | null> {
+  if (Platform.OS === "web") return null;
   try {
-    return globalThis.localStorage.getItem(key);
+    const value = await SecureStore.getItemAsync(
+      sessionStorageKey,
+      await secureStoreOptions(),
+    );
+    return value ? (JSON.parse(value) as PersistedSession) : null;
   } catch {
     return null;
   }
 }
 
-function writeWebStorage(key: string, value: string) {
-  if (typeof globalThis.localStorage === "undefined") {
-    return;
-  }
-
-  try {
-    globalThis.localStorage.setItem(key, value);
-  } catch {
-    // Ignore browser storage failures and leave the session in memory.
-  }
+async function persistRefreshSession(value: PersistedSession): Promise<void> {
+  if (Platform.OS === "web") return;
+  await SecureStore.setItemAsync(
+    sessionStorageKey,
+    JSON.stringify(value),
+    await secureStoreOptions(),
+  );
 }
 
-function deleteWebStorage(key: string) {
-  if (typeof globalThis.localStorage === "undefined") {
-    return;
-  }
-
-  try {
-    globalThis.localStorage.removeItem(key);
-  } catch {
-    // Ignore browser storage failures and leave the session in memory.
-  }
-}
-
-async function readPersistedValue(key: string): Promise<string | null> {
-  if (typeof globalThis.localStorage !== "undefined") {
-    return readWebStorage(key);
-  }
-
-  return SecureStore.getItemAsync(key);
-}
-
-async function writePersistedValue(key: string, value: string): Promise<void> {
-  if (typeof globalThis.localStorage !== "undefined") {
-    writeWebStorage(key, value);
-    return;
-  }
-
-  await SecureStore.setItemAsync(key, value);
-}
-
-async function deletePersistedValue(key: string): Promise<void> {
-  if (typeof globalThis.localStorage !== "undefined") {
-    deleteWebStorage(key);
-    return;
-  }
-
-  await SecureStore.deleteItemAsync(key);
+async function clearPersistedSession(): Promise<void> {
+  if (Platform.OS === "web") return;
+  await SecureStore.deleteItemAsync(sessionStorageKey);
 }
 
 type SessionState = {
   token: string | null;
+  refreshToken: string | null;
   user: SessionUser | null;
   hydrated: boolean;
   pendingRequestKeys: PendingRequestCache;
   hydrate: () => Promise<void>;
-  signIn: (input: { token: string; user: SessionUser }) => Promise<void>;
+  signIn: (input: { token: string; refreshToken: string; user: SessionUser }) => Promise<void>;
   signOut: () => Promise<void>;
+  setTokens: (token: string, refreshToken: string) => Promise<void>;
   setToken: (token: string) => Promise<void>;
   setUser: (user: SessionUser) => Promise<void>;
   rememberRequestKey: (signature: string, key: string) => void;
@@ -85,97 +66,84 @@ type SessionState = {
   dropSession: () => void;
 };
 
-async function persistSession(token: string, user: SessionUser) {
-  await writePersistedValue(tokenStorageKey, token);
-  await writePersistedValue(userStorageKey, JSON.stringify(user));
-}
-
-async function clearPersistedSession() {
-  await deletePersistedValue(tokenStorageKey);
-  await deletePersistedValue(userStorageKey);
-}
-
 export const useSessionStore = create<SessionState>((set, get) => ({
   token: null,
+  refreshToken: null,
   user: null,
   hydrated: false,
   pendingRequestKeys: {},
   hydrate: async () => {
-    const [token, userValue] = await Promise.all([
-      readPersistedValue(tokenStorageKey),
-      readPersistedValue(userStorageKey),
-    ]);
-
-    let user: SessionUser | null = null;
-
-    if (userValue) {
+    const persisted = await readPersistedSession();
+    if (persisted) {
       try {
-        user = JSON.parse(userValue) as SessionUser;
+        const runtimeConfig = loadMobileRuntimeConfig({
+          EXPO_PUBLIC_API_BASE_URL: process.env.EXPO_PUBLIC_API_BASE_URL,
+        });
+        const response = await fetch(`${runtimeConfig.apiBaseUrl}/auth/mobile/refresh`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-stb-client-platform": "mobile",
+          },
+          body: JSON.stringify({ refreshToken: persisted.refreshToken }),
+        });
+        if (!response.ok) throw new Error("Session refresh failed.");
+        const envelope = (await response.json()) as {
+          data?: { token: string; refreshToken: string };
+        };
+        const refreshed = envelope.data;
+        if (refreshed) {
+          await persistRefreshSession({
+            refreshToken: refreshed.refreshToken,
+            user: persisted.user,
+          });
+          set({
+            token: refreshed.token,
+            refreshToken: refreshed.refreshToken,
+            user: persisted.user,
+            hydrated: true,
+          });
+          return;
+        }
       } catch {
-        user = null;
+        await clearPersistedSession();
       }
     }
-
     set({
-      token: token ?? null,
-      user,
+      refreshToken: null,
+      user: null,
+      token: null,
       hydrated: true,
     });
   },
-  signIn: async ({ token, user }) => {
-    await persistSession(token, user);
-    set({ token, user, hydrated: true });
+  signIn: async ({ token, refreshToken, user }) => {
+    await persistRefreshSession({ refreshToken, user });
+    set({ token, refreshToken, user, hydrated: true });
   },
   signOut: async () => {
     await clearPersistedSession();
-    set({
-      token: null,
-      user: null,
-      pendingRequestKeys: {},
-    });
+    set({ token: null, refreshToken: null, user: null, pendingRequestKeys: {} });
   },
-  setToken: async (token) => {
+  setTokens: async (token, refreshToken) => {
     const user = get().user;
-
-    if (user) {
-      await persistSession(token, user);
-    } else {
-      await writePersistedValue(tokenStorageKey, token);
-    }
-
-    set({ token });
+    if (user) await persistRefreshSession({ refreshToken, user });
+    set({ token, refreshToken });
   },
+  setToken: async (token) => set({ token }),
   setUser: async (user) => {
-    const token = get().token;
-
-    if (token) {
-      await persistSession(token, user);
-    }
-
+    const refreshToken = get().refreshToken;
+    if (refreshToken) await persistRefreshSession({ refreshToken, user });
     set({ user });
   },
-  rememberRequestKey: (signature, key) => {
-    set((state) => ({
-      pendingRequestKeys: {
-        ...state.pendingRequestKeys,
-        [signature]: key,
-      },
-    }));
-  },
+  rememberRequestKey: (signature, key) => set((state) => ({ pendingRequestKeys: { ...state.pendingRequestKeys, [signature]: key } })),
   consumeRequestKey: (signature) => get().pendingRequestKeys[signature] ?? null,
-  clearRequestKey: (signature) => {
-    set((state) => {
-      const next = { ...state.pendingRequestKeys };
-      delete next[signature];
-      return { pendingRequestKeys: next };
-    });
-  },
+  clearRequestKey: (signature) => set((state) => {
+    const next = { ...state.pendingRequestKeys };
+    delete next[signature];
+    return { pendingRequestKeys: next };
+  }),
   dropSession: () => {
-    set({
-      token: null,
-      user: null,
-      pendingRequestKeys: {},
-    });
+    set({ token: null, refreshToken: null, user: null, pendingRequestKeys: {} });
     void clearPersistedSession();
   },
 }));

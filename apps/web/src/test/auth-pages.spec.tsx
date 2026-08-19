@@ -1,5 +1,4 @@
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import useAuth from "@/hooks/auth/useAuth";
 import SignIn from "@/pages/auth/SignIn";
@@ -33,6 +32,14 @@ describe("auth pages", () => {
     mockUseAuth.mockReturnValue({
       login: vi.fn(),
       signup: vi.fn(),
+      verifyEmail: vi.fn(),
+      resendEmailVerification: vi.fn(),
+      startTotpEnrollment: vi.fn(),
+      verifyTotpEnrollment: vi.fn(),
+      verifyTotp: vi.fn(),
+      verifyRecoveryCode: vi.fn(),
+      upgradePassword: vi.fn(),
+      setupRecoveryCodes: vi.fn(),
       loading: false,
       error: null,
     });
@@ -64,29 +71,13 @@ describe("auth pages", () => {
     expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
   });
 
-  it("keeps shared demo access hidden until explicitly revealed", async () => {
-    const user = userEvent.setup();
-
+  it("does not render shared access controls", () => {
     renderWithRouter(<SignIn />);
 
-    expect(screen.queryByText("admin@gmail.com")).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /use shared demo access/i }));
-
-    expect(screen.getByText("admin@gmail.com")).toBeInTheDocument();
-    expect(screen.getByText("P@ssw0rd")).toBeInTheDocument();
-  });
-
-  it("autofills the shared credentials when requested", async () => {
-    const user = userEvent.setup();
-
-    renderWithRouter(<SignIn />);
-
-    await user.click(screen.getByRole("button", { name: /use shared demo access/i }));
-    await user.click(screen.getByRole("button", { name: /fill demo credentials/i }));
-
-    expect(screen.getByLabelText(/email address/i)).toHaveValue("admin@gmail.com");
-    expect(screen.getByLabelText(/^password$/i)).toHaveValue("P@ssw0rd");
+    expect(
+      screen.queryByRole("button", { name: /use shared access/i })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/shared system access/i)).not.toBeInTheDocument();
   });
 
   it("redirects signed-in users away from auth screens", () => {
@@ -95,7 +86,7 @@ describe("auth pages", () => {
     renderWithRouter(<SignIn />);
     renderWithRouter(<SignUp />);
 
-    expect(mockNavigate).toHaveBeenCalledWith("/");
+    expect(mockNavigate).toHaveBeenCalledWith("/", { replace: true });
   });
 
   it("does not crash when a persisted signed-in user is missing newer mfa fields", () => {
@@ -113,6 +104,6 @@ describe("auth pages", () => {
 
     renderWithRouter(<SignIn />);
 
-    expect(mockNavigate).toHaveBeenCalledWith("/");
+    expect(mockNavigate).toHaveBeenCalledWith("/", { replace: true });
   });
 });

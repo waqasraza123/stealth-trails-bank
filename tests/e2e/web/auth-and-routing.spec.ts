@@ -10,7 +10,7 @@ test("redirects unauthenticated users to sign-in and completes sign-in successfu
   await expect(page).toHaveURL(/\/auth\/sign-in$/);
 
   await page.getByLabel("Email").fill("amina@example.com");
-  await page.getByLabel("Password").fill("P@ssw0rd");
+  await page.getByLabel("Password").fill("customer-test-password");
   await page.getByRole("button", { name: "Sign in" }).click();
 
   await expect(page).toHaveURL("/");

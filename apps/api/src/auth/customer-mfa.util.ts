@@ -1,9 +1,10 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "crypto";
+import { customerAuthHmac } from "./customer-auth-crypto";
 
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 export function createOtpHash(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
+  return customerAuthHmac(`otp:${value}`);
 }
 
 export function otpHashMatches(value: string, expectedHash: string): boolean {
@@ -86,26 +87,36 @@ function generateHotp(secret: string, counter: number): string {
   return String(code % 1_000_000).padStart(6, "0");
 }
 
-export function verifyTotpCode(
+export function findValidTotpCounter(
   secret: string,
   code: string,
   window = 1,
   stepSeconds = 30,
   now = Date.now()
-): boolean {
+): number | null {
   if (!/^\d{6}$/u.test(code)) {
-    return false;
+    return null;
   }
 
   const counter = Math.floor(now / 1000 / stepSeconds);
 
   for (let offset = -window; offset <= window; offset += 1) {
     if (generateHotp(secret, counter + offset) === code) {
-      return true;
+      return counter + offset;
     }
   }
 
-  return false;
+  return null;
+}
+
+export function verifyTotpCode(
+  secret: string,
+  code: string,
+  window = 1,
+  stepSeconds = 30,
+  now = Date.now(),
+): boolean {
+  return findValidTotpCounter(secret, code, window, stepSeconds, now) !== null;
 }
 
 export function buildOtpAuthUri(

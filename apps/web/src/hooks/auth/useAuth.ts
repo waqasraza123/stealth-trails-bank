@@ -6,43 +6,22 @@ import type {
 } from "@stealth-trails-bank/types";
 import { loadWebRuntimeConfig } from "@stealth-trails-bank/config/web";
 import { useUserStore } from "@/stores/userStore";
+import {
+  setWebCsrfToken,
+  WEB_COOKIE_SESSION_MARKER,
+} from "@/lib/auth-session";
 
-const webRuntimeConfig = loadWebRuntimeConfig(
+const config = loadWebRuntimeConfig(
   import.meta.env as Record<string, string | boolean | undefined>,
 );
 
 type ApiResponse<T> = {
   status: "success" | "failed";
   message: string;
-  error?: unknown;
   data?: T;
 };
 
-type SignUpCredentials = {
-  firstName: string;
-  lastName: string;
-  email: string;
-  password: string;
-};
-
-type LoginCredentials = {
-  email: string;
-  password: string;
-};
-
-type SignUpResponseUser = {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  ethereumAddress: string;
-};
-
-type SignUpResponseData = {
-  user: SignUpResponseUser;
-};
-
-type LoginResponseUser = {
+type LoginUser = {
   id: number;
   supabaseUserId: string;
   email: string;
@@ -53,81 +32,43 @@ type LoginResponseUser = {
   sessionSecurity: CustomerSessionSecurityStatus;
 };
 
-type LoginResponseData = {
-  token?: string;
-  user: LoginResponseUser;
+export type LoginNextAction =
+  | "verify_email"
+  | "enroll_totp"
+  | "verify_totp"
+  | "upgrade_password"
+  | "setup_recovery_codes"
+  | "complete";
+
+export type LoginFlowResult = {
+  flowId: string;
+  nextAction: LoginNextAction;
+  expiresAt: string;
+  previewCode?: string | null;
+  secret?: string;
+  otpAuthUri?: string;
+  recoveryCodes?: string[];
+  user?: LoginUser;
+  session?: {
+    kind: "web";
+    csrfToken: string;
+  };
+};
+
+type SignUpInput = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
 };
 
 function readErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
-    const responseMessage =
-      typeof error.response?.data?.message === "string"
-        ? error.response.data.message
-        : undefined;
-
-    return responseMessage ?? error.message;
+    return typeof error.response?.data?.message === "string"
+      ? error.response.data.message
+      : error.message;
   }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return "Request failed.";
-}
-
-function normalizeSignUpInput(
-  firstArg: SignUpCredentials | string,
-  lastName?: string,
-  email?: string,
-  password?: string,
-): SignUpCredentials {
-  if (typeof firstArg !== "string") {
-    return firstArg;
-  }
-
-  if (!lastName || !email || !password) {
-    throw new Error(
-      "Sign up requires first name, last name, email, and password.",
-    );
-  }
-
-  return {
-    firstName: firstArg,
-    lastName,
-    email,
-    password,
-  };
-}
-
-function normalizeLoginInput(
-  firstArg: LoginCredentials | string,
-  password?: string,
-): LoginCredentials {
-  if (typeof firstArg !== "string") {
-    return firstArg;
-  }
-
-  if (!password) {
-    throw new Error("Login requires email and password.");
-  }
-
-  return {
-    email: firstArg,
-    password,
-  };
-}
-
-function mapLoginUser(user: LoginResponseUser) {
-  return {
-    id: user.id,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    email: user.email,
-    supabaseUserId: user.supabaseUserId,
-    ethereumAddress: user.ethereumAddress,
-    mfa: user.mfa,
-    sessionSecurity: user.sessionSecurity,
-  };
+  return error instanceof Error ? error.message : "Request failed.";
 }
 
 export default function useAuth() {
@@ -136,82 +77,80 @@ export default function useAuth() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function signup(
-    firstArg: SignUpCredentials | string,
-    lastName?: string,
-    email?: string,
-    password?: string,
-  ) {
-    const payload = normalizeSignUpInput(firstArg, lastName, email, password);
-
+  async function request<T>(path: string, payload: unknown): Promise<T> {
     setLoading(true);
     setError(null);
-
     try {
-      const response = await axios.post<ApiResponse<SignUpResponseData>>(
-        `${webRuntimeConfig.serverUrl}/auth/signup`,
+      const response = await axios.post<ApiResponse<T>>(
+        `${config.serverUrl}/auth/${path}`,
         payload,
       );
-
-      const user = response.data.data?.user;
-
-      if (response.data.status !== "success" || !user) {
-        throw new Error(response.data.message || "Sign up failed.");
+      if (response.data.status !== "success" || !response.data.data) {
+        throw new Error(response.data.message || "Authentication failed.");
       }
-
-      return user;
+      return response.data.data;
     } catch (requestError) {
       const message = readErrorMessage(requestError);
       setError(message);
-      throw requestError instanceof Error ? requestError : new Error(message);
+      throw new Error(message);
     } finally {
       setLoading(false);
     }
   }
 
-  async function login(firstArg: LoginCredentials | string, password?: string) {
-    const payload = normalizeLoginInput(firstArg, password);
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await axios.post<ApiResponse<LoginResponseData>>(
-        `${webRuntimeConfig.serverUrl}/auth/login`,
-        payload,
-        {
-          headers: {
-            "x-stb-client-platform": "web",
-          },
-        },
-      );
-
-      const token = response.data.data?.token;
-      const user = response.data.data?.user;
-
-      if (response.data.status !== "success" || !token || !user) {
-        throw new Error(response.data.message || "Login failed.");
-      }
-
-      setToken(token);
-      setUser(mapLoginUser(user));
-
-      return {
-        token,
-        user,
-      };
-    } catch (requestError) {
-      const message = readErrorMessage(requestError);
-      setError(message);
-      throw requestError instanceof Error ? requestError : new Error(message);
-    } finally {
-      setLoading(false);
+  function acceptCompleted(result: LoginFlowResult) {
+    if (result.nextAction !== "complete" || !result.user || !result.session) {
+      return result;
     }
+    setWebCsrfToken(result.session.csrfToken);
+    setUser(result.user);
+    setToken(WEB_COOKIE_SESSION_MARKER);
+    return result;
   }
 
   return {
-    signup,
-    login,
+    signup: (input: SignUpInput) =>
+      request<{ nextAction: "verify_email"; email: string; expiresAt: string }>(
+        "signup",
+        input,
+      ),
+    verifyEmail: (email: string, code: string) =>
+      request<{ emailVerified: true }>("email-verification/verify", {
+        email,
+        code,
+      }),
+    resendEmailVerification: (email: string) =>
+      request<{ expiresAt: string | null }>("email-verification/resend", {
+        email,
+      }),
+    login: (input: { email: string; password: string }) =>
+      request<LoginFlowResult>("login", input),
+    startTotpEnrollment: (flowId: string) =>
+      request<LoginFlowResult>("login/totp/enrollment/start", { flowId }),
+    verifyTotpEnrollment: async (flowId: string, code: string) =>
+      acceptCompleted(
+        await request<LoginFlowResult>("login/totp/enrollment/verify", {
+          flowId,
+          code,
+        }),
+      ),
+    verifyTotp: async (flowId: string, code: string) =>
+      acceptCompleted(
+        await request<LoginFlowResult>("login/totp/verify", { flowId, code }),
+      ),
+    verifyRecoveryCode: (flowId: string, code: string) =>
+      request<LoginFlowResult>("login/recovery-code/verify", { flowId, code }),
+    upgradePassword: async (flowId: string, newPassword: string) =>
+      acceptCompleted(
+        await request<LoginFlowResult>("login/password/upgrade", {
+          flowId,
+          newPassword,
+        }),
+      ),
+    setupRecoveryCodes: async (flowId: string) =>
+      acceptCompleted(
+        await request<LoginFlowResult>("login/recovery-codes/setup", { flowId }),
+      ),
     loading,
     error,
   };

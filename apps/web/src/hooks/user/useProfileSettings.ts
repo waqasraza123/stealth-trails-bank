@@ -23,10 +23,7 @@ type RotatePasswordInput = {
 
 type RotatePasswordResult = {
   passwordRotationAvailable: boolean;
-  session: {
-    token: string;
-    revokedOtherSessions: boolean;
-  };
+  reauthenticationRequired: true;
 };
 
 type UpdateNotificationPreferencesResult = {
@@ -46,10 +43,7 @@ type RemoveTrustedContactResult = {
 };
 
 type RevokeCustomerSessionsResult = {
-  session: {
-    token: string;
-    revokedOtherSessions: boolean;
-  };
+  reauthenticationRequired: true;
 };
 
 type ListCustomerSessionsResult = {
@@ -88,7 +82,7 @@ function buildWebAuthHeaders(token: string) {
 
 export function useRotatePassword() {
   const token = useUserStore((state) => state.token);
-  const setToken = useUserStore((state) => state.setToken);
+  const clearUser = useUserStore((state) => state.clearUser);
 
   return useMutation({
     mutationFn: async (input: RotatePasswordInput) => {
@@ -113,7 +107,7 @@ export function useRotatePassword() {
           );
         }
 
-        setToken(response.data.data.session.token);
+        clearUser();
         return response.data.data;
       } catch (error) {
         throw new Error(
@@ -126,7 +120,7 @@ export function useRotatePassword() {
 
 export function useRevokeAllSessions() {
   const token = useUserStore((state) => state.token);
-  const setToken = useUserStore((state) => state.setToken);
+  const clearUser = useUserStore((state) => state.clearUser);
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -152,7 +146,7 @@ export function useRevokeAllSessions() {
           );
         }
 
-        setToken(response.data.data.session.token);
+        clearUser();
         return response.data.data;
       } catch (error) {
         throw new Error(

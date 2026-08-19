@@ -47,6 +47,7 @@
     "@radix-ui/react-tooltip": "^1.1.4",
     "@stealth-trails-bank/config": "workspace:*",
     "@stealth-trails-bank/i18n": "workspace:*",
+    "@stealth-trails-bank/security": "workspace:*",
     "@stealth-trails-bank/types": "workspace:*",
     "@stealth-trails-bank/ui-foundation": "workspace:*",
     "@tanstack/react-query": "^5.75.1",

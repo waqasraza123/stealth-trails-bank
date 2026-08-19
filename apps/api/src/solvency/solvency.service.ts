@@ -1916,13 +1916,17 @@ export class SolvencyService {
             expectedPolicyUpdatedAt: currentPolicyState.updatedAt
           }
         });
+        const requestedAt = this.normalizeRequiredDate(
+          nextRequest.requestedAt,
+          "solvency policy resume request requestedAt"
+        );
 
         await transaction.solvencyPolicyState.update({
           where: {
             environment: this.environment
           },
           data: {
-            manualResumeRequestedAt: nextRequest.requestedAt
+            manualResumeRequestedAt: requestedAt
           }
         });
 
@@ -1938,7 +1942,7 @@ export class SolvencyService {
               snapshotId: snapshot.id,
               operatorRole: normalizedOperatorRole,
               approvalEligibleAt: this.buildResumeApprovalEligibleAt(
-                nextRequest.requestedAt
+                requestedAt
               ).toISOString(),
               approvalTimelockSeconds: this.resumeApprovalTimelockSeconds,
               requestNote: normalizedRequestNote ?? null
@@ -1946,7 +1950,10 @@ export class SolvencyService {
           }
         });
 
-        return nextRequest;
+        return {
+          ...nextRequest,
+          requestedAt
+        };
       }
     );
 
@@ -3065,8 +3072,12 @@ export class SolvencyService {
         : T
       : never
   ): SolvencyPolicyResumeRequestProjection {
+    const requestedAt = this.normalizeRequiredDate(
+      record.requestedAt,
+      "solvency policy resume request requestedAt"
+    );
     const approvalEligibleAt = this.buildResumeApprovalEligibleAt(
-      record.requestedAt
+      requestedAt
     );
     const approvalTimelockRemainingSeconds = Math.max(
       0,
@@ -3082,7 +3093,7 @@ export class SolvencyService {
       requestedByOperatorRole: record.requestedByOperatorRole,
       requestNote: record.requestNote ?? null,
       expectedPolicyUpdatedAt: record.expectedPolicyUpdatedAt.toISOString(),
-      requestedAt: record.requestedAt.toISOString(),
+      requestedAt: requestedAt.toISOString(),
       approvalEligibleAt: approvalEligibleAt.toISOString(),
       approvalTimelockSeconds: this.resumeApprovalTimelockSeconds,
       approvalTimelockRemainingSeconds,
@@ -3239,9 +3250,25 @@ export class SolvencyService {
     };
   }
 
-  private buildResumeApprovalEligibleAt(requestedAt: Date): Date {
+  private normalizeRequiredDate(value: Date | string, fieldName: string): Date {
+    const normalized =
+      value instanceof Date ? new Date(value.getTime()) : new Date(value);
+
+    if (!Number.isFinite(normalized.getTime())) {
+      throw new ServiceUnavailableException(`${fieldName} is invalid.`);
+    }
+
+    return normalized;
+  }
+
+  private buildResumeApprovalEligibleAt(requestedAt: Date | string): Date {
+    const normalizedRequestedAt = this.normalizeRequiredDate(
+      requestedAt,
+      "solvency policy resume request requestedAt"
+    );
+
     return new Date(
-      requestedAt.getTime() + this.resumeApprovalTimelockSeconds * 1000
+      normalizedRequestedAt.getTime() + this.resumeApprovalTimelockSeconds * 1000
     );
   }
 

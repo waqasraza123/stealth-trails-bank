@@ -170,7 +170,7 @@ describe("WithdrawalIntentsController integration", () => {
       });
 
     expect(response.status).toBe(401);
-    expect(response.body.message).toBe("Authorization header is missing.");
+    expect(response.body.message).toBe("Customer session is missing.");
   });
 
   it("rejects invalid withdrawal intent payloads before service execution", async () => {

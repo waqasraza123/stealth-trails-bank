@@ -16,6 +16,7 @@ import App from "./App.tsx";
 import "./index.css";
 import { webTelemetry } from "./lib/observability";
 import { initializeUserStore } from "./stores/userStore";
+import "./lib/auth-session";
 
 async function bootstrap() {
   try {

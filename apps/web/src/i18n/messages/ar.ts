@@ -59,12 +59,7 @@ export const webMessagesAr: WebMessages = {
       successTitle: "تم تسجيل الدخول بنجاح",
       successDescription: "مرحباً بعودتك إلى حسابك.",
       errorTitle: "فشل تسجيل الدخول",
-      errorDescription: "حدث خطأ أثناء تسجيل الدخول. حاول مرة أخرى.",
-      demoTitle: "استخدام دخول العرض المشترك",
-      demoDescription:
-        "اكشف حساب عرض محلي من دون إرباك مسار تسجيل الدخول الرئيسي.",
-      demoPanelTitle: "وصول النظام المشترك",
-      demoButton: "تعبئة بيانات العرض"
+      errorDescription: "حدث خطأ أثناء تسجيل الدخول. حاول مرة أخرى."
     },
     signUp: {
       formEyebrow: "فتح حساب",

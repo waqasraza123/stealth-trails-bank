@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { LoadingPanel } from "@/components/ui/loading-panel";
 import { LoadingButton } from "@/components/ui/loading-button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   MonitorSmartphone,
   CheckCircle2,
@@ -63,12 +64,17 @@ import {
 } from "@/lib/customer-account";
 import { formatDateLabel } from "@/lib/customer-finance";
 import { useUserStore } from "@/stores/userStore";
+import { logoutWebSession } from "@/lib/auth-session";
 
 const emptyPasswordForm = {
   currentPassword: "",
   newPassword: "",
   confirmPassword: "",
 };
+
+function legacyEmailMfaEnabled(): boolean {
+  return false;
+}
 
 const emptyTrustedContactDraft = {
   kind: "trusted_contact" as const,
@@ -424,9 +430,13 @@ const Profile = () => {
     setAgeDateOfBirthDraft(profile?.ageProfile?.dateOfBirth ?? "");
   }, [profile?.ageProfile?.dateOfBirth]);
 
-  const handleLogout = () => {
-    clearUser();
-    navigate("/auth/sign-in");
+  const handleLogout = async () => {
+    try {
+      await logoutWebSession();
+    } finally {
+      clearUser();
+      navigate("/auth/sign-in");
+    }
   };
 
   if (profileQuery.isLoading) {
@@ -855,7 +865,7 @@ const Profile = () => {
               </p>
             </div>
           </div>
-          <Button variant="destructive" onClick={handleLogout}>
+          <Button variant="destructive" onClick={() => void handleLogout()}>
             <LogOut className="mr-2 h-4 w-4" />
             {t("profile.signOut")}
           </Button>
@@ -1016,7 +1026,7 @@ const Profile = () => {
                   </AlertTitle>
                   <AlertDescription>
                     {mfa?.requiresSetup
-                      ? "Complete authenticator and email backup enrollment now. Browsing remains available, but send, withdraw, and password rotation stay blocked until setup is complete."
+                      ? "Complete authenticator enrollment now. Browsing remains available, but send, withdraw, and password rotation stay blocked until setup is complete."
                       : stepUpFresh
                         ? "Money-out and password actions are currently unlocked for this session."
                         : "Before money-out or password changes, complete a fresh MFA verification."}
@@ -1037,14 +1047,6 @@ const Profile = () => {
                         {recommendedAuthenticatorApps[1]}.
                       </p>
                     ) : null}
-                  </div>
-                  <div className="stb-section-frame p-4">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                      Email backup factor
-                    </p>
-                    <p className="mt-2 font-medium text-foreground">
-                      {mfa?.emailOtpEnrolled ? "Enabled" : "Not enrolled"}
-                    </p>
                   </div>
                 </div>
 
@@ -1116,7 +1118,7 @@ const Profile = () => {
                   </div>
                 ) : null}
 
-                {mfa?.totpEnrolled && !mfa?.emailOtpEnrolled ? (
+                {legacyEmailMfaEnabled() && mfa?.totpEnrolled && !mfa?.emailOtpEnrolled ? (
                   <div className="space-y-3 rounded-[1.5rem] border border-border bg-white/80 p-5">
                     <p className="text-sm font-medium text-foreground">
                       Add email backup factor
@@ -1164,7 +1166,7 @@ const Profile = () => {
                   </div>
                 ) : null}
 
-                {mfa?.totpEnrolled && mfa?.emailOtpEnrolled ? (
+                {legacyEmailMfaEnabled() && mfa?.totpEnrolled && mfa?.emailOtpEnrolled ? (
                   <div className="space-y-3 rounded-[1.5rem] border border-border bg-white/80 p-5">
                     <p className="text-sm font-medium text-foreground">
                       Lost the authenticator device?
@@ -1231,7 +1233,7 @@ const Profile = () => {
                       >
                         Use authenticator
                       </Button>
-                      {mfa?.emailOtpEnrolled ? (
+                      {legacyEmailMfaEnabled() && mfa?.emailOtpEnrolled ? (
                         <Button
                           variant="outline"
                           onClick={() => {
@@ -1566,157 +1568,199 @@ const Profile = () => {
 
                   <div className="space-y-3">
                     <div className="stb-trust-note text-sm text-muted-foreground">
-                      <p className="text-sm font-medium text-foreground">
-                        Active sessions
-                      </p>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        Review every active device or browser token and revoke
-                        anything you do not recognize.
-                      </p>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">
+                            Security history
+                          </p>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Review active sessions and recent security activity
+                            in one bounded timeline.
+                          </p>
+                        </div>
+                        <Badge variant="secondary">
+                          {customerSessions.length} sessions ·{" "}
+                          {securityActivity.length} events
+                        </Badge>
+                      </div>
                     </div>
 
-                    {customerSessionsQuery.isLoading ? (
-                      <LoadingPanel compact title="Loading active sessions" />
-                    ) : customerSessionsQuery.isError ? (
-                      <Alert variant="destructive">
-                        <ShieldAlert className="h-4 w-4" />
-                        <AlertTitle>Session inventory unavailable</AlertTitle>
-                        <AlertDescription>
-                          {customerSessionsQuery.error instanceof Error
-                            ? customerSessionsQuery.error.message
-                            : "Failed to load customer sessions."}
-                        </AlertDescription>
-                      </Alert>
-                    ) : customerSessions.length > 0 ? (
-                      <div className="space-y-3">
-                        {customerSessions.map((session) => (
-                          <div
-                            key={session.id}
-                            className="stb-section-frame flex flex-col gap-3 p-4"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <MonitorSmartphone className="h-4 w-4 text-muted-foreground" />
-                                  <p className="text-sm font-medium text-foreground">
-                                    {formatSessionLabel(session)}
-                                  </p>
-                                  {session.current ? (
-                                    <Badge variant="secondary">Current</Badge>
-                                  ) : null}
-                                  <Badge
-                                    variant={
-                                      session.trusted
-                                        ? "secondary"
-                                        : "destructive"
-                                    }
-                                  >
-                                    {session.trusted ? "Trusted" : "Verify"}
-                                  </Badge>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                  Last seen{" "}
-                                  {formatDateLabel(session.lastSeenAt, locale)}
-                                </p>
-                                {session.ipAddress ? (
-                                  <p className="text-xs text-muted-foreground">
-                                    IP {session.ipAddress}
-                                  </p>
-                                ) : null}
-                                {session.userAgent ? (
-                                  <p className="text-xs text-muted-foreground">
-                                    {session.userAgent}
-                                  </p>
-                                ) : null}
-                              </div>
-
-                              {!session.current ? (
-                                <LoadingButton
-                                  variant="outline"
-                                  onClick={() =>
-                                    void handleRevokeSession(session.id)
-                                  }
-                                  loading={
-                                    revokeCustomerSessionMutation.isPending
-                                  }
-                                  loadingLabel="Revoking..."
-                                  disabled={
-                                    revokeCustomerSessionMutation.isPending
-                                  }
-                                >
-                                  Revoke session
-                                </LoadingButton>
-                              ) : null}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="stb-section-frame p-4 text-sm text-muted-foreground">
-                        No active customer sessions were recorded yet.
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="stb-trust-note text-sm text-muted-foreground">
-                      <p className="text-sm font-medium text-foreground">
-                        Recent security activity
-                      </p>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        Review recent sign-ins, MFA changes, and session
-                        actions.
-                      </p>
-                    </div>
-
-                    {securityActivityQuery.isLoading ? (
-                      <LoadingPanel compact title="Loading security activity" />
-                    ) : securityActivityQuery.isError ? (
-                      <Alert variant="destructive">
-                        <ShieldAlert className="h-4 w-4" />
-                        <AlertTitle>Security activity unavailable</AlertTitle>
-                        <AlertDescription>
-                          {securityActivityQuery.error instanceof Error
-                            ? securityActivityQuery.error.message
-                            : "Failed to load security activity."}
-                        </AlertDescription>
-                      </Alert>
-                    ) : securityActivity.length > 0 ? (
-                      <div className="space-y-3">
-                        {securityActivity.map((event) => (
-                          <div
-                            key={event.id}
-                            className="stb-section-frame flex flex-col gap-2 p-4"
-                          >
+                    <ScrollArea
+                      className="stb-section-frame max-h-[22rem] overflow-hidden p-3 md:max-h-[26rem]"
+                      role="region"
+                      aria-label="Security history"
+                    >
+                      <div className="space-y-4 pr-3">
+                        <section className="space-y-3">
+                          <div className="flex items-center justify-between gap-3">
                             <p className="text-sm font-medium text-foreground">
-                              {formatSecurityActivityTitle(event)}
+                              Active sessions
                             </p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatDateLabel(event.createdAt, locale)}
-                            </p>
-                            {formatSecurityActivityDetail(event) ? (
-                              <p className="text-sm text-muted-foreground">
-                                {formatSecurityActivityDetail(event)}
-                              </p>
-                            ) : null}
-                            {event.ipAddress ? (
-                              <p className="text-xs text-muted-foreground">
-                                IP {event.ipAddress}
-                              </p>
-                            ) : null}
-                            {event.userAgent ? (
-                              <p className="text-xs text-muted-foreground">
-                                {event.userAgent}
-                              </p>
-                            ) : null}
+                            <Badge variant="outline">Session</Badge>
                           </div>
-                        ))}
+
+                          {customerSessionsQuery.isLoading ? (
+                            <LoadingPanel
+                              compact
+                              title="Loading active sessions"
+                            />
+                          ) : customerSessionsQuery.isError ? (
+                            <Alert variant="destructive">
+                              <ShieldAlert className="h-4 w-4" />
+                              <AlertTitle>
+                                Session inventory unavailable
+                              </AlertTitle>
+                              <AlertDescription>
+                                {customerSessionsQuery.error instanceof Error
+                                  ? customerSessionsQuery.error.message
+                                  : "Failed to load customer sessions."}
+                              </AlertDescription>
+                            </Alert>
+                          ) : customerSessions.length > 0 ? (
+                            <div className="space-y-3">
+                              {customerSessions.map((session) => (
+                                <div
+                                  key={session.id}
+                                  className="rounded-2xl border border-border/70 bg-background/55 p-4"
+                                >
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="min-w-0 space-y-1">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <MonitorSmartphone className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                        <p className="break-words text-sm font-medium text-foreground">
+                                          {formatSessionLabel(session)}
+                                        </p>
+                                        {session.current ? (
+                                          <Badge variant="secondary">
+                                            Current
+                                          </Badge>
+                                        ) : null}
+                                        <Badge
+                                          variant={
+                                            session.trusted
+                                              ? "secondary"
+                                              : "destructive"
+                                          }
+                                        >
+                                          {session.trusted
+                                            ? "Trusted"
+                                            : "Verify"}
+                                        </Badge>
+                                      </div>
+                                      <p className="text-xs text-muted-foreground">
+                                        Last seen{" "}
+                                        {formatDateLabel(
+                                          session.lastSeenAt,
+                                          locale,
+                                        )}
+                                      </p>
+                                      {session.ipAddress ? (
+                                        <p className="break-words text-xs text-muted-foreground">
+                                          IP {session.ipAddress}
+                                        </p>
+                                      ) : null}
+                                      {session.userAgent ? (
+                                        <p className="break-words text-xs text-muted-foreground">
+                                          {session.userAgent}
+                                        </p>
+                                      ) : null}
+                                    </div>
+
+                                    {!session.current ? (
+                                      <LoadingButton
+                                        className="shrink-0"
+                                        variant="outline"
+                                        onClick={() =>
+                                          void handleRevokeSession(session.id)
+                                        }
+                                        loading={
+                                          revokeCustomerSessionMutation.isPending
+                                        }
+                                        loadingLabel="Revoking..."
+                                        disabled={
+                                          revokeCustomerSessionMutation.isPending
+                                        }
+                                      >
+                                        Revoke session
+                                      </LoadingButton>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="rounded-2xl border border-border/70 bg-background/55 p-4 text-sm text-muted-foreground">
+                              No active customer sessions were recorded yet.
+                            </div>
+                          )}
+                        </section>
+
+                        <section className="space-y-3 border-t border-border/70 pt-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-medium text-foreground">
+                              Recent security activity
+                            </p>
+                            <Badge variant="outline">Activity</Badge>
+                          </div>
+
+                          {securityActivityQuery.isLoading ? (
+                            <LoadingPanel
+                              compact
+                              title="Loading security activity"
+                            />
+                          ) : securityActivityQuery.isError ? (
+                            <Alert variant="destructive">
+                              <ShieldAlert className="h-4 w-4" />
+                              <AlertTitle>
+                                Security activity unavailable
+                              </AlertTitle>
+                              <AlertDescription>
+                                {securityActivityQuery.error instanceof Error
+                                  ? securityActivityQuery.error.message
+                                  : "Failed to load security activity."}
+                              </AlertDescription>
+                            </Alert>
+                          ) : securityActivity.length > 0 ? (
+                            <div className="space-y-3">
+                              {securityActivity.map((event) => (
+                                <div
+                                  key={event.id}
+                                  className="rounded-2xl border border-border/70 bg-background/55 p-4"
+                                >
+                                  <div className="space-y-2">
+                                    <p className="break-words text-sm font-medium text-foreground">
+                                      {formatSecurityActivityTitle(event)}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {formatDateLabel(event.createdAt, locale)}
+                                    </p>
+                                    {formatSecurityActivityDetail(event) ? (
+                                      <p className="break-words text-sm text-muted-foreground">
+                                        {formatSecurityActivityDetail(event)}
+                                      </p>
+                                    ) : null}
+                                    {event.ipAddress ? (
+                                      <p className="break-words text-xs text-muted-foreground">
+                                        IP {event.ipAddress}
+                                      </p>
+                                    ) : null}
+                                    {event.userAgent ? (
+                                      <p className="break-words text-xs text-muted-foreground">
+                                        {event.userAgent}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="rounded-2xl border border-border/70 bg-background/55 p-4 text-sm text-muted-foreground">
+                              No recent security activity was recorded yet.
+                            </div>
+                          )}
+                        </section>
                       </div>
-                    ) : (
-                      <div className="stb-section-frame p-4 text-sm text-muted-foreground">
-                        No recent security activity was recorded yet.
-                      </div>
-                    )}
+                    </ScrollArea>
                   </div>
                 </CardContent>
               </Card>

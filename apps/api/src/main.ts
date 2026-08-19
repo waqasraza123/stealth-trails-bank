@@ -36,6 +36,20 @@ async function createApiApp() {
 
   app.enableShutdownHooks();
   app.use(assignRequestContext);
+  app.use((request: NodeRequest, response: NodeResponse, next: () => void) => {
+    response.setHeader("X-Content-Type-Options", "nosniff");
+    response.setHeader("Referrer-Policy", "no-referrer");
+    response.setHeader("X-Frame-Options", "DENY");
+    response.setHeader(
+      "Permissions-Policy",
+      "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    );
+    if (request.url?.startsWith("/auth")) {
+      response.setHeader("Cache-Control", "no-store");
+      response.setHeader("Pragma", "no-cache");
+    }
+    next();
+  });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -54,11 +68,13 @@ async function createApiApp() {
       "Authorization",
       "Content-Type",
       "X-Request-Id",
+      "X-CSRF-Token",
       "X-Stb-Client-Platform",
       "X-Internal-Operator-Api-Key",
       "X-Internal-Worker-Api-Key"
     ],
     exposedHeaders: ["X-Request-Id"],
+    credentials: true,
     optionsSuccessStatus: 204,
     maxAge: 86400
   });

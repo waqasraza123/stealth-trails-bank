@@ -156,12 +156,9 @@ const DEFAULT_LOCAL_GOVERNED_EXECUTOR_SIGNER_ADDRESSES = [
   "0x7E5F4552091A69125d5DfCb7b8C2659029395BDF",
 ] as const;
 const DEFAULT_LOCAL_OPERATOR_AUTH_JWT_SECRET = "local-dev-operator-jwt-secret";
-const DEFAULT_SHARED_LOGIN_ENABLED = true;
-const DEFAULT_SHARED_LOGIN_EMAIL = "admin@gmail.com";
-const DEFAULT_SHARED_LOGIN_PASSWORD = "P@ssw0rd";
+const DEFAULT_SHARED_LOGIN_ENABLED = false;
 const DEFAULT_SHARED_LOGIN_FIRST_NAME = "Shared";
 const DEFAULT_SHARED_LOGIN_LAST_NAME = "Admin";
-const DEFAULT_SHARED_LOGIN_SUPABASE_USER_ID = "shared-login-admin";
 const DEFAULT_OPERATOR_AUTH_REQUIRED_MFA_ENVIRONMENTS = [
   "staging",
   "production_like",
@@ -1094,6 +1091,17 @@ export type JwtRuntimeConfig = {
   readonly jwtExpirySeconds: number;
 };
 
+export type CustomerAuthSecurityRuntimeConfig = {
+  readonly hmacPepper: string;
+  readonly encryptionKey: string;
+  readonly encryptionKeyVersion: string;
+  readonly webSessionIdleSeconds: number;
+  readonly webSessionAbsoluteSeconds: number;
+  readonly mobileAccessTokenSeconds: number;
+  readonly mobileRefreshIdleSeconds: number;
+  readonly mobileRefreshAbsoluteSeconds: number;
+};
+
 export type BlockchainWalletRuntimeConfig = {
   readonly rpcUrl: string;
   readonly ethereumPrivateKey: string;
@@ -1616,6 +1624,62 @@ export function loadJwtRuntimeConfig(
   };
 }
 
+export function loadCustomerAuthSecurityRuntimeConfig(
+  env: RuntimeEnvShape = getNodeRuntimeEnv(),
+): CustomerAuthSecurityRuntimeConfig {
+  const environment = parseApiRuntimeEnvironment(
+    readOptionalRuntimeEnv(env, "NODE_ENV"),
+  );
+  const hmacPepper = readDevelopmentAwareRequiredRuntimeEnv(
+    env,
+    environment,
+    "CUSTOMER_AUTH_HMAC_PEPPER",
+    "local-development-auth-hmac-pepper-change-me",
+  );
+  const encryptionKey = readDevelopmentAwareRequiredRuntimeEnv(
+    env,
+    environment,
+    "CUSTOMER_AUTH_ENCRYPTION_KEY",
+    "bG9jYWwtZGV2ZWxvcG1lbnQtMzItYnl0ZS1rZXkhISE=",
+  );
+
+  if (Buffer.from(encryptionKey, "base64").length !== 32) {
+    throw new Error("CUSTOMER_AUTH_ENCRYPTION_KEY must decode to exactly 32 bytes.");
+  }
+
+  return {
+    hmacPepper,
+    encryptionKey,
+    encryptionKeyVersion:
+      readOptionalRuntimeEnv(env, "CUSTOMER_AUTH_ENCRYPTION_KEY_VERSION") ??
+      "v1",
+    webSessionIdleSeconds: parsePositiveInteger(
+      readOptionalRuntimeEnv(env, "CUSTOMER_WEB_SESSION_IDLE_SECONDS") ?? "900",
+      "CUSTOMER_WEB_SESSION_IDLE_SECONDS",
+    ),
+    webSessionAbsoluteSeconds: parsePositiveInteger(
+      readOptionalRuntimeEnv(env, "CUSTOMER_WEB_SESSION_ABSOLUTE_SECONDS") ??
+        "43200",
+      "CUSTOMER_WEB_SESSION_ABSOLUTE_SECONDS",
+    ),
+    mobileAccessTokenSeconds: parsePositiveInteger(
+      readOptionalRuntimeEnv(env, "CUSTOMER_MOBILE_ACCESS_TOKEN_SECONDS") ??
+        "600",
+      "CUSTOMER_MOBILE_ACCESS_TOKEN_SECONDS",
+    ),
+    mobileRefreshIdleSeconds: parsePositiveInteger(
+      readOptionalRuntimeEnv(env, "CUSTOMER_MOBILE_REFRESH_IDLE_SECONDS") ??
+        "86400",
+      "CUSTOMER_MOBILE_REFRESH_IDLE_SECONDS",
+    ),
+    mobileRefreshAbsoluteSeconds: parsePositiveInteger(
+      readOptionalRuntimeEnv(env, "CUSTOMER_MOBILE_REFRESH_ABSOLUTE_SECONDS") ??
+        "604800",
+      "CUSTOMER_MOBILE_REFRESH_ABSOLUTE_SECONDS",
+    ),
+  };
+}
+
 export function loadBlockchainWalletRuntimeConfig(
   env: RuntimeEnvShape = getNodeRuntimeEnv(),
 ): BlockchainWalletRuntimeConfig {
@@ -2028,25 +2092,7 @@ export function loadSharedLoginBootstrapRuntimeConfig(
     operatorRuntimeEnvironment === "production";
   const enabled = configuredEnabled
     ? parseBoolean(configuredEnabled, "SHARED_LOGIN_ENABLED")
-    : environment === "production" || nonDevelopmentOperatorEnvironment
-      ? false
-      : DEFAULT_SHARED_LOGIN_ENABLED;
-
-  const email =
-    readOptionalRuntimeEnv(env, "SHARED_LOGIN_EMAIL") ??
-    DEFAULT_SHARED_LOGIN_EMAIL;
-  const password =
-    readOptionalRuntimeEnv(env, "SHARED_LOGIN_PASSWORD") ??
-    DEFAULT_SHARED_LOGIN_PASSWORD;
-  const firstName =
-    readOptionalRuntimeEnv(env, "SHARED_LOGIN_FIRST_NAME") ??
-    DEFAULT_SHARED_LOGIN_FIRST_NAME;
-  const lastName =
-    readOptionalRuntimeEnv(env, "SHARED_LOGIN_LAST_NAME") ??
-    DEFAULT_SHARED_LOGIN_LAST_NAME;
-  const supabaseUserId =
-    readOptionalRuntimeEnv(env, "SHARED_LOGIN_SUPABASE_USER_ID") ??
-    DEFAULT_SHARED_LOGIN_SUPABASE_USER_ID;
+    : DEFAULT_SHARED_LOGIN_ENABLED;
 
   if (
     enabled &&
@@ -2060,13 +2106,26 @@ export function loadSharedLoginBootstrapRuntimeConfig(
   if (!enabled) {
     return {
       enabled,
-      email,
-      password,
-      firstName,
-      lastName,
-      supabaseUserId,
+      email: "",
+      password: "",
+      firstName: "",
+      lastName: "",
+      supabaseUserId: "",
     };
   }
+
+  const email = readRequiredRuntimeEnv(env, "SHARED_LOGIN_EMAIL");
+  const password = readRequiredRuntimeEnv(env, "SHARED_LOGIN_PASSWORD");
+  const firstName =
+    readOptionalRuntimeEnv(env, "SHARED_LOGIN_FIRST_NAME") ??
+    DEFAULT_SHARED_LOGIN_FIRST_NAME;
+  const lastName =
+    readOptionalRuntimeEnv(env, "SHARED_LOGIN_LAST_NAME") ??
+    DEFAULT_SHARED_LOGIN_LAST_NAME;
+  const supabaseUserId = readRequiredRuntimeEnv(
+    env,
+    "SHARED_LOGIN_SUPABASE_USER_ID",
+  );
 
   if (password.length < 8) {
     throw new Error(

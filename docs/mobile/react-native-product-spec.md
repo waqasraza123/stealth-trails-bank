@@ -248,7 +248,7 @@ UI:
 - Email + password inputs
 - Submit button
 - Link to Sign Up
-- Optional “demo credentials” helper in **dev builds only** (web includes shared login UI copy)
+- No shared credential helper in client surfaces; local shared-login bootstrap is server-configured only when explicitly enabled.
 
 Behavior:
 - Call `POST /auth/login`

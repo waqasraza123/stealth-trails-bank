@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/auth-session", () => ({
+  WEB_COOKIE_SESSION_MARKER: "web-cookie-session",
+  setWebCsrfToken: vi.fn(),
+  restoreWebSession: vi.fn().mockResolvedValue(null),
+}));
+
 import { initializeUserStore, useUserStore } from "@/stores/userStore";
 
 describe("user store hydration", () => {
@@ -8,37 +15,22 @@ describe("user store hydration", () => {
     useUserStore.setState({ user: null, token: null });
   });
 
-  it("rehydrates persisted auth state only when explicitly initialized", async () => {
+  it("rejects persisted bearer state and restores only a server cookie session", async () => {
     localStorage.setItem(
       "user-storage",
       JSON.stringify({
         state: {
-          token: "persisted-token",
-          user: {
-            id: 1,
-            firstName: "Amina",
-            lastName: "Rahman",
-            email: "amina@example.com",
-            supabaseUserId: "supabase_1",
-            ethereumAddress: "0x1111222233334444555566667777888899990000"
-          }
+          token: "stolen-persisted-token",
+          user: { email: "attacker-controlled@example.com" },
         },
-        version: 0
-      })
+        version: 0,
+      }),
     );
-
-    expect(useUserStore.getState().user).toBeNull();
-    expect(useUserStore.persist.hasHydrated()).toBe(false);
 
     await initializeUserStore();
 
     expect(useUserStore.persist.hasHydrated()).toBe(true);
-    expect(useUserStore.getState()).toMatchObject({
-      token: "persisted-token",
-      user: {
-        email: "amina@example.com",
-        ethereumAddress: "0x1111222233334444555566667777888899990000"
-      }
-    });
+    expect(useUserStore.getState().token).toBeNull();
+    expect(useUserStore.getState().user).toBeNull();
   });
 });

@@ -22,14 +22,27 @@ export function SignUpScreen() {
   const t = useT();
   const navigation =
     useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
-  const { signUp, loading, error } = useAuthActions();
+  const { signUp, verifyEmail, resendEmailVerification, loading, error } = useAuthActions();
   const feedback = useScreenFeedback(t("auth.signUp"));
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [awaitingVerification, setAwaitingVerification] = useState(false);
 
   async function handleSubmit() {
+    if (awaitingVerification) {
+      try {
+        await verifyEmail(email.trim(), verificationCode);
+        feedback.success(t("auth.switchToSignIn"));
+        navigation.navigate("SignIn");
+      } catch (requestError) {
+        feedback.errorFrom(requestError);
+      }
+      return;
+    }
+
     if (
       !isNonEmptyValue(firstName) ||
       !isNonEmptyValue(lastName) ||
@@ -45,7 +58,7 @@ export function SignUpScreen() {
       return;
     }
 
-    if (!hasMinimumLength(password, 8)) {
+    if (!hasMinimumLength(password, 15)) {
       feedback.warning(t("auth.passwordTooShort"));
       return;
     }
@@ -55,10 +68,9 @@ export function SignUpScreen() {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
-        password: password.trim()
+        password
       });
-      feedback.success(t("auth.switchToSignIn"));
-      navigation.navigate("SignIn");
+      setAwaitingVerification(true);
     } catch (requestError) {
       feedback.errorFrom(requestError);
     }
@@ -71,6 +83,11 @@ export function SignUpScreen() {
       trailing={<LanguageToggle />}
     >
       <View className="gap-4">
+        {awaitingVerification ? <>
+          <AppText className="text-sm text-ink">Enter the 8-digit code sent to {email}. Sign-in remains blocked until verification succeeds.</AppText>
+          <FieldInput keyboardType="number-pad" label="Verification code" onChangeText={setVerificationCode} value={verificationCode} />
+          <Pressable onPress={() => void resendEmailVerification(email.trim())}><AppText className="text-sm font-semibold text-ink">Send a new code</AppText></Pressable>
+        </> : <>
         <FieldInput label={t("auth.firstName")} onChangeText={setFirstName} value={firstName} />
         <FieldInput label={t("auth.lastName")} onChangeText={setLastName} value={lastName} />
         <FieldInput
@@ -88,10 +105,12 @@ export function SignUpScreen() {
           secureTextEntry
           value={password}
         />
+        <AppText className="text-xs text-slate">Use at least 15 characters. Common and personal passwords are blocked.</AppText>
+        </>}
         {error ? <InlineNotice message={error} tone="critical" /> : null}
         <AppButton
           disabled={loading}
-          label={t("auth.signUp")}
+          label={awaitingVerification ? "Verify email" : t("auth.signUp")}
           loading={loading}
           onPress={() => {
             void handleSubmit();

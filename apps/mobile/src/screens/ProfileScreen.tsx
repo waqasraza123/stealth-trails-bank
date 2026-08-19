@@ -45,6 +45,7 @@ import { useLocale } from "../i18n/use-locale";
 import { useT } from "../i18n/use-t";
 import { formatAccountStatusLabel, getAccountStatusTone } from "../lib/account";
 import { formatDateLabel } from "../lib/finance";
+import { apiClient } from "../lib/api/client";
 import { hasMinimumLength, isNonEmptyValue } from "../lib/validation";
 import { useSessionStore } from "../stores/session-store";
 
@@ -421,15 +422,15 @@ export function ProfileScreen() {
       return;
     }
 
-    if (!hasMinimumLength(passwordForm.newPassword, 8)) {
+    if (!hasMinimumLength(passwordForm.newPassword, 15)) {
       showWarning(passwordManagementTitle, t("auth.passwordTooShort"));
       return;
     }
 
     try {
       await rotatePasswordMutation.mutateAsync({
-        currentPassword: passwordForm.currentPassword.trim(),
-        newPassword: passwordForm.newPassword.trim(),
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
       });
       setPasswordForm(emptyPasswordForm);
       showSuccess(passwordManagementTitle, t("profile.passwordUpdated"));
@@ -784,16 +785,6 @@ export function ProfileScreen() {
                   </AppText>
                 ) : null}
               </View>
-              <View className="rounded-2xl border border-border bg-white px-4 py-4">
-                <AppText className="text-sm text-slate">
-                  {t("profile.mfaEmailBackup")}
-                </AppText>
-                <AppText className="mt-2 text-base text-ink" weight="semibold">
-                  {mfa?.emailOtpEnrolled
-                    ? t("common.enabled")
-                    : t("common.disabled")}
-                </AppText>
-              </View>
             </View>
             {!mfa?.totpEnrolled ? (
               <>
@@ -837,7 +828,7 @@ export function ProfileScreen() {
                 ) : null}
               </>
             ) : null}
-            {mfa?.totpEnrolled && !mfa?.emailOtpEnrolled ? (
+            {false && mfa?.totpEnrolled && !mfa?.emailOtpEnrolled ? (
               <>
                 <AppButton
                   disabled={startEmailEnrollmentMutation.isPending}
@@ -876,7 +867,7 @@ export function ProfileScreen() {
                 ) : null}
               </>
             ) : null}
-            {mfa?.totpEnrolled && mfa?.emailOtpEnrolled ? (
+            {false && mfa?.totpEnrolled && mfa?.emailOtpEnrolled ? (
               <View className="gap-3 rounded-2xl border border-border bg-white px-4 py-4">
                 <AppText className="text-sm text-slate">
                   {t("profile.mfaRecoveryDescription")}
@@ -931,7 +922,7 @@ export function ProfileScreen() {
                     }}
                     variant="secondary"
                   />
-                  {mfa?.emailOtpEnrolled ? (
+                  {false && mfa?.emailOtpEnrolled ? (
                     <AppButton
                       disabled={startMfaChallengeMutation.isPending}
                       fullWidth={false}
@@ -1603,7 +1594,7 @@ export function ProfileScreen() {
           <AppButton
             label={t("common.signOut")}
             onPress={() => {
-              void signOut();
+              void apiClient.post("/auth/logout").finally(() => signOut());
             }}
             variant="danger"
           />

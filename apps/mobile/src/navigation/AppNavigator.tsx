@@ -12,8 +12,10 @@ import {
 } from "@expo-google-fonts/plus-jakarta-sans";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { View } from "react-native";
-import { useEffect } from "react";
+import { AppState, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import * as LocalAuthentication from "expo-local-authentication";
+import { usePreventScreenCapture } from "expo-screen-capture";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { AppText } from "../components/ui/AppText";
 import { useLocale } from "../i18n/use-locale";
@@ -226,12 +228,16 @@ function SignedInNavigator() {
 }
 
 export function AppNavigator() {
+  usePreventScreenCapture("stb-banking-privacy");
   const t = useT();
   const { hydrated: localeHydrated } = useLocale();
   const token = useSessionStore((state) => state.token);
   const user = useSessionStore((state) => state.user);
   const hydrated = useSessionStore((state) => state.hydrated);
   const hydrate = useSessionStore((state) => state.hydrate);
+  const signOut = useSessionStore((state) => state.signOut);
+  const [privacyShieldVisible, setPrivacyShieldVisible] = useState(false);
+  const appState = useRef(AppState.currentState);
   const [plusReady] = usePlusJakartaFonts({
     PlusJakartaSans_500Medium,
     PlusJakartaSans_600SemiBold,
@@ -250,11 +256,37 @@ export function AppNavigator() {
     }
   }, [hydrate, hydrated]);
 
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", async (nextState) => {
+      const returning = /inactive|background/u.test(appState.current) && nextState === "active";
+      if (nextState !== "active" && useSessionStore.getState().token) {
+        setPrivacyShieldVisible(true);
+      }
+      appState.current = nextState;
+      if (returning && useSessionStore.getState().token) {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: "Unlock Stealth Trails Bank",
+          cancelLabel: "Sign out",
+          disableDeviceFallback: false,
+        });
+        if (!result.success) await signOut();
+        setPrivacyShieldVisible(false);
+      } else if (nextState === "active") {
+        setPrivacyShieldVisible(false);
+      }
+    });
+    return () => subscription.remove();
+  }, [signOut]);
+
   const fontsReady = plusReady && cairoReady;
   const shouldBootstrapProfile = hydrated && token && user?.supabaseUserId;
 
   if (!hydrated || !localeHydrated || !fontsReady) {
     return <LoadingGate message={t("common.loading")} />;
+  }
+
+  if (privacyShieldVisible) {
+    return <LoadingGate message="Banking details hidden" />;
   }
 
   if (shouldBootstrapProfile && profileQuery.isLoading) {

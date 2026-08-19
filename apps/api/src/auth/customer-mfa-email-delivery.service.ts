@@ -17,6 +17,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { PrismaJsonValue } from "../prisma/prisma-json";
 
 type CustomerMfaEmailPurpose =
+  | "primary_email_verification"
+  | "password_recovery"
   | "email_enrollment"
   | "email_recovery"
   | "withdrawal_step_up"
@@ -275,7 +277,12 @@ export class CustomerMfaEmailDeliveryService {
       const response = await axios.post(
         this.runtimeConfig.webhookUrl!,
         {
-          type: "customer_mfa_email_otp",
+          type:
+            input.purpose === "primary_email_verification"
+              ? "customer_primary_email_verification"
+              : input.purpose === "password_recovery"
+                ? "customer_password_recovery"
+                : "customer_mfa_email_otp",
           from: {
             email: this.runtimeConfig.fromEmail,
             name: this.runtimeConfig.fromName,
@@ -371,7 +378,7 @@ export class CustomerMfaEmailDeliveryService {
       });
 
       throw new ServiceUnavailableException(
-        "Email MFA delivery is temporarily unavailable. Try again shortly.",
+        "Security email delivery is temporarily unavailable. Try again shortly.",
       );
     }
   }

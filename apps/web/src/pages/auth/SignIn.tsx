@@ -1,246 +1,141 @@
-import { useState, useEffect } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronDown, KeyRound } from "lucide-react";
 import { AuthShell } from "@/components/auth/AuthShell";
-import {
-  getAuthCredibilityChips,
-  getSignInCopy,
-} from "@/components/auth/auth-content";
+import { getAuthCredibilityChips, getSignInCopy } from "@/components/auth/auth-content";
 import { LoadingButton } from "@/components/ui/loading-button";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { useLocale } from "@/i18n/use-locale";
 import { useT } from "@/i18n/use-t";
-import useAuth from "@/hooks/auth/useAuth";
-import { toast } from "@/components/ui/use-toast";
+import useAuth, { type LoginFlowResult } from "@/hooks/auth/useAuth";
 import { useUserStore } from "@/stores/userStore";
 
-const sharedLoginCredentials = {
-  email: "admin@gmail.com",
-  password: "P@ssw0rd",
-};
-
-function resolvePostAuthRoute(user: {
-  mfa?: { requiresSetup?: boolean };
-  sessionSecurity?: { currentSessionRequiresVerification?: boolean };
-}) {
-  return user.mfa?.requiresSetup ||
-    user.sessionSecurity?.currentSessionRequiresVerification
-    ? "/profile"
-    : "/";
-}
-
-const SignIn = () => {
-  const { login, loading, error } = useAuth();
+export default function SignIn() {
+  const auth = useAuth();
   const t = useT();
-  const { locale } = useLocale();
-  const signInCopy = getSignInCopy(t);
-  const authCredibilityChips = getAuthCredibilityChips(t);
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
-  const [showSharedAccess, setShowSharedAccess] = useState(false);
+  const copy = getSignInCopy(t);
   const navigate = useNavigate();
   const token = useUserStore((state) => state.token);
-  const user = useUserStore((state) => state.user);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const useSharedLogin = () => {
-    setFormData(sharedLoginCredentials);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const result = await login(formData);
-      toast({
-        title: t("auth.signIn.successTitle"),
-        description: t("auth.signIn.successDescription"),
-      });
-      navigate(resolvePostAuthRoute(result.user));
-    } catch {
-      toast({
-        title: t("auth.signIn.errorTitle"),
-        description: error || t("auth.signIn.errorDescription"),
-      });
-    }
-  };
+  const [credentials, setCredentials] = useState({ email: "", password: "" });
+  const [flow, setFlow] = useState<LoginFlowResult | null>(null);
+  const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [useRecovery, setUseRecovery] = useState(false);
 
   useEffect(() => {
-    if (token) {
-      navigate(user ? resolvePostAuthRoute(user) : "/");
-    }
-  }, [token, user, navigate]);
+    if (token) navigate("/", { replace: true });
+  }, [navigate, token]);
 
+  async function continueFlow(next: LoginFlowResult) {
+    if (next.nextAction === "complete") {
+      setFlow(next);
+      return;
+    }
+    if (next.nextAction === "enroll_totp" && !next.secret) {
+      setFlow(await auth.startTotpEnrollment(next.flowId));
+      return;
+    }
+    setFlow(next);
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!flow) {
+      await continueFlow(await auth.login(credentials));
+      return;
+    }
+    if (flow.nextAction === "verify_email") {
+      await auth.verifyEmail(credentials.email, code);
+      setFlow(null);
+      setCode("");
+      return;
+    }
+    if (flow.nextAction === "enroll_totp") {
+      await continueFlow(await auth.verifyTotpEnrollment(flow.flowId, code));
+      setCode("");
+      return;
+    }
+    if (flow.nextAction === "verify_totp") {
+      await continueFlow(
+        useRecovery
+          ? await auth.verifyRecoveryCode(flow.flowId, code)
+          : await auth.verifyTotp(flow.flowId, code),
+      );
+      setCode("");
+      return;
+    }
+    if (flow.nextAction === "upgrade_password") {
+      await continueFlow(await auth.upgradePassword(flow.flowId, newPassword));
+      setNewPassword("");
+      return;
+    }
+    if (flow.nextAction === "setup_recovery_codes") {
+      await continueFlow(await auth.setupRecoveryCodes(flow.flowId));
+    }
+  }
+
+  const challenge = flow?.nextAction;
   return (
     <AuthShell
-      formEyebrow={signInCopy.formEyebrow}
-      formTitle={signInCopy.formTitle}
-      formDescription={signInCopy.formDescription}
-      brandEyebrow={signInCopy.brandEyebrow}
-      brandTitle={signInCopy.brandTitle}
-      brandDescription={signInCopy.brandDescription}
-      chips={authCredibilityChips}
-      footer={
-        <div className="space-y-2 text-center">
-          <p>
-            {t("auth.signIn.footerPrefix")}{" "}
-            <Link
-              to="/auth/sign-up"
-              className="font-semibold text-auth-form-accent transition-colors hover:text-[hsl(var(--auth-form-foreground))]"
-            >
-              {t("auth.signIn.footerLink")}
-            </Link>
-          </p>
-          <p>
-            <Link
-              to="/trust/solvency"
-              className="font-semibold text-auth-form-accent transition-colors hover:text-[hsl(var(--auth-form-foreground))]"
-            >
-              {locale === "ar"
-                ? "عرض مركز الثقة العام"
-                : "View the public trust center"}
-            </Link>
-          </p>
-        </div>
-      }
+      formEyebrow={copy.formEyebrow}
+      formTitle={challenge ? "Security check" : copy.formTitle}
+      formDescription={challenge ? "Complete every required control before account access is granted." : copy.formDescription}
+      brandEyebrow={copy.brandEyebrow}
+      brandTitle={copy.brandTitle}
+      brandDescription={copy.brandDescription}
+      chips={getAuthCredibilityChips(t)}
+      footer={<Link to="/auth/sign-up" className="font-semibold text-auth-form-accent">{t("auth.signIn.footerLink")}</Link>}
     >
-      <form className="space-y-5" onSubmit={handleSubmit}>
-        <div className="space-y-2">
-          <label
-            htmlFor="email"
-            className="text-sm font-medium text-auth-form-foreground"
-          >
-            {t("auth.signIn.emailLabel")}
-          </label>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            className="auth-input"
-            placeholder={t("auth.signIn.emailPlaceholder")}
-            value={formData.email}
-            onChange={handleChange}
-            aria-invalid={Boolean(error)}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-4">
-            <label
-              htmlFor="password"
-              className="text-sm font-medium text-auth-form-foreground"
-            >
-              {t("auth.signIn.passwordLabel")}
+      <form className="space-y-5" onSubmit={(event) => void submit(event)}>
+        {!flow ? (
+          <>
+            <label className="block space-y-2" htmlFor="email">
+              <span className="text-sm font-medium">{t("auth.signIn.emailLabel")}</span>
+              <Input id="email" name="email" type="email" autoComplete="email" required value={credentials.email} onChange={(e) => setCredentials({ ...credentials, email: e.target.value })} />
             </label>
-            <span className="text-xs text-auth-form-muted">
-              {t("auth.signIn.passwordHint")}
-            </span>
-          </div>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            className="auth-input"
-            placeholder={t("auth.signIn.passwordPlaceholder")}
-            value={formData.password}
-            onChange={handleChange}
-            aria-invalid={Boolean(error)}
-          />
-        </div>
+            <label className="block space-y-2" htmlFor="password">
+              <span className="text-sm font-medium">{t("auth.signIn.passwordLabel")}</span>
+              <Input id="password" name="password" type="password" autoComplete="current-password" required value={credentials.password} onChange={(e) => setCredentials({ ...credentials, password: e.target.value })} />
+            </label>
+          </>
+        ) : challenge === "upgrade_password" ? (
+          <label className="block space-y-2" htmlFor="newPassword">
+            <span className="text-sm font-medium">Create a stronger password</span>
+            <Input id="newPassword" type="password" autoComplete="new-password" minLength={15} maxLength={128} required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+            <span className="block text-xs text-auth-form-muted">Use at least 15 characters. Common or personal passwords are blocked.</span>
+          </label>
+        ) : challenge === "setup_recovery_codes" ? (
+          <p className="rounded-2xl border p-4 text-sm">Generate one-time recovery codes now. Store them offline; they will only be shown once.</p>
+        ) : (
+          <>
+            {challenge === "enroll_totp" && flow.secret ? (
+              <div className="space-y-2 rounded-2xl border p-4 text-sm">
+                <p>Add this account to your authenticator app, then enter its current code.</p>
+                <code className="block break-all font-mono">{flow.secret}</code>
+              </div>
+            ) : null}
+            {challenge === "verify_email" ? <p className="text-sm">Enter the 8-digit code sent to {credentials.email}. Then sign in again to continue.</p> : null}
+            {challenge === "verify_totp" ? (
+              <button type="button" className="text-sm font-semibold underline" onClick={() => { setUseRecovery(!useRecovery); setCode(""); }}>
+                {useRecovery ? "Use authenticator code" : "Use a recovery code"}
+              </button>
+            ) : null}
+            <label className="block space-y-2" htmlFor="securityCode">
+              <span className="text-sm font-medium">{useRecovery ? "Recovery code" : "Security code"}</span>
+              <Input id="securityCode" inputMode={useRecovery ? "text" : "numeric"} autoComplete="one-time-code" required value={code} onChange={(e) => setCode(e.target.value)} />
+            </label>
+          </>
+        )}
 
-        {error ? (
-          <div
-            role="alert"
-            className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-          >
-            {error}
+        {flow?.recoveryCodes?.length ? (
+          <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4" role="status">
+            <p className="font-semibold">Save these recovery codes before continuing</p>
+            <pre className="mt-3 whitespace-pre-wrap font-mono text-sm">{flow.recoveryCodes.join("\n")}</pre>
           </div>
         ) : null}
-
-        <LoadingButton
-          type="submit"
-          className="h-12 w-full rounded-2xl bg-[hsl(var(--auth-form-foreground))] text-base font-semibold text-[hsl(var(--auth-form-background))] shadow-[0_18px_45px_rgba(8,17,28,0.18)] transition-opacity hover:bg-[hsl(var(--auth-form-foreground))] hover:opacity-95"
-          loading={loading}
-        >
-          {t("auth.signIn.submit")}
+        {auth.error ? <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{auth.error}</div> : null}
+        <LoadingButton type="submit" className="h-12 w-full rounded-2xl" loading={auth.loading}>
+          {challenge === "setup_recovery_codes" ? "Generate recovery codes" : challenge ? "Continue securely" : t("auth.signIn.submit")}
         </LoadingButton>
       </form>
-
-      <div className="mt-6 rounded-2xl border border-[rgba(10,18,30,0.08)] bg-black/[0.025] p-4">
-        <button
-          type="button"
-          className="flex w-full items-center justify-between gap-3 text-left"
-          aria-expanded={showSharedAccess}
-          onClick={() => setShowSharedAccess((current) => !current)}
-        >
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 rounded-full border border-[rgba(10,18,30,0.08)] bg-[rgba(255,255,255,0.7)] p-2 text-auth-form-accent">
-              <KeyRound className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-auth-form-foreground">
-                {t("auth.signIn.demoTitle")}
-              </p>
-              <p className="mt-1 text-sm text-auth-form-muted">
-                {t("auth.signIn.demoDescription")}
-              </p>
-            </div>
-          </div>
-          <ChevronDown
-            className={`h-4 w-4 text-auth-form-muted transition-transform ${
-              showSharedAccess ? "rotate-180" : ""
-            }`}
-          />
-        </button>
-
-        <AnimatePresence initial={false}>
-          {showSharedAccess ? (
-            <motion.div
-              animate={{ height: "auto", opacity: 1, y: 0 }}
-              className="mt-4 overflow-hidden rounded-2xl border border-[rgba(18,115,103,0.18)] bg-[rgba(255,255,255,0.72)] p-4 text-sm"
-              exit={{ height: 0, opacity: 0, y: -10 }}
-              initial={{ height: 0, opacity: 0, y: -10 }}
-              transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <p className="font-medium text-auth-form-foreground">
-                {t("auth.signIn.demoPanelTitle")}
-              </p>
-              <p className="mt-2 text-auth-form-muted">
-                {t("auth.signIn.emailLabel")}:{" "}
-                <span className="font-semibold text-auth-form-foreground">
-                  admin@gmail.com
-                </span>
-              </p>
-              <p className="text-auth-form-muted">
-                {t("auth.signIn.passwordLabel")}:{" "}
-                <span className="font-semibold text-auth-form-foreground">
-                  P@ssw0rd
-                </span>
-              </p>
-              <Button
-                type="button"
-                variant="outline"
-                className="mt-4 h-11 w-full rounded-2xl border-black/10 bg-white/80 font-semibold text-auth-form-foreground hover:bg-[hsl(var(--auth-form-accent))] hover:text-[hsl(var(--auth-form-background))]"
-                onClick={useSharedLogin}
-              >
-                {t("auth.signIn.demoButton")}
-              </Button>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-      </div>
     </AuthShell>
   );
-};
-
-export default SignIn;
+}

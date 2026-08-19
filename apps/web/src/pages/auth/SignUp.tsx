@@ -14,7 +14,7 @@ import useAuth from "@/hooks/auth/useAuth";
 import { useUserStore } from "@/stores/userStore";
 
 const SignUp = () => {
-  const { signup, loading, error } = useAuth();
+  const { signup, verifyEmail, resendEmailVerification, loading, error } = useAuth();
   const t = useT();
   const { locale } = useLocale();
   const signUpCopy = getSignUpCopy(t);
@@ -25,6 +25,8 @@ const SignUp = () => {
     email: "",
     password: "",
   });
+  const [awaitingVerification, setAwaitingVerification] = useState(false);
+  const [verificationCode, setVerificationCode] = useState("");
   const token = useUserStore((state) => state.token);
   const navigate = useNavigate();
 
@@ -35,12 +37,17 @@ const SignUp = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      if (awaitingVerification) {
+        await verifyEmail(formData.email, verificationCode);
+        navigate("/auth/sign-in");
+        return;
+      }
       await signup(formData);
+      setAwaitingVerification(true);
       toast({
         title: t("auth.signUp.successTitle"),
         description: t("auth.signUp.successDescription"),
       });
-      navigate("/auth/sign-in");
     } catch {
       toast({
         title: t("auth.signUp.errorTitle"),
@@ -89,6 +96,13 @@ const SignUp = () => {
       }
     >
       <form className="space-y-5" onSubmit={handleSubmit}>
+        {awaitingVerification ? (
+          <div className="space-y-3">
+            <p className="text-sm">Enter the 8-digit verification code sent to {formData.email}. Account access remains blocked until verification succeeds.</p>
+            <Input id="verificationCode" inputMode="numeric" autoComplete="one-time-code" minLength={8} maxLength={8} required value={verificationCode} onChange={(event) => setVerificationCode(event.target.value)} />
+            <button type="button" className="text-sm font-semibold underline" onClick={() => void resendEmailVerification(formData.email)}>Send a new code</button>
+          </div>
+        ) : <>
         <div className="grid gap-5 sm:grid-cols-2">
           <div className="space-y-2">
             <label
@@ -152,7 +166,6 @@ const SignUp = () => {
             aria-invalid={Boolean(error)}
           />
         </div>
-
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-4">
             <label
@@ -169,6 +182,8 @@ const SignUp = () => {
             type="password"
             autoComplete="new-password"
             required
+            minLength={15}
+            maxLength={128}
             className="auth-input"
             placeholder={t("auth.signUp.passwordPlaceholder")}
             value={formData.password}
@@ -179,6 +194,7 @@ const SignUp = () => {
             {t("auth.signUp.passwordHelp")}
           </p>
         </div>
+        </>}
 
         {error ? (
           <div
@@ -194,7 +210,7 @@ const SignUp = () => {
           className="h-12 w-full rounded-2xl bg-[hsl(var(--auth-form-foreground))] text-base font-semibold text-[hsl(var(--auth-form-background))] shadow-[0_18px_45px_rgba(8,17,28,0.18)] transition-opacity hover:bg-[hsl(var(--auth-form-foreground))] hover:opacity-95"
           loading={loading}
         >
-          {t("auth.signUp.submit")}
+          {awaitingVerification ? "Verify email" : t("auth.signUp.submit")}
         </LoadingButton>
       </form>
     </AuthShell>

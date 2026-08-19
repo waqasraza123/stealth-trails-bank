@@ -32,12 +32,23 @@ model Customer {
   ageVerifiedByOperatorId String?
   ageVerificationNote String?
   passwordHash       String?
+  passwordPolicyVersion Int              @default(1)
+  emailVerifiedAt    DateTime?
+  emailVerificationCodeHash String?
+  emailVerificationExpiresAt DateTime?
+  emailVerificationSentAt DateTime?
+  emailVerificationFailedAttemptCount Int @default(0)
   authTokenVersion   Int                 @default(0)
   mfaRequired        Boolean             @default(true)
   mfaTotpEnrolled    Boolean             @default(false)
   mfaEmailOtpEnrolled Boolean            @default(false)
   mfaTotpSecret      String?
+  mfaTotpSecretEncrypted String?
+  mfaTotpSecretKeyVersion String?
+  mfaLastAcceptedTotpCounter Int?
   mfaPendingTotpSecret String?
+  mfaPendingTotpSecretEncrypted String?
+  mfaPendingTotpSecretKeyVersion String?
   mfaPendingTotpIssuedAt DateTime?
   mfaActiveChallenge Json?
   mfaLastVerifiedAt  DateTime?
@@ -52,6 +63,8 @@ model Customer {
   updatedAt          DateTime            @updatedAt
   accounts           CustomerAccount[]
   authSessions       CustomerAuthSession[]
+  authFlows          CustomerAuthFlow[]
+  recoveryCodes      CustomerRecoveryCode[]
   mfaRecoveryRequests CustomerMfaRecoveryRequest[]
   reviewCases        ReviewCase[]
   auditEvents        AuditEvent[]
@@ -127,6 +140,10 @@ model CustomerAuthSession {
   customerId     String
   customer       Customer                       @relation(fields: [customerId], references: [id])
   tokenVersion   Int
+  sessionSecretHash String?                @unique
+  refreshTokenHash String?                 @unique
+  refreshFamilyId String?
+  csrfTokenHash String?
   clientPlatform CustomerAuthSessionPlatform   @default(unknown)
   trustedAt      DateTime?
   trustChallengeCodeHash String?
@@ -135,6 +152,8 @@ model CustomerAuthSession {
   userAgent      String?
   ipAddress      String?
   lastSeenAt     DateTime                      @default(now())
+  idleExpiresAt  DateTime?
+  absoluteExpiresAt DateTime?
   revokedAt      DateTime?
   revokedReason  CustomerAuthSessionRevocationReason?
   createdAt      DateTime                      @default(now())
@@ -142,6 +161,52 @@ model CustomerAuthSession {
   @@index([customerId, revokedAt])
   @@index([customerId, createdAt])
   @@index([customerId, lastSeenAt])
+  @@index([refreshFamilyId, revokedAt])
+}
+
+model CustomerAuthFlow {
+  id                 String                    @id @default(cuid())
+  customerId         String
+  customer           Customer                  @relation(fields: [customerId], references: [id])
+  purpose            CustomerAuthFlowPurpose   @default(login)
+  nextAction         CustomerAuthFlowNextAction
+  clientPlatform     CustomerAuthSessionPlatform @default(unknown)
+  passwordVerifiedAt DateTime?
+  mfaVerifiedAt      DateTime?
+  failedAttemptCount Int                       @default(0)
+  ipAddressHash      String?
+  userAgent          String?
+  expiresAt          DateTime
+  consumedAt         DateTime?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  @@index([customerId, purpose, consumedAt])
+  @@index([expiresAt, consumedAt])
+}
+
+model CustomerRecoveryCode {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  codeHash   String   @unique
+  consumedAt DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([customerId, consumedAt])
+}
+
+model AuthRateLimitBucket {
+  id          String   @id @default(cuid())
+  action      String
+  subjectHash String
+  windowStart DateTime
+  attemptCount Int     @default(0)
+  blockedUntil DateTime?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([action, subjectHash, windowStart])
+  @@index([blockedUntil])
 }
 
 model Wallet {
@@ -795,6 +860,20 @@ enum CustomerAuthSessionPlatform {
   unknown
 }
 
+enum CustomerAuthFlowPurpose {
+  login
+  password_recovery
+}
+
+enum CustomerAuthFlowNextAction {
+  verify_email
+  enroll_totp
+  verify_totp
+  setup_recovery_codes
+  upgrade_password
+  complete
+}
+
 enum CustomerAuthSessionRevocationReason {
   revoke_all
   password_rotation
@@ -802,6 +881,9 @@ enum CustomerAuthSessionRevocationReason {
   mfa_recovery
   operator_mfa_recovery
   session_revoked
+  session_expired
+  refresh_reuse
+  logout
 }
 
 enum CustomerAgeVerificationStatus {

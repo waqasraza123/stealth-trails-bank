@@ -42,9 +42,11 @@ describe("SignInScreen", () => {
     });
   });
 
-  it("submits trimmed credentials", async () => {
+  it("normalizes email without altering the password", async () => {
     mockSignIn.mockResolvedValueOnce({
-      token: "token"
+      flowId: "flow_1234567890",
+      nextAction: "verify_totp",
+      expiresAt: new Date(Date.now() + 60_000).toISOString()
     });
 
     const screen = renderMobile(<SignInScreen />);
@@ -56,7 +58,7 @@ describe("SignInScreen", () => {
     await waitFor(() => {
       expect(mockSignIn).toHaveBeenCalledWith({
         email: "user@example.com",
-        password: "password123"
+        password: "  password123  "
       });
     });
   });

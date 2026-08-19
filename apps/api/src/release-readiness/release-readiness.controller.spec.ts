@@ -31,6 +31,9 @@ function buildLaunchClosureManifest() {
       approverRole: "compliance_lead",
       apiKeyEnvironmentVariable: "INTERNAL_OPERATOR_API_KEY"
     },
+    customer: {
+      accessTokenEnvironmentVariable: "CUSTOMER_ACCESS_TOKEN"
+    },
     artifacts: {
       apiReleaseId: "api-2026.04.10.1",
       workerReleaseId: "worker-2026.04.10.1",
@@ -309,10 +312,10 @@ describe("ReleaseReadinessController", () => {
       },
       overallStatus: "warning",
       summary: {
-        requiredCheckCount: 10,
+        requiredCheckCount: 12,
         passedCheckCount: 3,
         failedCheckCount: 0,
-        pendingCheckCount: 7
+        pendingCheckCount: 9
       },
       requiredChecks: [],
       recentEvidence: []

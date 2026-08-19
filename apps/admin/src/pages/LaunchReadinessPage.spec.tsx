@@ -51,10 +51,10 @@ function buildSummary(releaseIdentifier: string | null) {
     environment: null,
     overallStatus: "warning" as const,
     summary: {
-      requiredCheckCount: 10,
+      requiredCheckCount: 12,
       passedCheckCount: releaseIdentifier ? 1 : 2,
       failedCheckCount: 0,
-      pendingCheckCount: releaseIdentifier ? 9 : 8
+      pendingCheckCount: releaseIdentifier ? 11 : 10
     },
     requiredChecks: [
       {
@@ -170,10 +170,10 @@ function buildApproval(releaseIdentifier: string) {
       generatedAt: "2026-04-14T10:00:00.000Z",
       overallStatus: "warning" as const,
       summary: {
-        requiredCheckCount: 10,
+        requiredCheckCount: 12,
         passedCheckCount: 1,
         failedCheckCount: 0,
-        pendingCheckCount: 9
+        pendingCheckCount: 11
       },
       requiredChecks: [
         {
@@ -1114,6 +1114,27 @@ describe("LaunchReadinessPage", () => {
     fireEvent.change(screen.getByLabelText("Evidence rollback release identifier"), {
       target: {
         value: "launch-rollback-2026.04.12.4"
+      }
+    });
+    fireEvent.change(screen.getByLabelText("Evidence payload JSON"), {
+      target: {
+        value: JSON.stringify({
+          proofKind: "deployment_artifact_manifest",
+          service: "api",
+          approvalRollbackReleaseIdentifier:
+            "launch-rollback-2026.04.12.4",
+          currentArtifact: {
+            releaseId: "api-launch-2026.04.13.1",
+            service: "api",
+            environment: "production_like"
+          },
+          rollbackArtifact: {
+            releaseId: "api-launch-rollback-2026.04.12.4",
+            service: "api",
+            environment: "production_like"
+          },
+          artifactManifestPath: "payloads/release-artifacts.json"
+        })
       }
     });
 

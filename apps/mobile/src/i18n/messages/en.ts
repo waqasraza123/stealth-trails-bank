@@ -49,7 +49,6 @@ export const mobileMessages = {
     signUp: "Create account",
     switchToSignUp: "Create an account",
     switchToSignIn: "Already have an account?",
-    demoFill: "Use shared demo credentials",
     sessionExpired: "Your session expired. Please sign in again.",
     emailInvalid: "Enter a valid email address.",
     passwordTooShort: "Password must be at least 8 characters.",

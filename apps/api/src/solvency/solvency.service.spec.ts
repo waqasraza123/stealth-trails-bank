@@ -34,7 +34,8 @@ jest.mock("@stealth-trails-bank/config/api", () => ({
     reportSignerPrivateKey:
       "0x59c6995e998f97a5a0044966f0945384d8f6d6e74a09a3db9e8f4c7a89f5f001",
     resumeRequestAllowedOperatorRoles: ["operations_admin"],
-    resumeApproverAllowedOperatorRoles: ["operations_admin", "compliance_admin"]
+    resumeApproverAllowedOperatorRoles: ["operations_admin", "compliance_admin"],
+    resumeApprovalTimelockSeconds: 900
   }),
   loadOptionalBlockchainContractReadRuntimeConfig: () => ({
     rpcUrl: "https://rpc.example.com"

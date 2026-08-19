@@ -11,6 +11,8 @@ import { PlatformAlertDeliveryService } from "../operations-monitoring/platform-
 import { ReviewCasesModule } from "../review-cases/review-cases.module";
 import { CustomerMfaEmailDeliveryService } from "./customer-mfa-email-delivery.service";
 import { CustomerSecurityEmailDeliveryService } from "./customer-security-email-delivery.service";
+import { PasswordSecurityService } from "./password-security.service";
+import { AuthRateLimitService } from "./auth-rate-limit.service";
 
 @Global()
 @Module({
@@ -27,6 +29,8 @@ import { CustomerSecurityEmailDeliveryService } from "./customer-security-email-
     PlatformAlertDeliveryService,
     CustomerMfaEmailDeliveryService,
     CustomerSecurityEmailDeliveryService,
+    PasswordSecurityService,
+    AuthRateLimitService,
   ],
   exports: [
     AuthService,

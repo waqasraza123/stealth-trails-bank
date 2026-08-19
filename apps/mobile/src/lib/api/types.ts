@@ -34,6 +34,38 @@ export type SessionRefresh = {
   revokedOtherSessions: boolean;
 };
 
+export type LoginNextAction =
+  | "verify_email"
+  | "enroll_totp"
+  | "verify_totp"
+  | "upgrade_password"
+  | "setup_recovery_codes"
+  | "complete";
+
+export type LoginResponseData = {
+  flowId: string;
+  nextAction: LoginNextAction;
+  expiresAt: string;
+  previewCode?: string | null;
+  secret?: string;
+  otpAuthUri?: string;
+  recoveryCodes?: string[];
+  user?: SessionUser;
+  session?: {
+    kind: "mobile";
+    token: string;
+    refreshToken: string;
+    accessTokenExpiresAt: string;
+  };
+};
+
+export type SignUpResponseData = {
+  nextAction: "verify_email";
+  email: string;
+  expiresAt: string | null;
+  previewCode?: string | null;
+};
+
 export type MfaStatusResponseData = {
   mfa: CustomerMfaStatus;
 };
@@ -695,37 +727,13 @@ export type LoanApplicationInput = {
   supportNote?: string;
 };
 
-export type LoginResponseData = {
-  token?: string;
-  user: {
-    id: number;
-    supabaseUserId: string;
-    email: string;
-    ethereumAddress: string;
-    firstName: string;
-    lastName: string;
-    mfa: CustomerMfaStatus;
-    sessionSecurity: CustomerSessionSecurityStatus;
-  };
-};
-
-export type SignUpResponseData = {
-  user: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    ethereumAddress: string;
-  };
-};
-
 export type RotatePasswordResult = {
   passwordRotationAvailable: boolean;
-  session: SessionRefresh;
+  reauthenticationRequired: true;
 };
 
 export type RevokeCustomerSessionsResult = {
-  session: SessionRefresh;
+  reauthenticationRequired: true;
 };
 
 export type ListCustomerSessionsResult = {

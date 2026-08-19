@@ -93,3 +93,15 @@ export function buildGovernedExecutionDispatchHeaders(
     "x-governed-execution-dispatch-worker-id": session.workerId.trim()
   };
 }
+
+export {
+  CUSTOMER_PASSWORD_MAX_LENGTH,
+  CUSTOMER_PASSWORD_MIN_LENGTH,
+  CUSTOMER_PASSWORD_POLICY_VERSION,
+  customerPasswordErrorMessage,
+  validateCustomerPassword,
+} from "./password-policy";
+export type {
+  CustomerPasswordContext,
+  CustomerPasswordValidation,
+} from "./password-policy";

@@ -87,8 +87,8 @@ function buildApprovalRecord(
       generatedAt: "2026-04-08T12:00:00.000Z",
       overallStatus: "healthy",
       summary: {
-        requiredCheckCount: 11,
-        passedCheckCount: 11,
+        requiredCheckCount: 12,
+        passedCheckCount: 12,
         failedCheckCount: 0,
         pendingCheckCount: 0
       },
@@ -354,7 +354,8 @@ function createService() {
       findFirst: jest.fn()
     },
     auditEvent: {
-      create: jest.fn()
+      create: jest.fn(),
+      findMany: jest.fn()
     }
   } as unknown as PrismaService;
 
@@ -641,7 +642,18 @@ describe("ReleaseReadinessService", () => {
             abiChecksumSha256:
               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             manifestPath: "packages/contracts/deployments/base-sepolia.manifest.json",
-            manifestCommitSha: "abc1234"
+            manifestCommitSha: "abc1234",
+            onchainVerification: {
+              chainId: 84532,
+              rpcUrlHost: "base-sepolia-rpc.example.com",
+              contractAddress: "0x1111111111111111111111111111111111111111",
+              deploymentTxHash:
+                "0x2222222222222222222222222222222222222222222222222222222222222222",
+              deploymentBlockNumber: 12_345_678,
+              owner: "0x3333333333333333333333333333333333333333",
+              authorizedAnchorer: "0x4444444444444444444444444444444444444444",
+              bytecodePresent: true
+            }
           }
         },
         "ops_1",
@@ -854,10 +866,10 @@ describe("ReleaseReadinessService", () => {
         canApproveOrReject: false
       }
     });
-    expect(result.summary.requiredCheckCount).toBe(10);
+    expect(result.summary.requiredCheckCount).toBe(12);
     expect(result.summary.passedCheckCount).toBe(2);
     expect(result.summary.failedCheckCount).toBe(1);
-    expect(result.summary.pendingCheckCount).toBe(7);
+    expect(result.summary.pendingCheckCount).toBe(9);
     expect(
       result.requiredChecks.find(
         (check) =>
@@ -997,6 +1009,9 @@ describe("ReleaseReadinessService", () => {
           approverId: "ops_2",
           approverRole: "compliance_lead",
           apiKeyEnvironmentVariable: "INTERNAL_OPERATOR_API_KEY"
+        },
+        customer: {
+          accessTokenEnvironmentVariable: "CUSTOMER_ACCESS_TOKEN"
         },
         artifacts: {
           apiReleaseId: "api-1",
@@ -1373,8 +1388,8 @@ describe("ReleaseReadinessService", () => {
           generatedAt: "2026-04-08T12:00:00.000Z",
           overallStatus: "warning",
           summary: {
-            requiredCheckCount: 10,
-            passedCheckCount: 9,
+            requiredCheckCount: 12,
+            passedCheckCount: 11,
             failedCheckCount: 0,
             pendingCheckCount: 1
           },
@@ -1801,6 +1816,91 @@ describe("ReleaseReadinessService", () => {
         newerPackAvailable: true
       })
     );
+  });
+
+  it("builds a verifiable launch decision receipt from the immutable approval pack", async () => {
+    const { service, prismaService } = createService();
+    const approvedAt = new Date("2026-04-08T13:00:00.000Z");
+    const approval = buildApprovalRecord({
+      status: ReleaseReadinessApprovalStatus.approved,
+      approvedByOperatorId: "approver_1",
+      approvedByOperatorRole: "risk_manager",
+      approvalNote: "Approved for launch.",
+      approvedAt,
+      updatedAt: approvedAt
+    });
+    const pack = buildVerifiableLaunchClosurePackRecord();
+    const auditEvent = {
+      id: "audit_approval_1",
+      actorType: "operator",
+      actorId: "approver_1",
+      action: "release_readiness.approval_approved",
+      targetType: "ReleaseReadinessApproval",
+      targetId: "approval_1",
+      metadata: {
+        releaseIdentifier: approval.releaseIdentifier
+      },
+      createdAt: approvedAt
+    };
+
+    (prismaService.releaseReadinessApproval.findUnique as jest.Mock).mockResolvedValue(
+      approval
+    );
+    (prismaService.releaseLaunchClosurePack.findUnique as jest.Mock).mockResolvedValue(
+      pack
+    );
+    (prismaService.auditEvent.findMany as jest.Mock).mockResolvedValue([
+      auditEvent
+    ]);
+
+    const result = await service.getApprovalDecisionReceipt("approval_1");
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        receiptVersion: "release-readiness-approval-decision/v1",
+        finalDecision: true,
+        launchReady: true,
+        blockers: [],
+        decision: expect.objectContaining({
+          status: "approved",
+          decidedAt: approvedAt.toISOString(),
+          decidedByOperatorId: "approver_1",
+          note: "Approved for launch."
+        }),
+        launchClosurePack: expect.objectContaining({
+          snapshotMatchesApproval: true,
+          integrity: expect.objectContaining({
+            valid: true
+          })
+        }),
+        lineage: expect.objectContaining({
+          status: "healthy",
+          headApprovalId: "approval_1",
+          tailApprovalId: "approval_1"
+        }),
+        auditTrail: [
+          expect.objectContaining({
+            id: "audit_approval_1",
+            action: "release_readiness.approval_approved"
+          })
+        ],
+        receiptChecksumSha256: expect.stringMatching(/^[a-f0-9]{64}$/)
+      })
+    );
+    expect(prismaService.auditEvent.findMany).toHaveBeenCalledWith({
+      where: {
+        targetType: "ReleaseReadinessApproval",
+        targetId: {
+          in: ["approval_1"]
+        },
+        action: {
+          startsWith: "release_readiness."
+        }
+      },
+      orderBy: {
+        createdAt: "asc"
+      }
+    });
   });
 
   it("returns the full approval lineage ordered from oldest to newest", async () => {

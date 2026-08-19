@@ -904,16 +904,22 @@ export function LaunchReadinessPage() {
     queryKey: [
       "launch-closure-packs",
       session?.baseUrl,
-      approvalDraft.releaseIdentifier.trim() || "none",
+      approvalDraft.releaseIdentifier.trim() ||
+        selectedReleaseIdentifier ||
+        "none",
       approvalDraft.environment
     ],
     queryFn: () =>
       listLaunchClosurePacks(session!, {
         limit: 10,
-        releaseIdentifier: approvalDraft.releaseIdentifier.trim(),
+        releaseIdentifier:
+          approvalDraft.releaseIdentifier.trim() || selectedReleaseIdentifier!,
         environment: approvalDraft.environment
       }),
-    enabled: Boolean(session && approvalDraft.releaseIdentifier.trim())
+    enabled: Boolean(
+      session &&
+        (approvalDraft.releaseIdentifier.trim() || selectedReleaseIdentifier)
+    )
   });
 
   function updateSearchParams(

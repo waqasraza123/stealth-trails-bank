@@ -57,12 +57,7 @@ export const webMessages = {
       successTitle: "Login successful",
       successDescription: "Welcome back to your account.",
       errorTitle: "Login failed",
-      errorDescription: "An error occurred during login. Please try again.",
-      demoTitle: "Use shared demo access",
-      demoDescription:
-        "Reveal a local demonstration account without crowding the primary login flow.",
-      demoPanelTitle: "Shared system access",
-      demoButton: "Fill demo credentials"
+      errorDescription: "An error occurred during login. Please try again."
     },
     signUp: {
       formEyebrow: "Open an account",

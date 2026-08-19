@@ -51,7 +51,6 @@ export const mobileMessagesAr: MobileMessages = {
     signUp: "إنشاء الحساب",
     switchToSignUp: "إنشاء حساب",
     switchToSignIn: "لديك حساب بالفعل؟",
-    demoFill: "استخدم بيانات العرض المشتركة",
     sessionExpired: "انتهت الجلسة. سجّل الدخول مرة أخرى.",
     emailInvalid: "أدخل بريداً إلكترونياً صالحاً.",
     passwordTooShort: "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.",

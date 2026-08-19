@@ -518,7 +518,7 @@ export function useEmergencyWithdrawMutation() {
 }
 
 export function useRotatePasswordMutation() {
-  const setToken = useSessionStore((state) => state.setToken);
+  const signOut = useSessionStore((state) => state.signOut);
 
   return useMutation({
     mutationFn: async (input: {
@@ -534,9 +534,7 @@ export function useRotatePasswordMutation() {
         throw new Error(response.data.message || "Failed to update password.");
       }
 
-      if (response.data.data.session?.token) {
-        await setToken(response.data.data.session.token);
-      }
+      await signOut();
 
       return response.data.data;
     },
@@ -821,7 +819,7 @@ export function useVerifyMfaChallengeMutation() {
 }
 
 export function useRevokeAllCustomerSessionsMutation() {
-  const setToken = useSessionStore((state) => state.setToken);
+  const signOut = useSessionStore((state) => state.signOut);
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -834,7 +832,7 @@ export function useRevokeAllCustomerSessionsMutation() {
         throw new Error(response.data.message || "Failed to revoke sessions.");
       }
 
-      await setToken(response.data.data.session.token);
+      await signOut();
       return response.data.data;
     },
     onSuccess: async () => {

@@ -3,99 +3,69 @@ import { apiClient, readApiErrorMessage } from "../lib/api/client";
 import type {
   ApiEnvelope,
   LoginResponseData,
-  SessionUser,
   SignUpResponseData,
 } from "../lib/api/types";
 import { useSessionStore } from "../stores/session-store";
-
-type SignUpInput = {
-  firstName: string;
-  lastName: string;
-  email: string;
-  password: string;
-};
-
-type LoginInput = {
-  email: string;
-  password: string;
-};
-
-function mapLoginUser(user: LoginResponseData["user"]): SessionUser {
-  return {
-    id: user.id,
-    supabaseUserId: user.supabaseUserId,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    email: user.email,
-    ethereumAddress: user.ethereumAddress,
-    mfa: user.mfa,
-    sessionSecurity: user.sessionSecurity,
-  };
-}
 
 export function useAuthActions() {
   const signInStore = useSessionStore((state) => state.signIn);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function signIn(input: LoginInput) {
+  async function request<T>(path: string, input: unknown): Promise<T> {
     setLoading(true);
     setError(null);
-
     try {
-      const response = await apiClient.post<ApiEnvelope<LoginResponseData>>(
-        "/auth/login",
-        input,
-      );
-      const token = response.data.data?.token;
-      const user = response.data.data?.user;
-
-      if (response.data.status !== "success" || !token || !user) {
-        throw new Error(response.data.message || "Login failed.");
+      const response = await apiClient.post<ApiEnvelope<T>>(`/auth/${path}`, input);
+      if (response.data.status !== "success" || !response.data.data) {
+        throw new Error(response.data.message || "Authentication failed.");
       }
-
-      await signInStore({
-        token,
-        user: mapLoginUser(user),
-      });
-
       return response.data.data;
     } catch (requestError) {
-      const message = readApiErrorMessage(requestError, "Login failed.");
+      const message = readApiErrorMessage(requestError, "Authentication failed.");
       setError(message);
-      throw requestError;
+      throw new Error(message);
     } finally {
       setLoading(false);
     }
   }
 
-  async function signUp(input: SignUpInput) {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await apiClient.post<ApiEnvelope<SignUpResponseData>>(
-        "/auth/signup",
-        input,
-      );
-
-      if (response.data.status !== "success" || !response.data.data?.user) {
-        throw new Error(response.data.message || "Sign up failed.");
-      }
-
-      return response.data.data.user;
-    } catch (requestError) {
-      const message = readApiErrorMessage(requestError, "Sign up failed.");
-      setError(message);
-      throw requestError;
-    } finally {
-      setLoading(false);
+  async function acceptCompleted(result: LoginResponseData) {
+    if (
+      result.nextAction === "complete" &&
+      result.user &&
+      result.session?.kind === "mobile"
+    ) {
+      await signInStore({
+        token: result.session.token,
+        refreshToken: result.session.refreshToken,
+        user: result.user,
+      });
     }
+    return result;
   }
 
   return {
-    signIn,
-    signUp,
+    signIn: (input: { email: string; password: string }) =>
+      request<LoginResponseData>("login", input),
+    signUp: (input: { firstName: string; lastName: string; email: string; password: string }) =>
+      request<SignUpResponseData>("signup", input),
+    verifyEmail: (email: string, code: string) =>
+      request<{ emailVerified: true }>("email-verification/verify", { email, code }),
+    resendEmailVerification: (email: string) =>
+      request<{ expiresAt: string | null }>("email-verification/resend", { email }),
+    startTotpEnrollment: (flowId: string) =>
+      request<LoginResponseData>("login/totp/enrollment/start", { flowId }),
+    verifyTotpEnrollment: async (flowId: string, code: string) =>
+      acceptCompleted(await request<LoginResponseData>("login/totp/enrollment/verify", { flowId, code })),
+    verifyTotp: async (flowId: string, code: string) =>
+      acceptCompleted(await request<LoginResponseData>("login/totp/verify", { flowId, code })),
+    verifyRecoveryCode: (flowId: string, code: string) =>
+      request<LoginResponseData>("login/recovery-code/verify", { flowId, code }),
+    upgradePassword: async (flowId: string, newPassword: string) =>
+      acceptCompleted(await request<LoginResponseData>("login/password/upgrade", { flowId, newPassword })),
+    setupRecoveryCodes: async (flowId: string) =>
+      acceptCompleted(await request<LoginResponseData>("login/recovery-codes/setup", { flowId })),
     loading,
     error,
   };

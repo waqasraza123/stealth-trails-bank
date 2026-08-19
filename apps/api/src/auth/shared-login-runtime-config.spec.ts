@@ -29,7 +29,25 @@ describe("loadSharedLoginBootstrapRuntimeConfig", () => {
     expect(result.enabled).toBe(false);
   });
 
-  it("rejects default production shared-login credentials when bootstrap is enabled", () => {
+  it("defaults shared login bootstrap to disabled in development", () => {
+    process.env["NODE_ENV"] = "development";
+
+    const result = loadSharedLoginBootstrapRuntimeConfig(process.env);
+
+    expect(result.enabled).toBe(false);
+  });
+
+  it("requires explicit shared-login credentials when bootstrap is enabled", () => {
+    process.env["NODE_ENV"] = "development";
+    process.env["OPERATOR_RUNTIME_ENVIRONMENT"] = "development";
+    process.env["SHARED_LOGIN_ENABLED"] = "true";
+
+    expect(() =>
+      loadSharedLoginBootstrapRuntimeConfig(process.env)
+    ).toThrow("Missing required environment variable: SHARED_LOGIN_EMAIL");
+  });
+
+  it("rejects production shared-login bootstrap when enabled", () => {
     process.env["NODE_ENV"] = "production";
     process.env["SHARED_LOGIN_ENABLED"] = "true";
 

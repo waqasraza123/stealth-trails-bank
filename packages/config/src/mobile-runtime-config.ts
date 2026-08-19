@@ -36,6 +36,16 @@ export function loadMobileRuntimeConfig(
     );
   }
 
+  const parsedApiBaseUrl = new URL(apiBaseUrl);
+  const localDevelopmentHost = ["localhost", "127.0.0.1"].includes(
+    parsedApiBaseUrl.hostname,
+  );
+  if (parsedApiBaseUrl.protocol !== "https:" && !localDevelopmentHost) {
+    throw new Error(
+      "EXPO_PUBLIC_API_BASE_URL must use HTTPS outside local development.",
+    );
+  }
+
   return {
     apiBaseUrl,
     telemetryEndpoint:

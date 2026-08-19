@@ -8,7 +8,8 @@ const runtimeConfig = loadMobileRuntimeConfig({
 });
 
 export const apiClient = axios.create({
-  baseURL: runtimeConfig.apiBaseUrl
+  baseURL: runtimeConfig.apiBaseUrl,
+  timeout: 15_000,
 });
 
 apiClient.interceptors.request.use((config) => {
@@ -30,13 +31,40 @@ apiClient.interceptors.request.use((config) => {
 
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const status = error.response?.status;
 
     reportMobileApiError(error);
 
-    if (status === 401 || status === 403) {
-      useSessionStore.getState().dropSession();
+    const original = error.config as (typeof error.config & { _stbRetried?: boolean });
+    const session = useSessionStore.getState();
+    if (
+      status === 401 &&
+      !original?._stbRetried &&
+      session.refreshToken &&
+      !String(original?.url ?? "").includes("/auth/mobile/refresh")
+    ) {
+      original._stbRetried = true;
+      try {
+        const refreshed = await axios.post<{
+          data?: { token: string; refreshToken: string };
+        }>(
+          `${runtimeConfig.apiBaseUrl}/auth/mobile/refresh`,
+          { refreshToken: session.refreshToken },
+          { headers: { "x-stb-client-platform": "mobile" }, timeout: 15_000 },
+        );
+        const next = refreshed.data.data;
+        if (!next) throw new Error("Session refresh failed.");
+        await session.setTokens(next.token, next.refreshToken);
+        const headers = AxiosHeaders.from(original.headers);
+        headers.set("Authorization", `Bearer ${next.token}`);
+        original.headers = headers;
+        return apiClient.request(original);
+      } catch {
+        session.dropSession();
+      }
+    } else if (status === 401 || status === 403) {
+      session.dropSession();
     }
 
     return Promise.reject(error);
